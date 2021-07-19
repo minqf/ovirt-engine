@@ -175,14 +175,16 @@ public class UpdateVmVersionCommand<T extends UpdateVmVersionParameters> extends
                 buildRemoveVmParameters(),
                 getLock());
 
-        if (result.getSucceeded()) {
-            if (result.getHasAsyncTasks()) {
-                getReturnValue().getVdsmTaskIdList().addAll(result.getInternalVdsmTaskIdList());
-            } else {
-                endVmCommand();
-            }
-            setSucceeded(true);
+        if (!result.getSucceeded()) {
+            log.error("Could not remove vm '{}' ({})", getVm().getName(), getVmId());
+            return;
         }
+
+        getTaskIdList().addAll(result.getInternalVdsmTaskIdList());
+        if (getTaskIdList().isEmpty()) {
+            endVmCommand();
+        }
+        setSucceeded(true);
     }
 
     private Guid getIdOfDiskOperator() {
@@ -226,7 +228,7 @@ public class UpdateVmVersionCommand<T extends UpdateVmVersionParameters> extends
         addVmParams.setPoolId(getParameters().getVmPoolId());
         addVmParams.setDiskInfoDestinationMap(buildDiskInfoDestinationMap());
         addVmParams.setConsoleEnabled(deviceExists(VmDeviceGeneralType.CONSOLE));
-        addVmParams.setBalloonEnabled(deviceExists(VmDeviceGeneralType.BALLOON, VmDeviceType.MEMBALLOON));
+        addVmParams.setTpmEnabled(deviceExists(VmDeviceGeneralType.TPM));
         addVmParams.setSoundDeviceEnabled(deviceExists(VmDeviceGeneralType.SOUND));
         addVmParams.setVirtioScsiEnabled(deviceExists(VmDeviceGeneralType.CONTROLLER, VmDeviceType.VIRTIOSCSI));
 

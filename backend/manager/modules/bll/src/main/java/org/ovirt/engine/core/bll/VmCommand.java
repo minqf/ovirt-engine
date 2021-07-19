@@ -3,6 +3,7 @@ package org.ovirt.engine.core.bll;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import javax.inject.Inject;
@@ -44,12 +45,12 @@ import org.ovirt.engine.core.common.businessentities.VmStatic;
 import org.ovirt.engine.core.common.businessentities.network.VmNic;
 import org.ovirt.engine.core.common.businessentities.storage.BaseDisk;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
-import org.ovirt.engine.core.common.businessentities.storage.DiskInterface;
 import org.ovirt.engine.core.common.businessentities.storage.DiskVmElement;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.osinfo.OsRepository;
+import org.ovirt.engine.core.common.utils.PDIVMapBuilder;
 import org.ovirt.engine.core.common.utils.ValidationUtils;
 import org.ovirt.engine.core.common.utils.VmDeviceType;
 import org.ovirt.engine.core.common.vdscommands.VDSCommandType;
@@ -316,14 +317,18 @@ public abstract class VmCommand<T extends VmOperationParameterBase> extends Comm
     }
 
     protected boolean removeMemoryDisks(Snapshot snapshot) {
-        RemoveDiskParameters removeMemoryDumpDiskParameters = new RemoveDiskParameters(snapshot.getMemoryDiskId());
+        return removeMemoryDisks(snapshot.getMemoryDiskId(), snapshot.getMetadataDiskId());
+    }
+
+    protected boolean removeMemoryDisks(Guid memoryDiskId, Guid metadataDiskId) {
+        RemoveDiskParameters removeMemoryDumpDiskParameters = new RemoveDiskParameters(memoryDiskId);
         removeMemoryDumpDiskParameters.setShouldBeLogged(false);
         ActionReturnValue retVal = runInternalAction(ActionType.RemoveDisk, removeMemoryDumpDiskParameters);
         if (!retVal.getSucceeded()) {
             return false;
         }
 
-        RemoveDiskParameters removeMemoryMetadataDiskParameters = new RemoveDiskParameters(snapshot.getMetadataDiskId());
+        RemoveDiskParameters removeMemoryMetadataDiskParameters = new RemoveDiskParameters(metadataDiskId);
         removeMemoryMetadataDiskParameters.setShouldBeLogged(false);
         retVal = runInternalAction(ActionType.RemoveDisk, removeMemoryMetadataDiskParameters);
         if (!retVal.getSucceeded()) {
@@ -392,11 +397,18 @@ public abstract class VmCommand<T extends VmOperationParameterBase> extends Comm
      * The following method should check if os of guest is supported for disk hot plug/unplug operation
      */
     protected boolean isDiskSupportedForPlugUnPlug(DiskVmElement diskVmElement, String diskAlias) {
-        if (diskVmElement.getDiskInterface() == DiskInterface.IDE) {
+        switch (diskVmElement.getDiskInterface()) {
+        case IDE:
             addValidationMessageVariable("diskAlias", diskAlias);
             addValidationMessageVariable("vmName", getVm().getName());
             return failValidation(EngineMessage.HOT_PLUG_IDE_DISK_IS_NOT_SUPPORTED);
+        case SPAPR_VSCSI:
+            addValidationMessageVariable("diskAlias", diskAlias);
+            addValidationMessageVariable("vmName", getVm().getName());
+            return failValidation(EngineMessage.HOT_PLUG_SPAPR_VSCSI_DISK_IS_NOT_SUPPORTED);
+        default:
         }
+
         Set<String> diskHotpluggableInterfaces = osRepository.getDiskHotpluggableInterfaces(getVm().getOs(),
                 getVm().getCompatibilityVersion());
 
@@ -476,6 +488,10 @@ public abstract class VmCommand<T extends VmOperationParameterBase> extends Comm
         return vmDeviceUtils;
     }
 
+    protected VmHandler getVmHandler() {
+        return vmHandler;
+    }
+
     protected SnapshotsManager getSnapshotsManager() {
         return snapshotsManager;
     }
@@ -504,6 +520,20 @@ public abstract class VmCommand<T extends VmOperationParameterBase> extends Comm
     private String cdPathWindowsToLinux(String windowsPath, String isoPrefix) {
         String fileName = new File(windowsPath).getName();
         return String.format("%1$s/%2$s", isoPrefix, fileName);
+    }
+
+    protected Map<String, String> buildCdPdivFromPath(Guid diskGuid) {
+        Map<String, String> pdiv = null;
+        DiskImage disk = (DiskImage) diskDao.get(diskGuid);
+        if (disk != null) {
+            pdiv = PDIVMapBuilder.create()
+                    .setPoolId(disk.getStoragePoolId())
+                    .setDomainId(disk.getStorageIds().get(0))
+                    .setImageGroupId(disk.getId())
+                    .setVolumeId(disk.getImageId()).build();
+        }
+
+        return pdiv;
     }
 
     protected boolean removeVmLease(Guid leaseStorageDomainId, Guid vmId) {
@@ -595,6 +625,9 @@ public abstract class VmCommand<T extends VmOperationParameterBase> extends Comm
 
     public boolean isVmDuringBackup() {
         List<VmBackup> vmBackups = vmBackupDao.getAllForVm(getVmId());
-        return vmBackups != null && !vmBackups.isEmpty();
+
+        return !CollectionUtils.isEmpty(vmBackups) && vmBackups
+                .stream()
+                .anyMatch(vmBackup -> vmBackup.getPhase().isBackupInProgress());
     }
 }

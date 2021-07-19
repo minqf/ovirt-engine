@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import org.ovirt.engine.api.model.DataCenter;
 import org.ovirt.engine.api.model.Disk;
 import org.ovirt.engine.api.model.DiskBackup;
+import org.ovirt.engine.api.model.DiskBackupMode;
 import org.ovirt.engine.api.model.DiskContentType;
 import org.ovirt.engine.api.model.DiskFormat;
 import org.ovirt.engine.api.model.DiskInterface;
@@ -131,6 +132,7 @@ public class DiskMapper {
         // TODO: relevant when adding disk, needs to be removed when the initial size will be passed in the parameters.
         if (disk.isSetInitialSize()) {
             diskImage.setActualSizeInBytes(disk.getInitialSize());
+            diskImage.setInitialSizeInBytes(disk.getInitialSize());
         }
         if (disk.isSetStorageDomains() && disk.getStorageDomains().isSetStorageDomains()
                 && disk.getStorageDomains().getStorageDomains().get(0).isSetId()) {
@@ -245,6 +247,9 @@ public class DiskMapper {
         }
         if (entity.getBackup() != null) {
             model.setBackup(mapDiskBackup(entity.getBackup()));
+        }
+        if (entity.getBackupMode() != null) {
+            model.setBackupMode(mapDiskBackupMode(entity.getBackupMode()));
         }
     }
 
@@ -389,6 +394,30 @@ public class DiskMapper {
         }
     }
 
+    @Mapping(from = DiskBackupMode.class, to = org.ovirt.engine.core.common.businessentities.storage.DiskBackupMode.class)
+    private static org.ovirt.engine.core.common.businessentities.storage.DiskBackupMode mapDiskBackupMode(DiskBackupMode diskBackupMode) {
+        switch (diskBackupMode) {
+        case FULL:
+            return org.ovirt.engine.core.common.businessentities.storage.DiskBackupMode.Full;
+        case INCREMENTAL:
+            return org.ovirt.engine.core.common.businessentities.storage.DiskBackupMode.Incremental;
+        default:
+            return null;
+        }
+    }
+
+    @Mapping(from = org.ovirt.engine.core.common.businessentities.storage.DiskBackupMode.class, to = DiskBackupMode.class)
+    private static DiskBackupMode mapDiskBackupMode(org.ovirt.engine.core.common.businessentities.storage.DiskBackupMode diskBackupMode) {
+        switch (diskBackupMode) {
+        case Full:
+            return DiskBackupMode.FULL;
+        case Incremental:
+            return DiskBackupMode.INCREMENTAL;
+        default:
+            return null;
+        }
+    }
+
     @Mapping(from = org.ovirt.engine.core.common.businessentities.StorageDomainType.class, to = DiskStorageType.class)
     public static DiskStorageType map(org.ovirt.engine.core.common.businessentities.StorageDomainType storageDomainType) {
         switch (storageDomainType) {
@@ -464,6 +493,8 @@ public class DiskMapper {
             return org.ovirt.engine.core.common.businessentities.storage.DiskContentType.HOSTED_ENGINE_METADATA;
         case HOSTED_ENGINE_CONFIGURATION:
             return org.ovirt.engine.core.common.businessentities.storage.DiskContentType.HOSTED_ENGINE_CONFIGURATION;
+        case BACKUP_SCRATCH:
+            return org.ovirt.engine.core.common.businessentities.storage.DiskContentType.BACKUP_SCRATCH;
         default:
             throw new IllegalArgumentException("Unknown disk content type \"" + contentType + "\"");
         }
@@ -492,6 +523,8 @@ public class DiskMapper {
             return DiskContentType.HOSTED_ENGINE_METADATA;
         case HOSTED_ENGINE_CONFIGURATION:
             return DiskContentType.HOSTED_ENGINE_CONFIGURATION;
+        case BACKUP_SCRATCH:
+            return DiskContentType.BACKUP_SCRATCH;
         default:
             throw new IllegalArgumentException("Unknown disk content type \"" + contentType + "\"");
         }

@@ -87,13 +87,12 @@ public enum VMStatus implements Identifiable {
 
     /**
      * This method reflects whether the VM is qualified to start a backup operation (full/incremental).
-     * For this to be true, the VM must up.
+     * For this to be true, the VM should be either up or powered-off.
      *
-     * @return true if this status indicates that the VM status indicates that snapshot live merge
-     * may be possible, otherwise false
+     * @return true if the VM is qualified for backup operation, false otherwise
      */
     public boolean isQualifiedForVmBackup() {
-        return this == Up;
+        return this == Up || this == Down;
     }
 
     /**
@@ -220,6 +219,15 @@ public enum VMStatus implements Identifiable {
         default:
             return false;
         }
+    }
+
+    /**
+     * Check whether the VM is migrating to or from another host.
+     *
+     * @return true if the status is one of the Migrating* ones
+     */
+    public boolean isMigrating() {
+        return EnumSet.of(MigratingFrom, MigratingTo).contains(this);
     }
 
     /**

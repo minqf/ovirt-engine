@@ -1,6 +1,8 @@
 package org.ovirt.engine.core.common.action;
 
 import org.ovirt.engine.core.common.AuditLogType;
+import org.ovirt.engine.core.common.businessentities.storage.TimeoutPolicyType;
+import org.ovirt.engine.core.common.businessentities.storage.TransferClientType;
 import org.ovirt.engine.core.common.businessentities.storage.TransferType;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.compat.Guid;
@@ -18,9 +20,13 @@ public class TransferDiskImageParameters extends ImagesActionsParametersBase {
     private TransferType transferType = TransferType.Upload;
     private AddDiskParameters addDiskParameters;
     private Integer clientInactivityTimeout;
+    private TimeoutPolicyType timeoutPolicyType;
     private VolumeFormat volumeFormat;
     private Guid backupId;
-    private boolean transferringViaBrowser;
+    private TransferClientType transferClientType = TransferClientType.UNKNOWN;
+
+    // Transfer only specified image data instead of entire image chain.
+    private boolean shallow;
 
     public TransferDiskImageParameters() {}
 
@@ -101,6 +107,14 @@ public class TransferDiskImageParameters extends ImagesActionsParametersBase {
         this.clientInactivityTimeout = clientInactivityTimeout;
     }
 
+    public TimeoutPolicyType getTimeoutPolicyType() {
+        return timeoutPolicyType;
+    }
+
+    public void setTimeoutPolicyType(TimeoutPolicyType timeoutPolicy) {
+        this.timeoutPolicyType = timeoutPolicy;
+    }
+
     public VolumeFormat getVolumeFormat() {
         return volumeFormat;
     }
@@ -117,11 +131,19 @@ public class TransferDiskImageParameters extends ImagesActionsParametersBase {
         this.backupId = backupId;
     }
 
-    public boolean isTransferringViaBrowser() {
-        return transferringViaBrowser;
+    public TransferClientType getTransferClientType() {
+        return transferClientType;
     }
 
-    public void setTransferringViaBrowser(boolean transferringViaBrowser) {
-        this.transferringViaBrowser = transferringViaBrowser;
+    public void setTransferClientType(TransferClientType transferClientType) {
+        this.transferClientType = transferClientType;
+    }
+
+    public boolean isShallow() {
+        return shallow;
+    }
+
+    public void setShallow(boolean shallow) {
+        this.shallow = shallow;
     }
 }

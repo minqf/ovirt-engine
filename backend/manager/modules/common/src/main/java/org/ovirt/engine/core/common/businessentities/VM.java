@@ -11,6 +11,7 @@ import java.util.Set;
 import javax.validation.Valid;
 
 import org.codehaus.jackson.annotate.JsonIgnore;
+import org.ovirt.engine.core.common.action.VmExternalDataKind;
 import org.ovirt.engine.core.common.businessentities.network.VmNetworkInterface;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
@@ -62,6 +63,12 @@ public class VM implements Queryable, BusinessEntityWithStatus<Guid, VMStatus>, 
     private boolean trustedService;
     private boolean hasIllegalImages;
     private BiosType clusterBiosType;
+    @TransientField
+    private boolean differentTimeZone;
+    private Map<VmExternalDataKind, String> vmExternalData;
+
+    @TransientField
+    private boolean vnicsOutOfSync;
 
     public VM() {
         this(new VmStatic(), new VmDynamic(), new VmStatistics());
@@ -244,14 +251,6 @@ public class VM implements Queryable, BusinessEntityWithStatus<Guid, VMStatus>, 
         this.vmStatic.setCustomEmulatedMachine(value);
     }
 
-    public BiosType getBiosType() {
-        return this.vmStatic.getBiosType();
-    }
-
-    public void setBiosType(BiosType biosType) {
-        this.vmStatic.setBiosType(biosType);
-    }
-
     public String getStopReason() {
         return this.vmDynamic.getStopReason();
     }
@@ -266,14 +265,6 @@ public class VM implements Queryable, BusinessEntityWithStatus<Guid, VMStatus>, 
 
     public void setNumOfMonitors(int value) {
         this.vmStatic.setNumOfMonitors(value);
-    }
-
-    public boolean getSingleQxlPci() {
-        return this.vmStatic.getSingleQxlPci();
-    }
-
-    public void setSingleQxlPci(boolean value) {
-        this.vmStatic.setSingleQxlPci(value);
     }
 
     public boolean getAllowConsoleReconnect() {
@@ -354,10 +345,6 @@ public class VM implements Queryable, BusinessEntityWithStatus<Guid, VMStatus>, 
 
     @JsonIgnore
     public void setDedicatedVmForVdsList(List<Guid> value) {
-        vmStatic.setDedicatedVmForVdsList(value);
-    }
-
-    public void setDedicatedVmForVdsList(Guid value) {
         vmStatic.setDedicatedVmForVdsList(value);
     }
 
@@ -1626,14 +1613,6 @@ public class VM implements Queryable, BusinessEntityWithStatus<Guid, VMStatus>, 
         return nextRunChangedFields;
     }
 
-    public NumaTuneMode getNumaTuneMode() {
-        return vmStatic.getNumaTuneMode();
-    }
-
-    public void setNumaTuneMode(NumaTuneMode numaTuneMode) {
-        vmStatic.setNumaTuneMode(numaTuneMode);
-    }
-
     public void setvNumaNodeList(List<VmNumaNode> vNumaNodeList) {
         vmStatic.setvNumaNodeList(vNumaNodeList);
     }
@@ -1728,6 +1707,14 @@ public class VM implements Queryable, BusinessEntityWithStatus<Guid, VMStatus>, 
 
     public void setGuestMemoryFree(Long guestMemoryFree) {
         vmStatistics.setGuestMemoryFree(guestMemoryFree);
+    }
+
+    public Long getGuestMemoryUnused() {
+        return vmStatistics.getGuestMemoryUnused();
+    }
+
+    public void setGuestMemoryUnused(Long guestMemoryUnused) {
+        vmStatistics.setGuestMemoryUnused(guestMemoryUnused);
     }
 
     public Guid getProviderId() {
@@ -1845,8 +1832,16 @@ public class VM implements Queryable, BusinessEntityWithStatus<Guid, VMStatus>, 
         return vmStatic.isMultiQueuesEnabled();
     }
 
+    public boolean isVirtioScsiMultiQueuesEnabled() {
+        return vmStatic.isVirtioScsiMultiQueuesEnabled();
+    }
+
     public void setMultiQueuesEnabled(boolean multiQueuesEnabled) {
         vmStatic.setMultiQueuesEnabled(multiQueuesEnabled);
+    }
+
+    public void setVirtioScsiMultiQueuesEnabled(boolean virtioScsiMultiQueuesEnabled) {
+        vmStatic.setVirtioScsiMultiQueuesEnabled(virtioScsiMultiQueuesEnabled);
     }
 
     public String getRuntimeName() {
@@ -1869,8 +1864,12 @@ public class VM implements Queryable, BusinessEntityWithStatus<Guid, VMStatus>, 
         this.clusterBiosType = clusterBiosType;
     }
 
-    public BiosType getEffectiveBiosType() {
-        return getBiosType() != BiosType.CLUSTER_DEFAULT ? getBiosType() : getClusterBiosType();
+    public void setBiosType(BiosType type) {
+        vmStatic.setBiosType(type);
+    }
+
+    public BiosType getBiosType() {
+        return vmStatic.getBiosType();
     }
 
     public boolean getUseTscFrequency() {
@@ -1893,5 +1892,53 @@ public class VM implements Queryable, BusinessEntityWithStatus<Guid, VMStatus>, 
     public boolean isManaged() {
         // TODO: think of a better way to distinguish that from #isManagedVm
         return vmStatic.isManaged();
+    }
+
+    public boolean isDifferentTimeZone() {
+        return differentTimeZone;
+    }
+
+    public void setDifferentTimeZone(boolean differentTimeZone) {
+        this.differentTimeZone = differentTimeZone;
+    }
+
+    public Guid getSmallIconId() {
+        return vmStatic.getSmallIconId();
+    }
+
+    public void setSmallIconId(Guid smallIconId) {
+        vmStatic.setSmallIconId(smallIconId);
+    }
+
+    public Guid getLargeIconId() {
+        return vmStatic.getLargeIconId();
+    }
+
+    public void setLargeIconId(Guid largeIconId) {
+        vmStatic.setLargeIconId(largeIconId);
+    }
+
+    public Map<VmExternalDataKind, String> getVmExternalData() {
+        return vmExternalData;
+    }
+
+    public void setVmExternalData(Map<VmExternalDataKind, String> vmExternalData) {
+        this.vmExternalData = vmExternalData;
+    }
+
+    public boolean isVnicsOutOfSync() {
+        return vnicsOutOfSync;
+    }
+
+    public void setVnicsOutOfSync(boolean vnicsOutOfSync) {
+        this.vnicsOutOfSync = vnicsOutOfSync;
+    }
+
+    public boolean isBalloonEnabled() {
+        return vmStatic.isBalloonEnabled();
+    }
+
+    public void setBalloonEnabled(boolean balloonEnabled) {
+        vmStatic.setBalloonEnabled(balloonEnabled);
     }
 }

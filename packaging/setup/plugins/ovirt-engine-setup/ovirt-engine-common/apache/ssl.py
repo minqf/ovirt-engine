@@ -48,6 +48,7 @@ def _apply_logging(lines):
 def _(m):
     return gettext.dgettext(message=m, domain='ovirt-engine-setup')
 
+
 _HTTPD_CONF_PARAMS_DB = (
     {
         'name': 'SSLCertificateFile',
@@ -100,7 +101,7 @@ class Plugin(plugin.PluginBase):
             content=_apply_logging(self._current_content),
             params=self._params,
             changed_lines=self._changed_lines,
-            separator_re='\s+',
+            separator_re='\\s+',
             new_line_tpl='{spaces}{param} {value}',
             added_params=self._missing_params,
         )
@@ -175,7 +176,7 @@ class Plugin(plugin.PluginBase):
         ] is None:
             self.dialog.note(
                 _(
-                    'Setup can configure apache to use SSL using a '
+                    '\nSetup can configure apache to use SSL using a '
                     'certificate issued from the internal CA.'
                 )
             )
@@ -274,7 +275,10 @@ class Plugin(plugin.PluginBase):
         condition=lambda self: self._enabled,
     )
     def _misc(self):
-        self._read_and_process_file()  # Read again, in case it was updated
+        # Read the file again, in case it was updated. Reset _changed_lines,
+        # to not collect twice the changes we do.
+        self._changed_lines = []
+        self._read_and_process_file()
         self.environment[oengcommcons.ApacheEnv.NEED_RESTART] = True
         self.environment[otopicons.CoreEnv.MAIN_TRANSACTION].append(
             filetransaction.FileTransaction(

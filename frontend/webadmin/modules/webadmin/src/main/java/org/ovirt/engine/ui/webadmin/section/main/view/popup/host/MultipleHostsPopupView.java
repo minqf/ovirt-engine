@@ -137,9 +137,9 @@ public class MultipleHostsPopupView extends AbstractModelBoundPopupView<Multiple
         hostsTable.addColumn(new AbstractEntityModelTextColumn<HostDetailModel>() {
             @Override
             public String getText(HostDetailModel hostModel) {
-                return hostModel.getFingerprint();
+                return hostModel.getSshPublicKey();
             }
-        }, constants.hostsPopupFingerprint(), "300px"); //$NON-NLS-1$
+        }, constants.hostsPopupSshPublicKey(), "300px"); //$NON-NLS-1$
 
     }
 

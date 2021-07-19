@@ -38,6 +38,7 @@ import org.ovirt.engine.core.common.businessentities.ActionGroup;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.ImageTransferBackend;
 import org.ovirt.engine.core.common.businessentities.storage.StorageType;
+import org.ovirt.engine.core.common.businessentities.storage.TransferClientType;
 import org.ovirt.engine.core.common.businessentities.storage.TransferType;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.common.config.ConfigValues;
@@ -81,7 +82,9 @@ public class TransferDiskImageCommandTest extends BaseCommandTest {
             new TransferDiskImageCommand<>(new TransferDiskImageParameters(), null);
 
     public static Stream<MockConfigDescriptor<?>> mockConfiguration() {
-        return Stream.of(MockConfigDescriptor.of(ConfigValues.TransferImageClientInactivityTimeoutInSeconds, 600));
+        return Stream.of(
+            MockConfigDescriptor.of(ConfigValues.TransferImageClientInactivityTimeoutInSeconds, 600),
+            MockConfigDescriptor.of(ConfigValues.ImageTransferProxyEnabled, Boolean.TRUE));
     }
 
     @BeforeEach
@@ -338,7 +341,7 @@ public class TransferDiskImageCommandTest extends BaseCommandTest {
 
         transferImageCommand.getParameters().setTransferType(TransferType.Upload);
         transferImageCommand.getParameters().setTransferSize(readyImage.getSize());
-        transferImageCommand.getParameters().setTransferringViaBrowser(true);
+        transferImageCommand.getParameters().setTransferClientType(TransferClientType.TRANSFER_VIA_BROWSER);
         transferImageCommand.handleImageIsReadyForTransfer();
 
         assertEquals(transferImageCommand.getParameters().getTransferSize(), readyImage.getSize());

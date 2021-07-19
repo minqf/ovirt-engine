@@ -31,6 +31,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.ovirt.engine.core.bll.storage.disk.image.ImagesHandler;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
+import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.BusinessEntity;
 import org.ovirt.engine.core.common.businessentities.DisplayType;
 import org.ovirt.engine.core.common.businessentities.GraphicsType;
@@ -79,15 +80,23 @@ public class OvfManagerTest {
     private static final int MIN_ENTITY_NAME_LENGTH = 3;
     private static final int MAX_ENTITY_NAME_LENGTH = 30;
 
+    private static Map<String, Integer> createMaxNumberOfVmCpusMap() {
+        Map<String, Integer> maxVmCpusMap = new HashMap<>();
+        maxVmCpusMap.put("s390x", 384);
+        maxVmCpusMap.put("x86", 16);
+        maxVmCpusMap.put("ppc", 384);
+        return maxVmCpusMap;
+    }
+
     public static Stream<MockConfigDescriptor<?>> mockConfiguration() {
         return Stream.of(
                 MockConfigDescriptor.of(ConfigValues.VdcVersion, "3.0.0.0"),
                 MockConfigDescriptor.of(ConfigValues.MaxNumOfVmSockets, Version.v4_2, 16),
-                MockConfigDescriptor.of(ConfigValues.MaxNumOfVmCpus, Version.v4_2, 16),
+                MockConfigDescriptor.of(ConfigValues.MaxNumOfVmCpus, Version.v4_2, createMaxNumberOfVmCpusMap()),
                 MockConfigDescriptor.of(ConfigValues.MaxNumOfVmSockets, Version.v4_3, 16),
-                MockConfigDescriptor.of(ConfigValues.MaxNumOfVmCpus, Version.v4_3, 16),
+                MockConfigDescriptor.of(ConfigValues.MaxNumOfVmCpus, Version.v4_3, createMaxNumberOfVmCpusMap()),
                 MockConfigDescriptor.of(ConfigValues.MaxNumOfVmSockets, Version.getLast(), 16),
-                MockConfigDescriptor.of(ConfigValues.MaxNumOfVmCpus, Version.getLast(), 16)
+                MockConfigDescriptor.of(ConfigValues.MaxNumOfVmCpus, Version.getLast(), createMaxNumberOfVmCpusMap())
         );
     }
 
@@ -256,6 +265,7 @@ public class OvfManagerTest {
         assertNotNull(xml);
 
         VM newVm = new VM();
+        newVm.setClusterBiosType(BiosType.Q35_SEA_BIOS);
         FullEntityOvfData fullEntityOvfData = new FullEntityOvfData(newVm);
         manager.importVm(xml, newVm, fullEntityOvfData);
 
@@ -312,9 +322,10 @@ public class OvfManagerTest {
         vm.setVmDescription("test-description");
         vm.setTimeZone("Israel Standard Time");
         vm.setDbGeneration(2L);
-        vm.setSingleQxlPci(false);
         vm.setClusterArch(ArchitectureType.x86_64);
         vm.setVmOs(EXISTING_OS_ID);
+        vm.setClusterBiosType(BiosType.Q35_SEA_BIOS);
+        vm.setBiosType(BiosType.Q35_SEA_BIOS);
         initInterfaces(vm);
         return vm;
     }
@@ -400,6 +411,8 @@ public class OvfManagerTest {
         template.setDbGeneration(2L);
         template.setClusterArch(ArchitectureType.x86_64);
         template.setOsId(EXISTING_OS_ID);
+        template.setClusterBiosType(BiosType.Q35_SEA_BIOS);
+        template.setBiosType(BiosType.Q35_SEA_BIOS);
         return template;
     }
 
@@ -412,6 +425,9 @@ public class OvfManagerTest {
         vm.setVmtName(RandomUtils.instance().nextString(10));
         vm.setOrigin(OriginType.OVIRT);
         vm.setDbGeneration(1L);
+        vm.setClusterBiosType(BiosType.Q35_SEA_BIOS);
+        vm.setClusterArch(ArchitectureType.x86_64);
+        vm.setBiosType(BiosType.Q35_SEA_BIOS);
         Guid vmSnapshotId = Guid.newGuid();
 
         DiskImage disk1 = addTestDisk(vm, vmSnapshotId);

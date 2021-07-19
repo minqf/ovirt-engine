@@ -17,9 +17,15 @@ import org.ovirt.engine.core.bll.ValidationResult;
 import org.ovirt.engine.core.bll.VmCommand;
 import org.ovirt.engine.core.bll.hostdev.HostDeviceManager;
 import org.ovirt.engine.core.bll.storage.disk.image.DisksFilter;
+import org.ovirt.engine.core.bll.utils.VmDeviceUtils;
 import org.ovirt.engine.core.bll.validator.storage.DiskImagesValidator;
 import org.ovirt.engine.core.common.ActionUtils;
+import org.ovirt.engine.core.common.FeatureSupported;
 import org.ovirt.engine.core.common.action.ActionType;
+import org.ovirt.engine.core.common.businessentities.ArchitectureType;
+import org.ovirt.engine.core.common.businessentities.BiosType;
+import org.ovirt.engine.core.common.businessentities.ChipsetType;
+import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.MigrationSupport;
 import org.ovirt.engine.core.common.businessentities.Snapshot.SnapshotType;
 import org.ovirt.engine.core.common.businessentities.VM;
@@ -64,7 +70,7 @@ public class VmValidator {
 
     /** @return Validation result that indicates if the VM is during migration or not. */
     public ValidationResult vmNotDuringMigration() {
-        if (vm.getStatus() == VMStatus.MigratingFrom || vm.getStatus() == VMStatus.MigratingTo) {
+        if (vm.getStatus().isMigrating()) {
             return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_MIGRATION_IN_PROGRESS);
         }
 
@@ -242,6 +248,27 @@ public class VmValidator {
         return ValidationResult.VALID;
     }
 
+    public ValidationResult vmNotHavingScsiPassthroughDevices() {
+        if (getHostDeviceManager().checkVmNeedsScsiDevices(vm.getId())) {
+            return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_HAS_ATTACHED_SCSI_HOST_DEVICES);
+        }
+        return ValidationResult.VALID;
+    }
+
+    public ValidationResult vmNotHavingNvdimmDevices() {
+        if (getHostDeviceManager().checkVmNeedsNvdimmDevices(vm.getId())) {
+            return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_HAS_ATTACHED_NVDIMM_DEVICES);
+        }
+        return ValidationResult.VALID;
+    }
+
+    public ValidationResult vmNotHavingTpm() {
+        if (getVmDeviceUtils().hasTpmDevice(vm.getId())) {
+            return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_HAS_TPM);
+        }
+        return ValidationResult.VALID;
+    }
+
     public ValidationResult vmNotUsingMdevTypeHook() {
         Map<String, String> properties = getVmPropertiesUtils().getVMProperties(
                 vm.getCompatibilityVersion(),
@@ -256,6 +283,10 @@ public class VmValidator {
 
     private HostDeviceManager getHostDeviceManager() {
         return Injector.get(HostDeviceManager.class);
+    }
+
+    private VmDeviceUtils getVmDeviceUtils() {
+        return Injector.get(VmDeviceUtils.class);
     }
 
     public ValidationResult isPinnedVmRunningOnDedicatedHost(VM recentVm, VmStatic paramVm){
@@ -292,12 +323,14 @@ public class VmValidator {
             List<DiskVmElement> diskVmElements,
             boolean virtioScsiEnabled,
             boolean hasWatchdog,
-            boolean isBalloonEnabled,
             boolean isSoundDeviceEnabled) {
 
         // this adds: monitors + 2 * (interfaces with type rtl_pv) + (all other
         // interfaces) + (all disks that are not IDE)
         int pciInUse = monitorsNumber;
+
+        // Balloon controller requires one PCI slot
+        pciInUse += 1;
 
         for (VmNic a : interfaces) {
             if (a.getType() != null && VmInterfaceType.forValue(a.getType()) == VmInterfaceType.rtl8139_pv) {
@@ -316,9 +349,6 @@ public class VmValidator {
 
         // VmWatchdog controller requires one PCI slot
         pciInUse += hasWatchdog ? 1 : 0;
-
-        // Balloon controller requires one PCI slot
-        pciInUse += isBalloonEnabled ? 1 : 0;
 
         // Sound device controller requires one PCI slot
         pciInUse += isSoundDeviceEnabled ? 1 : 0;
@@ -350,15 +380,24 @@ public class VmValidator {
         return ValidationResult.VALID;
     }
 
-    public static ValidationResult validateCpuSockets(VmBase vmBase, Version compatibilityVersion) {
+    /**
+     * @param vmBase - the VM/template to validate
+     * @param compatibilityVersion - the compatibility version of vmBase
+     * @param architecture - the cluster's architecture
+     * @return ValidationResult.VALID if the CPU topology on vmBase is valid, failed ValidationResult otherwise.
+     */
+    public static ValidationResult validateCpuSockets(VmBase vmBase, Version compatibilityVersion,
+            ArchitectureType architecture) {
         int num_of_sockets = vmBase.getNumOfSockets();
         int cpu_per_socket = vmBase.getCpuPerSocket();
         int threadsPerCpu = vmBase.getThreadsPerCpu();
 
         String version = compatibilityVersion.toString();
 
-        if ((num_of_sockets * cpu_per_socket * threadsPerCpu) >
-                Config.<Integer> getValue(ConfigValues.MaxNumOfVmCpus, version)) {
+        int vcpus = num_of_sockets * cpu_per_socket * threadsPerCpu;
+        Map<String, Integer> archToMaxNumOfVmCpus = Config.getValue(ConfigValues.MaxNumOfVmCpus, version);
+
+        if (vcpus > archToMaxNumOfVmCpus.get(architecture.getFamily().name())) {
             return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_MAX_NUM_CPU);
         }
         if (num_of_sockets > Config.<Integer> getValue(ConfigValues.MaxNumOfVmSockets, version)) {
@@ -416,4 +455,31 @@ public class VmValidator {
 
         return ValidationResult.VALID;
     }
+
+    public static ValidationResult isBiosTypeSupported(VmBase vmBase, Cluster cluster, OsRepository osRepository) {
+        if (FeatureSupported.isBiosTypeSupported(cluster.getCompatibilityVersion())
+                && vmBase.getBiosType() != BiosType.I440FX_SEA_BIOS
+                && cluster.getArchitecture() != ArchitectureType.undefined
+                && cluster.getArchitecture().getFamily() != ArchitectureType.x86) {
+            return new ValidationResult(EngineMessage.NON_DEFAULT_BIOS_TYPE_FOR_X86_ONLY);
+        }
+
+        if (vmBase.getBiosType().getChipsetType() == ChipsetType.Q35
+                && !osRepository.isQ35Supported(vmBase.getOsId())) {
+            return new ValidationResult(EngineMessage.Q35_NOT_SUPPORTED_BY_GUEST_OS,
+                    String.format("$guestOS %1$s", osRepository.getOsName(vmBase.getOsId())));
+        }
+
+        if (vmBase.getBiosType() == BiosType.Q35_SECURE_BOOT && !osRepository.isSecureBootSupported(vmBase.getOsId())) {
+            return new ValidationResult(EngineMessage.SECURE_BOOT_NOT_SUPPORTED_BY_GUEST_OS,
+                    String.format("$guestOS %1$s", osRepository.getOsName(vmBase.getOsId())));
+        }
+
+        return ValidationResult.VALID;
+    }
+
+    public ValidationResult isBiosTypeSupported(Cluster cluster, OsRepository osRepository) {
+        return isBiosTypeSupported(vm.getStaticData(), cluster, osRepository);
+    }
+
 }

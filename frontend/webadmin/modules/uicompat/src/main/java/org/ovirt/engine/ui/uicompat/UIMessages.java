@@ -201,7 +201,7 @@ public interface UIMessages extends Messages {
 
     String importClusterHostPasswordEmpty(String address);
 
-    String importClusterHostFingerprintEmpty(String address);
+    String importClusterHostSshPublicKeyEmpty(String address);
 
     String unreachableGlusterHosts(List<String> hosts);
 
@@ -323,9 +323,9 @@ public interface UIMessages extends Messages {
 
     String threadsAsCoresPerSocket(int cores, int threads);
 
-    String approveCertificateTrust(String subject, String issuer, String sha1Fingerprint);
+    String approveCertificateTrust(String subject, String issuer, String shaFingerprint, String shaName);
 
-    String approveRootCertificateTrust(String subject, String sha1Fingerprint);
+    String approveRootCertificateTrust(String subject, String shaFingerprint, String shaName);
 
     String geoRepForceTitle(String action);
 
@@ -427,7 +427,7 @@ public interface UIMessages extends Messages {
 
     String biosTypeSupportedForX86Only();
 
-    String glusterPeerNotMatchingHostFingerprint(String hostAddress, String glusterPeerAddress);
+    String glusterPeerNotMatchingHostSshPublicKey(String hostAddress, String glusterPeerAddress);
 
     String noTemplateNameDuplicatesAllowed();
 
@@ -445,4 +445,18 @@ public interface UIMessages extends Messages {
             String storageDomainFormat, String dcVersion);
 
     String compareMultipleStorageFormatsToDataCenterWarningMessage(String dataCenterName, String storageDomainNames);
+
+    String clusterSnapshotOptionNotExist();
+
+    String detachStorageDomainContainsEntitiesWithDisksOnMultipleSDsFromDC();
+
+    String detachStorageDomainsContainEntitiesWithDisksOnMultipleSDs();
+
+    String removeStorageDomainWithMemoryVolumesOnMultipleSDs(String diskIds);
+
+    String removeStorageDomainFromDataCenterWithMemoryVolumesOnMultipleSDs(String storageDomainName, String diskIds);
+
+    String virtioScsiRequired();
+
+    String creatingIsoDomainDeprecatedMessage();
 }

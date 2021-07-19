@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.ovirt.engine.core.common.action.ActionType;
+import org.ovirt.engine.core.common.businessentities.AutoPinningPolicy;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.StoragePool;
 import org.ovirt.engine.core.common.businessentities.VDS;
@@ -84,19 +85,30 @@ public class ExistingVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
             instanceTypeManager.setAlwaysEnabledFieldUpdate(true);
         }
 
-        Frontend.getInstance().runQuery(QueryType.GetVmNumaNodesByVmId,
-                new IdQueryParameters(vm.getId()),
-                new AsyncQuery<QueryReturnValue>(returnValue -> {
-                    List<VmNumaNode> nodes = returnValue.getReturnValue();
-                    getModel().setVmNumaNodes(nodes);
-                    getModel().updateNodeCount(nodes.size());
-                }));
+        if (vm.isNextRunConfigurationExists()) {
+            getModel().setVmNumaNodes(vm.getvNumaNodeList());
+            getModel().updateNodeCount(vm.getvNumaNodeList().size());
+        } else {
+            Frontend.getInstance().runQuery(QueryType.GetVmNumaNodesByVmId,
+                    new IdQueryParameters(vm.getId()),
+                    new AsyncQuery<QueryReturnValue>(returnValue -> {
+                        List<VmNumaNode> nodes = returnValue.getReturnValue();
+                        getModel().setVmNumaNodes(nodes);
+                        getModel().updateNodeCount(nodes.size());
+                    }));
+        }
         // load dedicated host names into host names list
         if (getVm().getDedicatedVmForVdsList().size() > 0) {
             Frontend.getInstance().runQuery(QueryType.GetAllHostNamesPinnedToVmById,
                     new IdQueryParameters(vm.getId()),
                     asyncQuery((QueryReturnValue returnValue) ->
                             setDedicatedHostsNames((List<String>) returnValue.getReturnValue())));
+        }
+
+        if (getVm().isHostedEngine()) {
+            getModel().getIsHighlyAvailable().setEntity(false);
+            getModel().getIsHighlyAvailable().setIsChangeable(false);
+            getModel().getIsHighlyAvailable().setChangeProhibitionReason(constants.noHaWhenHostedEngineUsed());
         }
     }
 
@@ -475,14 +487,6 @@ public class ExistingVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
     }
 
     @Override
-    public void enableSinglePCI(boolean enabled) {
-        super.enableSinglePCI(enabled);
-        if (getInstanceTypeManager() != null) {
-            getInstanceTypeManager().maybeSetSingleQxlPci(vm.getStaticData());
-        }
-    }
-
-    @Override
     public ExistingVmInstanceTypeManager getInstanceTypeManager() {
         return (ExistingVmInstanceTypeManager) instanceTypeManager;
     }
@@ -509,20 +513,29 @@ public class ExistingVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
     }
 
     @Override
-    public void updateHaAvailability() {
-        super.updateHaAvailability();
-
-        if (getVm() != null && getVm().isHostedEngine()) {
-            getModel().getIsHighlyAvailable().setEntity(false);
-            getModel().getIsHighlyAvailable().setIsChangeable(false);
-            getModel().getIsHighlyAvailable().setChangeProhibitionReason(constants.noHaWhenHostedEngineUsed());
-        }
-    }
-
-    @Override
     public void updateMaxMemory() {
         if (vm.getStatus() != VMStatus.Up) {
             super.updateMaxMemory();
         }
+    }
+
+    @Override
+    protected void updateAutoPinning() {
+        getModel().getAutoPinningPolicy().setSelectedItem(AutoPinningPolicy.NONE);
+        if (getModel().getIsAutoAssign().getEntity() == null) {
+            return;
+        }
+
+        if (!isAutoPinningPossible()) {
+            getModel().getAutoPinningPolicy().setIsChangeable(false);
+        } else {
+            getModel().getAutoPinningPolicy().setIsChangeable(true);
+        }
+    }
+
+
+    @Override
+    protected void disableCpuPinningAutoPinningConflict() {
+        getModel().getCpuPinning().setIsChangeable(false, constants.cpuChangesConflictWithAutoPin());
     }
 }

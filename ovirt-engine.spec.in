@@ -1,10 +1,14 @@
 
-
 #
 # CUSTOMIZATION-BEGIN
 #
 # ovirt_build_extra_flags
 # ovirt_build_ut
+%if 0%{?ovirt_build_user_agent:1}
+%global _ovirt_build_user_agent %{ovirt_build_user_agent}
+%else
+%global _ovirt_build_user_agent gecko1_8
+%endif
 %if 0%{?ovirt_build_quick}
 %global _ovirt_build_ut 0
 %global ovirt_build_gwt 0
@@ -13,13 +17,13 @@
 %global _ovirt_build_ut 0
 %global ovirt_build_all_user_agents 0
 %global ovirt_build_locales 0
-%global _ovirt_build_extra_flags -D gwt.userAgent=gecko1_8
+%global _ovirt_build_extra_flags -D gwt.userAgent=%{_ovirt_build_user_agent}
 %endif
 %if 0%{?ovirt_build_draft}
 %global _ovirt_build_ut 0
 %global ovirt_build_all_user_agents 0
 %global ovirt_build_locales 0
-%global _ovirt_build_extra_flags -D gwt.userAgent=gecko1_8 -P gwtdraft
+%global _ovirt_build_extra_flags -D gwt.userAgent=%{_ovirt_build_user_agent} -P gwtdraft
 %endif
 %if 0%{!?ovirt_build_ut:1}
 %if 0%{?_ovirt_build_ut:1}
@@ -37,30 +41,29 @@
 %if 0%{!?ovirt_build_all_user_agents:1}
 %global ovirt_build_all_user_agents 1
 %endif
+# define "ovirt_provides_jboss 0" to use EAP 7
+#if True
+%global ovirt_provides_jboss 0
+#else
+%global ovirt_provides_jboss 1
+#end if
 #
 # CUSTOMIZATION-END
 #
 
-#
-# Automatic byte compiling outside of /usr/lib(64)?/pythonX.Y/ should be used
-# on Fedora 28+ and EL8 [1], but it would require too much work to support
-# on EL7, so it's turned off
-#
-# [1] https://fedoraproject.org/wiki/Changes/No_more_automagic_Python_bytecompilation#How_we_are_changing_it
-#
-%if 0%{?fedora} || 0%{?rhel} >= 8
-%global use_python_bytecompile 1
-%global _python_bytecompile_extra 0
-%global with_python2 0
-%else
-%global use_python_bytecompile 0
-%global _python_bytecompile_extra 1
-%global with_python2 1
-%endif
+#raw
 
 # Do not repack .jar files, as it takes a long time and doesn't have a
 # real benefit:
 %global __jar_repack 0
+
+%if !%{ovirt_provides_jboss}
+#
+# unsign all provided jars
+# see rhbz#1019637
+#
+%global _jarsign_opts --unsign=/usr/share/ovirt-engine
+%endif
 
 #
 # rpm does not support override
@@ -77,28 +80,12 @@
 #
 
 %global ovirt_install_poms 1
-%global ovirt_provides_jboss 1
-%if 0%{?fedora} || 0%{?rhel} >= 8
-%global ovirt_rh_postgresql 0
-%global postgresql_systemd_service postgresql.service
-%else
-%global ovirt_rh_postgresql 1
-#The postgresql SCL service we can upgrade from
-%global old_scl_pg_base rh-postgresql95
-%global scl_pg_base rh-postgresql10
-%global postgresql_systemd_service %{scl_pg_base}-postgresql.service
-%endif
 
 %global ovirt_product_name oVirt Engine
 %global ovirt_product_name_short oVirt Engine
 %global ovirt_product_group Virtualization/Management
 %global ovirt_user_description oVirt Manager
 
-%if 0%{?fedora} || 0%{?rhel} >= 8
-%global policycoreutils_python_utils policycoreutils-python-utils
-%else
-%global policycoreutils_python_utils policycoreutils-python
-%endif
 
 %global engine_cache %{_localstatedir}/cache/%{engine_name}
 %global engine_data %{_datadir}/%{engine_name}
@@ -130,8 +117,11 @@
 %global vdsm_uid 36
 %global vdsm_user vdsm
 
+# Minimal required OpenJDK version
+%global openjdk_version 11.0.11
+
 %if 0%{?rhel} || 0%{?fedora} >= 31
-%global openstack_java_version 3.2.8
+%global openstack_java_version 3.2.9
 %else
 # Needed only until we build for Fedora 30
 %global openstack_java_version 3.2.7
@@ -160,50 +150,11 @@ getent passwd %1 >/dev/null || useradd -r -u %2 -g %3 -c %5 -s /sbin/nologin -d 
 %global wildfly_overlay_modules "/usr/share/ovirt-engine-wildfly-overlay/modules"
 %else
 %global wildfly_overlay_modules ""
-%endif
-
-# l,r are macro flags used to constract the correct python2 name
-# only one flag should be provided in normal usage
-# If you pass -l, then macro expands to: {l value}{all arguments}
-# If you pass -r, then macro expands to: {all arguments}{r value}
-%if 0%{?fedora} || 0%{?rhel} >= 8
-%global with_python3 1
-%define required_python_lib(l:r:) python%{python3_pkgversion}-%{*}
-%define py_version 3
-%else
-%global with_python3 0
-%define required_python_lib(l:r:) %{-l*}%{*}%{-r*}
-%define py_version 2
-%endif
-
-%global required_python_lib_ovirt_engine_lib %{required_python_lib -l python2- %{name}-lib >= %{version}-%{release}}
-%global required_python_lib_jinja2 %{required_python_lib -l python- jinja2}
-%global required_python_lib_mod_wsgi %{required_python_lib -l python2- mod_wsgi}
-%global required_python_lib_ovirt_setup_lib %{required_python_lib ovirt-setup-lib >= 1.1.1}
-%global required_python_lib_libxml2 %{required_python_lib -r -python libxml2}
-%global required_python_lib_otopi %{required_python_lib -l python2- otopi >= 1.9.0}
-%global required_python_lib_otopi_devtools %{required_python_lib -l python2- otopi-devtools >= 1.9.0}
-%global required_python_lib_paramiko %{required_python_lib -l python- paramiko}
-%global required_python_lib_libselinux %{required_python_lib -r -python libselinux}
-%global required_python_lib_psycopg2 %{required_python_lib -l python- psycopg2}
-%global required_python_lib_pwquality %{required_python_lib -l python- pwquality}
-%global required_python_lib_dnf %{required_python_lib dnf}
-%global required_python_lib_dateutil %{required_python_lib -l python- dateutil}
-%global required_python_lib_netaddr %{required_python_lib -l python- netaddr}
-%global required_python_lib_six %{required_python_lib -l python- six}
-%global required_python_lib_numpy %{required_python_lib numpy}
-%global required_python_lib_websockify %{required_python_lib -l python- websockify >= 0.6.0}
-%global required_python_lib_websocket %{required_python_lib -l python- websocket-client}
-%if 0%{?fedora} || 0%{?rhel} >= 8
-%global required_python_lib_m2crypto python3-m2crypto >= 0.28
-%global required_package_manager %{required_python_lib_dnf}
-%global required_package_manager_versionlock %{required_python_lib dnf-plugins-extras-versionlock}
-%global required_python_ssl python3-pyOpenSSL
-%else
-%global required_python_lib_m2crypto m2crypto
-%global required_package_manager yum
-%global required_package_manager_versionlock yum-plugin-versionlock
-%global required_python_ssl pyOpenSSL
+%define extra_common_opts \\\
+	MVN=true \\\
+	BUILD_ENV_VALIDATION=0 \\\
+	JBOSS_HOME=/opt/rh/eap7/root/usr/share/wildfly \\\
+	MAVEN_OUTPUT_DIR=%{_sourcedir}
 %endif
 
 %global make_common_opts \\\
@@ -226,13 +177,9 @@ getent passwd %1 >/dev/null || useradd -r -u %2 -g %3 -c %5 -s /sbin/nologin -d 
 	DATAROOT_DIR=%{_datadir} \\\
 	MAN_DIR=%{_mandir} \\\
 	DOC_DIR=%{_docdir} \\\
-	WITH_PYTHON2=%{with_python2} \\\
-	WITH_PYTHON3=%{with_python3} \\\
-	%{?with_python2: PYTHON=%{__python2}} \\\
-	PYTHON_DIR=%{python2_sitelib} \\\
-	%{?with_python3: PYTHON3=%{__python3}} \\\
-	%{?with_python3: PYTHON3_DIR=%{python3_sitelib}} \\\
-	PY_VERSION=%{py_version} \\\
+	PYTHON_DIR=%{python3_sitelib} \\\
+	PYTHON=%{__python3} \\\
+	PY_VERSION=3 \\\
 	JAVA_DIR=%{_javadir} \\\
 	MAVENPOM_DIR=%{_mavenpomdir} \\\
 	PKG_SYSCONF_DIR=%{engine_etc} \\\
@@ -248,60 +195,100 @@ getent passwd %1 >/dev/null || useradd -r -u %2 -g %3 -c %5 -s /sbin/nologin -d 
 	PKG_STATE_DIR=%{engine_state} \\\
 	PKG_USER=%{engine_user} \\\
 	PKG_GROUP=%{engine_group} \\\
-	POSTGRESQL_SYSTEMD_SERVICE=%{postgresql_systemd_service} \\\
+	POSTGRESQL_SYSTEMD_SERVICE=postgresql.service \\\
 	WILDFLY_OVERLAY_MODULES=%{wildfly_overlay_modules} \\\
-	%{?EXTRA_BUILD_FLAGS:EXTRA_BUILD_FLAGS="%{EXTRA_BUILD_FLAGS}"}
+	%{?EXTRA_BUILD_FLAGS:EXTRA_BUILD_FLAGS="%{EXTRA_BUILD_FLAGS}"} \\\
+	%{?extra_common_opts}
 
+%if %{ovirt_provides_jboss}
+%global ovirt_dependencies ovirt-dependencies/4.4
+%else
+%global ovirt_dependencies rhvm-dependencies/4.4
+
+%global extra_backend_requires Requires: rhvm-branding-rhv >= 4.3.0
+%global extra_setup_requires Requires: rhvm-setup-plugins >= 4.4.0
+%global spice_version 8.0
+%endif
+
+%if %{ovirt_provides_jboss}
 Name:		@PACKAGE_NAME@
 Version:	@RPM_VERSION@
 Release:	@RPM_RELEASE@%{?release_suffix}%{?dist}
+%else
+Name:		ovirt-engine
+# start of cheetah processed code
+#end raw
+#import os
+#import zipfile
+#import re
+#for $artifact in $all_artifacts
+   #if $artifact.endswith('-sources.zip')
+     #set $sourcezip = zipfile.ZipFile($artifact)
+     #set $entry = $sourcezip.namelist()[0]
+     #set $source_rootdir = $entry.split('/')[0]
+     #set $versionmak = $sourcezip.open(os.path.join(source_rootdir, 'version.mak')).read().decode()
+     #set $downstream_rpm_release_prefix = re.search('DOWNSTREAM_RPM_RELEASE_PREFIX=(.*)', $versionmak).group(1)
+     #set $pomxmlhead = $sourcezip.open(os.path.join(source_rootdir, 'pom.xml')).read().decode().splitlines()[:20]
+     #set $pomversionline = [ l for l in $pomxmlhead if '<version>' in l ][0]
+     #set $pomversion = re.search('.*>(.*)<.*', $pomversionline).group(1)
+     #set $release_suffix = ''
+     #if 'SNAPSHOT' in $pomversion
+       #set $release_suffix = '.master'
+     #end if
+   #end if
+#end for
+Version:	$version
+Release:	$downstream_rpm_release_prefix$release$release_suffix%{?dist}
+%endif
 Summary:	Management server for Open Virtualization
 Group:		%{ovirt_product_group}
 License:	ASL 2.0
+%if %{ovirt_provides_jboss}
 URL:		http://www.ovirt.org
 Source0:	http://resources.ovirt.org/pub/ovirt-master-snapshot/src/@PACKAGE_NAME@/@PACKAGE_NAME@-@PACKAGE_VERSION@.tar.gz
+%else
+URL:		http://www.redhat.com/products/virtualization
+#
+# Acquire brew/mead pre-built resources.
+#
+#set $i = 0
+#for $artifact in $all_artifacts
+   #set $source = $artifact.split('/')[-1]
+Source$i:   $source
+   #set $i += 1
+#end for
+%endif
 
 BuildArch:	noarch
 
+%if %{ovirt_provides_jboss}
 BuildRequires:	assertj-core >= 2.2.0
-BuildRequires:	java-1.8.0-openjdk-headless >= 1:1.8.0
-BuildRequires:	java-11-openjdk-devel >= 11.0.4
-BuildRequires:	javapackages-tools
-BuildRequires:	make
-
-%if 0%{?rhel} && 0%{?rhel} < 8
-BuildRequires:	python
-BuildRequires:	rh-maven35-maven >= 3.5.0
-BuildRequires:  rh-maven35-maven-enforcer-plugin
-BuildRequires:	python
-BuildRequires:	python2-devel
-%else
-
 BuildRequires:	maven >= 3.5.0
 BuildRequires:  maven-enforcer-plugin
+%else
+BuildRequires:  perl
 %endif
-
-%if 0%{?with_python3}
+BuildRequires:	java-11-openjdk-devel >= %{openjdk_version}
+BuildRequires:	javapackages-tools
+BuildRequires:	make
 BuildRequires:	python3-devel
-%endif
+BuildRequires:	python3-distro
 BuildRequires:	systemd
 BuildRequires:	unzip
 BuildRequires:	ovirt-jboss-modules-maven-plugin >= 2.0.1
-
-# TODO Replace add_maven_depmap and then remove. See also:
-# https://lists.fedoraproject.org/archives/list/devel@lists.fedoraproject.org/message/R3KZ7VI5DPCMCELFIVJQ4AXB2WQED35C/
-%if 0%{?fedora} || 0%{?rhel} >= 8
 BuildRequires:	javapackages-local
-%endif
 
 Requires(pre):	shadow-utils
 
+%if %{ovirt_provides_jboss}
 # There is no way how to prevent WildFly not being upgraded, so we need to
 # fix engine to work with current and new WildFly version and only afterwards
 # bump the requirement (otherwise we would need to pass wildfly,
 # wildfly-overlay and ovirt-engine through the change queue at once)
-%if %{ovirt_provides_jboss}
-Requires:	ovirt-engine-wildfly-overlay >= 17.0.1
+Requires:	ovirt-engine-wildfly-overlay >= 23
+%else
+Requires:	eap7-wildfly >= 7.3.0
+Requires:	rhvm = %{version}-%{release}
 %endif
 
 Requires:	%{name}-backend = %{version}-%{release}
@@ -312,21 +299,22 @@ Requires:	%{name}-webadmin-portal = %{version}-%{release}
 Requires:	%{name}-websocket-proxy >= %{version}-%{release}
 Requires:	%{name}-vmconsole-proxy-helper >= %{version}-%{release}
 Requires:	%{name}-ui-extensions >= 1.0.4
-Requires:	ansible >= 2.9.0
-Requires:	ansible-runner-service >= 1.0.1
+Requires:	ansible >= 2.9.21, ansible < 2.10.0
+Requires:	ansible-runner-service >= 1.0.6
 Requires:	apache-commons-compress
 Requires:	apache-commons-configuration
 Requires:	apache-commons-jxpath
-Requires:	java-11-openjdk-headless >= 11.0.4
+Requires:	java-11-openjdk-headless >= %{openjdk_version}
 Requires:	javapackages-tools
-Requires:	%{required_python_lib_mod_wsgi} >= 4.6.4
+Requires:	ovirt-imageio-daemon >= 2.0.10-1
+Requires:	python3-mod_wsgi >= 4.6.4
 Requires:	slf4j >= 1.7.0
 Requires:	ws-commons-util
 Requires:	xmlrpc-client
-Requires:	ovirt-ansible-roles >= 1.2.0
+Requires:	ovirt-ansible-collection >= 1.2.0
 Requires:	ovirt-web-ui
 Requires:	ovirt-cockpit-sso
-Requires:	ovirt-engine-api-explorer
+Obsoletes:	ovirt-engine-api-explorer
 
 # Metrics stuff
 Requires:	collectd
@@ -348,24 +336,10 @@ Requires:	libfastjson
 Requires:	liblognorm
 Requires:	libestr
 
-%if 0%{?fedora} || 0%{?rhel} >= 8
-# On Fedora we need newer JDBC drivers to be able to connect to PostgreSQL 10.
-# Unfortunately this package is not available on EL7, so we are going to
-# bundle it within engine until available.
 Requires:	postgresql-jdbc >= 42.2.3
-%endif
 
-%if 0%{?rhel}
-Requires:	%{required_package_manager_versionlock}
-%endif
-
-%if %{ovirt_rh_postgresql}
-Requires:	%{scl_pg_base}-postgresql-server
-Requires:	%{scl_pg_base}-postgresql-contrib
-%else
-Requires:	postgresql-server >= 10.0
-Requires:	postgresql-contrib >= 10.0
-%endif
+Requires:	postgresql-server >= 12.0
+Requires:	postgresql-contrib >= 12.0
 
 Requires:	openstack-java-cinder-client >= %{openstack_java_version}
 Requires:	openstack-java-cinder-model >= %{openstack_java_version}
@@ -377,22 +351,14 @@ Requires:	openstack-java-keystone-model >= %{openstack_java_version}
 Requires:	openstack-java-quantum-client >= %{openstack_java_version}
 Requires:	openstack-java-quantum-model >= %{openstack_java_version}
 Requires:	openstack-java-resteasy-connector >= %{openstack_java_version}
-
-%if 0%{?fedora} || 0%{?rhel} >= 8
-Requires:	%{required_package_manager_versionlock}
-Requires:	apache-sshd
-
-# On Fedora slf4j package is split and we need also jdk14 and jcl-over-slf4j
-# parts
+Requires:	python3-dnf-plugin-versionlock
+Requires:	apache-sshd >= 2.6.0
+Requires:	ed25519-java >= 0.3.0
 Requires:	slf4j-jdk14 >= 1.7.0
 Requires:	jcl-over-slf4j >= 1.7.0
 Requires:	snmp4j >= 2.4.1
-%endif
-
-%if 0%{?fedora}
-# quartz is not available on RHEL
-Requires:	quartz
-%endif
+Requires:	ovirt-dependencies >= 4.4.2
+%{?extra_main_requires}
 
 # We can't require exactly the same version and release of the
 # setup package because it needs to be updated independently as part
@@ -410,7 +376,7 @@ Conflicts:	python3-ipaserver
 Obsoletes:	%{name}-userportal
 
 # OVS/OVN stuff
-Requires:	%{required_python_ssl}
+Requires:	python3-pyOpenSSL
 Requires:	ovirt-provider-ovn >= 1.2.1
 
 #JavaScript and CSS libraries are currently bundled
@@ -425,28 +391,27 @@ Provides:	bundled(js-patternfly-next) = 2.26.1
 system that provides advanced capabilities for managing the Open
 virtualization infrastructure for Servers and Desktops.
 
-%if 0%{with_python2}
-%package -n python2-%{name}-lib
-Summary:	%{ovirt_product_name_short} library
-Group:		%{ovirt_product_group}
-Requires:	m2crypto
-Requires:	python-dateutil
-Requires:	python-daemon
-Conflicts:	python-daemon = 2.1.0
-Provides:	%{name}-lib = %{version}-%{release}
-Obsoletes:	%{name}-lib < %{version}-%{release}
+%if !%{ovirt_provides_jboss}
+%package -n rhvm
+Summary:    Red Hat Virtualization Manager
+Group:      %{ovirt_product_group}
+Requires:   ovirt-engine = %{version}-%{release}
+Requires:   ovirt-log-collector >= 4.3.0
+Requires:   rhv-log-collector-analyzer
+# misc packages
+Requires:   spice-client-win-x64 >= %{spice_version}
+Requires:   spice-client-win-x86 >= %{spice_version}
 
-%{?python_provide:%python_provide python2-%{name}-lib}
-
-%description -n python2-%{name}-lib
-%{ovirt_product_name_short} library for python2
+%description -n rhvm
+Red Hat Virtualization is a feature-rich server virtualization management
+system that provides advanced capabilities for managing Red Hat
+virtualization infrastructure for Servers and Desktops.
 %endif
 
-%if 0%{with_python3}
 %package -n python%{python3_pkgversion}-%{name}-lib
 Summary:	%{ovirt_product_name_short} library
 Group:		%{ovirt_product_group}
-Requires:	python3-m2crypto >= 0.28
+Requires:	python3-cryptography
 Requires:	python3-dateutil
 Requires:	python3-daemon >= 2.1.2
 
@@ -454,7 +419,6 @@ Requires:	python3-daemon >= 2.1.2
 
 %description -n python%{python3_pkgversion}-%{name}-lib
 %{ovirt_product_name_short} library for python3
-%endif
 
 %package backend
 Summary:	Engine core of %{ovirt_product_name_short}
@@ -466,18 +430,19 @@ Requires:	aopalliance >= 1.0
 Requires:	curl
 Requires:	ebay-cors-filter
 Requires:	httpd
-Requires:	java-11-openjdk-headless
+Requires:	java-11-openjdk-headless >= %{openjdk_version}
 Requires:	logrotate
 Requires:	mailcap
 Requires:	mod_ssl
 Requires:	novnc >= 1.0.0
-Requires:	%{required_python_lib_ovirt_engine_lib}
+Requires:	python3-%{name}-lib >= %{version}-%{release}
 Requires:	openssh
-Requires:	vdsm-jsonrpc-java >= 1.5.4
-Requires:	java-client-kubevirt >= 0.3.0
+Requires:	vdsm-jsonrpc-java >= 1.6.0, vdsm-jsonrpc-java < 1.7.0
+Requires:	java-client-kubevirt >= 0.5.0
 Requires:	openssl
 Requires:	ovirt-engine-extension-aaa-jdbc >= 1.2.0
-Requires:	%{required_python_lib_jinja2}
+Requires:	python3-jinja2
+%{?extra_backend_requires}
 Requires(pre):	shadow-utils
 Requires(post):		systemd
 Requires(preun):	systemd
@@ -509,16 +474,17 @@ The RESTful API for %{ovirt_product_name_short}
 %package setup-base
 Summary:	%{ovirt_product_name_short} suite base setup components.
 Group:		%{ovirt_product_group}
-Requires:	%{required_python_lib_ovirt_engine_lib}
-Requires:	%{required_python_lib_ovirt_setup_lib}
+Requires:	python3-%{name}-lib >= %{version}-%{release}
+Requires:	python3-ovirt-setup-lib >= 1.1.1
 Requires:	bind-utils
 Requires:	iproute
-Requires:	%{required_python_lib_libxml2}
+Requires:	python3-libxml2
 Requires:	logrotate
-Requires:	%{required_python_lib_otopi}
-Requires:	%{required_python_lib_paramiko}
+Requires:	python3-otopi >= 1.9.0
+Requires:	python3-paramiko
+Requires:	python3-distro
 Requires(pre):	shadow-utils
-Conflicts:	%{name}-dwh < 4.3.0
+Conflicts:	%{name}-dwh < 4.4.0
 Conflicts:	%{name}-dwh-setup < 4.4.0
 
 %description setup-base
@@ -531,6 +497,7 @@ Conflicts:	%{name}-dwh-setup < 4.4.0
 Summary:	Setup and upgrade scripts for %{ovirt_product_name_short}
 Group:		%{ovirt_product_group}
 Requires:	%{name}-setup-plugin-ovirt-engine = %{version}-%{release}
+%{?extra_setup_requires}
 
 %description setup
 Setup and upgrade scripts for %{ovirt_product_name_short}
@@ -551,21 +518,17 @@ rm -f %{engine_setup_rpm_state_flag_file}
 %package setup-plugin-ovirt-engine
 Summary:	Setup and upgrade specific plugins for %{ovirt_product_name_short}
 Group:		%{ovirt_product_group}
-Requires:	%{name} >= 3.6.0
+Requires:	%{name} >= 4.4.0
 Requires:	%{name}-setup-plugin-ovirt-engine-common = %{version}-%{release}
 Requires:	%{name}-setup-plugin-vmconsole-proxy-helper = %{version}-%{release}
 Requires:	%{name}-setup-plugin-cinderlib = %{version}-%{release}
-Requires:	%{name}-dwh-setup >= 4.2
+Requires:	%{name}-setup-plugin-imageio = %{version}-%{release}
+Requires:	%{name}-dwh-setup >= 4.4.1.2
 Requires:	ovirt-engine-extension-aaa-jdbc >= 1.2.0
 Requires:	openssh
-%if %{ovirt_rh_postgresql}
-Requires:       %{scl_pg_base}-postgresql-server
-Requires:       %{scl_pg_base}-postgresql-contrib
-%else
-Requires:       postgresql-server >= 10.0
-Requires:       postgresql-contrib >= 10.0
-%endif
-Conflicts:	%{name} < 4.3.7
+Requires:       postgresql-server >= 12.0
+Requires:       postgresql-contrib >= 12.0
+Conflicts:	%{name} < 4.4.0
 # See rhbz# 1676461
 Requires:	ovirt-vmconsole >= 1.0.7
 
@@ -584,15 +547,14 @@ Setup and upgrade specific plugins for %{ovirt_product_name_short}
 Summary:	Setup and upgrade common plugins for %{ovirt_product_name_short}
 Group:		%{ovirt_product_group}
 Requires:	%{name}-setup-base = %{version}-%{release}
-Requires:	%{required_python_lib_libselinux}
-Requires:	nfs-utils
-Requires:	%{policycoreutils_python_utils}
-Requires:	%{required_python_lib_psycopg2}
+Requires:	python3-libselinux
+Requires:	policycoreutils-python-utils
+Requires:	python3-psycopg2
 Requires(pre):	shadow-utils
-Requires:	java-11-openjdk-headless >= 11.0.4
-Requires:	%{required_python_lib_pwquality}
-Requires:	%{required_python_lib_m2crypto}
-Requires:	%{required_package_manager}
+Requires:	java-11-openjdk-headless >= %{openjdk_version}
+Requires:	python3-pwquality
+Requires:	python3-cryptography
+Requires:	python3-dnf
 
 # We can drop these conflicts when
 # we drop Requires: mod_ssl
@@ -628,15 +590,15 @@ The web administration interface to %{ovirt_product_name_short}
 Summary:	%{ovirt_product_name_short} Tools
 Group:		%{ovirt_product_group}
 Requires:	%{name} = %{version}-%{release}
-Requires:	%{required_python_lib_ovirt_engine_lib}
+Requires:	python3-%{name}-lib >= %{version}-%{release}
 Requires:	%{name}-tools-backup = %{version}-%{release}
 Requires:	ovirt-engine-metrics >= 1.3.4.1
-Requires:	java-11-openjdk-headless
+Requires:	java-11-openjdk-headless >= %{openjdk_version}
 Requires:	logrotate
-Requires:	%{required_python_lib_dateutil}
-Requires:	%{required_python_lib_netaddr}
-Requires:	%{required_python_lib_psycopg2}
-Requires:	%{required_python_lib_six}
+Requires:	python3-dateutil
+Requires:	python3-netaddr
+Requires:	python3-psycopg2
+Requires:	python3-six
 Requires(pre):		shadow-utils
 Requires(post):		systemd
 Requires(preun):	systemd
@@ -667,12 +629,9 @@ Requires:	%{name}-setup-plugin-ovirt-engine-common >= %{version}-%{release}
 Requires:	tar
 Requires:	bzip2
 Requires:	xz
-Requires:	%{required_python_lib_otopi}
-%if %{ovirt_rh_postgresql}
-Requires:	%{scl_pg_base}-postgresql
-%else
-Requires:	postgresql >= 10.0
-%endif
+Requires:	python3-otopi >= 1.9.0
+Requires:	postgresql >= 12.0
+Requires:	sqlite
 
 %description tools-backup
 %{ovirt_product_name_short} Tools (engine-backup)
@@ -680,11 +639,11 @@ Requires:	postgresql >= 10.0
 %package websocket-proxy
 Summary:	%{ovirt_product_name_short} Websocket Proxy
 Group:		%{ovirt_product_group}
-Requires:	%{required_python_lib_ovirt_engine_lib}
-Requires:	%{required_python_lib_numpy}
-Requires:	%{required_python_lib_dateutil}
-Requires:	%{required_python_lib_websockify}
-Requires:	%{required_python_lib_websocket}
+Requires:	python3-%{name}-lib >= %{version}-%{release}
+Requires:	python3-numpy
+Requires:	python3-dateutil
+Requires:	python3-websockify
+Requires:	python3-websocket-client
 Requires:	%{name}-setup-plugin-websocket-proxy >= %{version}-%{release}
 Requires(pre):		shadow-utils
 Requires(post):		systemd
@@ -709,7 +668,7 @@ Requires(postun):	systemd
 %package setup-plugin-websocket-proxy
 Summary:	Setup and upgrade specific plugins for websocket-proxy
 Requires:	%{name}-setup-plugin-ovirt-engine-common = %{version}-%{release}
-Requires:	%{required_python_lib_six}
+Requires:	python3-six
 
 %description setup-plugin-websocket-proxy
 Setup and upgrade specific plugins for websocket-proxy
@@ -717,7 +676,7 @@ Setup and upgrade specific plugins for websocket-proxy
 %package vmconsole-proxy-helper
 Summary:	%{ovirt_product_name_short} VMconsole Proxy Helper
 Group:		%{ovirt_product_group}
-Requires:	%{required_python_lib_ovirt_engine_lib}
+Requires:	python3-%{name}-lib >= %{version}-%{release}
 Requires:	%{name}-setup-plugin-vmconsole-proxy-helper >= %{version}-%{release}
 Requires:	ovirt-vmconsole-proxy
 
@@ -739,7 +698,7 @@ Summary:	%{ovirt_product_name_short} health check bundler.
 Group:		%{ovirt_product_group}
 Requires:	%{name}-setup-base = %{version}-%{release}
 Requires:	makeself >= 2.2
-Requires:	%{required_python_lib_otopi_devtools}
+Requires:	python3-otopi-devtools >= 1.9.0
 
 %description health-check-bundler
 A utility for creating a bundle script that runs a health check.
@@ -753,8 +712,37 @@ Requires:	openssh
 %description setup-plugin-cinderlib
 Setup and upgrade specific plugins for cinderlib integration database
 
+%package setup-plugin-imageio
+Summary:	Setup imageio service.
+Requires:	%{name}-setup-plugin-ovirt-engine = %{version}-%{release}
+Requires:	%{name}-setup-plugin-ovirt-engine-common = %{version}-%{release}
+# For --show-config, needed during upgrade.
+Requires:	ovirt-imageio-daemon >= 2.0.10-1
+
+%description setup-plugin-imageio
+Setup imageio service.
+
 %prep
+%if %{ovirt_provides_jboss}
 %setup -c -q
+%else
+#
+# Collect brew/mead binary artifacts
+#
+#import zipfile
+#set $i = 0
+#for $artifact in $all_artifacts
+   #if $artifact.endswith('-sources.zip')
+     #set $sourcezip = zipfile.ZipFile($artifact)
+     #set $entry = $sourcezip.namelist()[0]
+     #set $source_rootdir = $entry.split('/')[0]
+%setup -q -T -b $i -n $source_rootdir
+   #end if
+   #set $i += 1
+#end for
+#raw
+# end cheetah processed code
+%endif
 
 %build
 
@@ -768,31 +756,16 @@ rm -fr "%{buildroot}"
 make %{make_common_opts} install DESTDIR="%{buildroot}"
 
 # Compile python files
-%if 0%{?with_python2}
-
-%if 0%{?use_python_bytecompile}
-%py_byte_compile %{__python2} %{buildroot}%{engine_data}/
-%py_byte_compile %{__python2} %{buildroot}%{_libexecdir}/
-%endif
-
-%{__python2} -m compileall -f -q -d "%{python2_sitelib}" "%{buildroot}%{python2_sitelib}"
-%{__python2} -O -m compileall -f -q -d "%{python2_sitelib}" "%{buildroot}%{python2_sitelib}"
-%endif
-
-%if 0%{?with_python3}
-
-%if 0%{?use_python_bytecompile}
 %py_byte_compile %{__python3} %{buildroot}%{_libexecdir}/
 %py_byte_compile %{__python3} %{buildroot}%{engine_data}/
-%endif
 
 %{__python3} -m compileall -f -q -d "%{python3_sitelib}" "%{buildroot}%{python3_sitelib}"
 %{__python3} -O -m compileall -f -q -d "%{python3_sitelib}" "%{buildroot}%{python3_sitelib}"
-%endif
 
 #
 # /var creation
 #
+install -dm 750 "%{buildroot}/%{engine_state}"
 install -dm 700 "%{buildroot}/%{engine_state}/.ssh"
 install -dm 755 "%{buildroot}/%{engine_state}"/{content,setup/answers}
 # see also relevant %%dir line to set permissions
@@ -851,7 +824,7 @@ done << __EOF__
 %{engine_jboss_modules}/common/org/ovirt/engine/core/tools/main/tools.jar
 %{engine_jboss_modules}/common/org/ovirt/engine/core/utils/main/utils.jar
 %{engine_jboss_modules}/common/org/ovirt/engine/core/uutils/main/uutils.jar
-%{engine_jboss_modules}/common/org/ovirt/engine/extensions/builtin/main/builtin.jar
+%{engine_jboss_modules}/common/org/ovirt/engine/extension/aaa/builtin/main/builtin.jar
 %{engine_ear}/docs.war/WEB-INF/lib/branding.jar
 %{engine_ear}/enginesso.war/WEB-INF/lib/branding.jar
 %{engine_ear}/webadmin.war/WEB-INF/lib/branding.jar
@@ -936,10 +909,13 @@ common/com/woorea/openstack/sdk/main/openstack-client.jar openstack-java-sdk/ope
 common/com/woorea/openstack/sdk/main/quantum-client.jar openstack-java-sdk/quantum-client.jar
 common/com/woorea/openstack/sdk/main/quantum-model.jar openstack-java-sdk/quantum-model.jar
 common/com/woorea/openstack/sdk/main/resteasy-connector.jar openstack-java-sdk/resteasy-connector.jar
+common/net/i2p/crypto/eddsa/main/eddsa.jar
 common/org/aopalliance/main/aopalliance.jar
 common/org/apache/commons/compress/main/commons-compress.jar
 common/org/apache/commons/configuration/main/commons-configuration.jar
 common/org/apache/commons/jxpath/main/commons-jxpath.jar
+common/org/apache/sshd/main/sshd-core.jar apache-sshd/sshd-core.jar
+common/org/apache/sshd/main/sshd-common.jar apache-sshd/sshd-common.jar
 common/org/apache/ws/commons/main/ws-commons-util.jar
 common/org/apache/xmlrpc/main/xmlrpc-client.jar
 common/org/apache/xmlrpc/main/xmlrpc-common.jar
@@ -947,25 +923,22 @@ common/org/ebaysf/web/cors-filter/main/cors-filter.jar ebay-cors-filter/cors-fil
 common/org/ovirt/engine/api/ovirt-engine-extensions-api/main/ovirt-engine-extensions-api.jar ovirt-engine-extensions-api/ovirt-engine-extensions-api.jar
 common/org/ovirt/java-client-kubevirt/main/java-client-kubevirt.jar java-client-kubevirt/java-client-kubevirt.jar
 common/org/ovirt/vdsm-jsonrpc-java/main/vdsm-jsonrpc-java-client.jar vdsm-jsonrpc-java/vdsm-jsonrpc-java-client.jar
+common/org/postgresql/main/postgresql.jar postgresql-jdbc.jar
+common/org/snmp4j/main/snmp4j.jar snmp4j.jar
 tools/org/slf4j/main/slf4j-api.jar slf4j/slf4j-api.jar
 tools/org/slf4j/main/slf4j-jdk14.jar slf4j/slf4j-jdk14.jar
 tools/org/slf4j/jcl-over-slf4j/main/jcl-over-slf4j.jar slf4j/jcl-over-slf4j.jar
 
-%if 0%{?fedora} || 0%{?rhel} >= 8
-# On Fedora we need newer JDBC drivers to be able to connect to PostgreSQL 10.
-# Unfortunately this package is not available on EL7, so we are going to
-# bundle it within engine until available.
-common/org/postgresql/main/postgresql.jar postgresql-jdbc.jar
-%endif
-
-%if 0%{?fedora} || 0%{?rhel} >= 8
-common/org/apache/sshd/main/sshd-core.jar apache-sshd/sshd-core.jar
-common/org/apache/sshd/main/sshd-common.jar apache-sshd/sshd-common.jar
-common/org/snmp4j/main/snmp4j.jar snmp4j.jar
-%endif
-%if 0%{?fedora}
-common/org/quartz/main/quartz.jar
-%endif
+../engine.ear/webadmin.war/WEB-INF/lib/gwt-servlet.jar %{ovirt_dependencies}/gwt-servlet.jar
+common/org/springframework/main/spring-aop.jar %{ovirt_dependencies}/spring-aop.jar
+common/org/springframework/main/spring-asm.jar %{ovirt_dependencies}/spring-asm.jar
+common/org/springframework/main/spring-beans.jar %{ovirt_dependencies}/spring-beans.jar
+common/org/springframework/main/spring-context.jar %{ovirt_dependencies}/spring-context.jar
+common/org/springframework/main/spring-core.jar %{ovirt_dependencies}/spring-core.jar
+common/org/springframework/main/spring-expression.jar %{ovirt_dependencies}/spring-expression.jar
+common/org/springframework/main/spring-instrument.jar %{ovirt_dependencies}/spring-instrument.jar
+common/org/springframework/main/spring-jdbc.jar %{ovirt_dependencies}/spring-jdbc.jar
+common/org/springframework/main/spring-tx.jar %{ovirt_dependencies}/spring-tx.jar
 __EOF__
 
 
@@ -984,33 +957,19 @@ install -d "%{buildroot}%{_sysconfdir}/ovirt-engine-setup.conf.d"
 cat > "%{buildroot}%{_sysconfdir}/ovirt-engine-setup.conf.d/10-packaging.conf" << __EOF__
 [environment:default]
 OVESETUP_APACHE/configureRootRedirectionDefault=bool:True
+OVESETUP_CONFIG/validFirewallManagers=str:firewalld
+__EOF__
+%if !%{ovirt_provides_jboss}
+# just add to the list
+cat >> "%{buildroot}%{_sysconfdir}/ovirt-engine-setup.conf.d/10-packaging.conf" << __EOF__
+OVESETUP_CONFIG/jbossHome=str:/opt/rh/eap7/root/usr/share/wildfly
+OVESETUP_CONFIG/pkiRenewalDocUrl=str:https://access.redhat.com/solutions/1572983
 __EOF__
 
-%if %{ovirt_rh_postgresql}
-install -d "%{buildroot}%{_sysconfdir}/ovirt-engine-setup.env.d"
-cat > "%{buildroot}%{_sysconfdir}/ovirt-engine-setup.env.d/10-setup-scl-postgres.env" << __EOF__
-RHPOSTGRESQLSCLROOT="/opt/rh/%{scl_pg_base}/root"
-RHPOSTGRESQLSCLDATA="/var/opt/rh/%{scl_pg_base}/lib/pgsql/data"
-if [ -e \${RHPOSTGRESQLSCLROOT}/usr/bin/postgresql-setup ]
-then
-  export sclenv=%{scl_pg_base}
-  export POSTGRESQLENV="COMMAND/pg_dump=str:\${RHPOSTGRESQLSCLROOT}/usr/bin/pg_dump \
-         COMMAND/psql=str:\${RHPOSTGRESQLSCLROOT}/usr/bin/psql \
-         COMMAND/pg_restore=str:\${RHPOSTGRESQLSCLROOT}/usr/bin/pg_restore \
-         COMMAND/postgresql-setup=str:\${RHPOSTGRESQLSCLROOT}/usr/bin/postgresql-setup \
-         OVESETUP_PROVISIONING/postgresService=str:%{scl_pg_base}-postgresql \
-         OVESETUP_PROVISIONING/oldPostgresService=str:%{old_scl_pg_base}-postgresql \
-         OVESETUP_PROVISIONING/postgresConf=str:\${RHPOSTGRESQLSCLDATA}/postgresql.conf \
-         OVESETUP_PROVISIONING/postgresPgHba=str:\${RHPOSTGRESQLSCLDATA}/pg_hba.conf \
-         OVESETUP_PROVISIONING/postgresPgVersion=str:\${RHPOSTGRESQLSCLDATA}/PG_VERSION"
-fi
+cat > "%{buildroot}%{_sysconfdir}/ovirt-engine-setup.conf.d/10-packaging-wsp.conf" << __EOF__
+[environment:default]
 __EOF__
-cat > "%{buildroot}%{engine_etc}/engine.conf.d/10-scl-postgres.conf" << __EOF__
-sclenv=%{scl_pg_base}
-__EOF__
-%endif
-
-%if %{ovirt_provides_jboss}
+%else
 cat > "%{buildroot}%{_sysconfdir}/ovirt-engine-setup.conf.d/10-packaging-jboss.conf" << __EOF__
 [environment:default]
 OVESETUP_CONFIG/jbossHome=str:/usr/share/ovirt-engine-wildfly
@@ -1023,6 +982,19 @@ ln -s %{engine_data}/../ovirt-engine-metrics/bin/ovirt-engine-hosts-ansible-inve
     %{buildroot}/%{engine_data}/playbooks/install-skydive.inventory.sample/00_ovirt-engine-hosts-ansible-inventory
 
 mkdir -p %{buildroot}/%{engine_rpm_state_dir}
+%if !%{ovirt_provides_jboss}
+ln -s /usr/share/spice "%{buildroot}%{engine_data}/files/spice"
+
+#
+# unsign ear
+# see rhbz#1019637
+# copied from redhat-rpm-config::brp-jboss-sign-jars::unsign_jarfile
+#
+rm -f "%{buildroot}%{engine_ear}/META-INF"/*.{DSA,RSA,SF}
+perl -i -pe 'BEGIN{undef $/;} s/Name: [^\n]+\n( [^\n]+\n)*([^\s]+-Digest: [^\n]+\n(\s)?)+(Magic: [^\n]+\n)?\n//mgs' "%{buildroot}%{engine_ear}/META-INF/MANIFEST.MF"
+perl -i -pe 's/^SHA1-Digest: [^\n]+\n//g' "%{buildroot}%{engine_ear}/META-INF/MANIFEST.MF"
+
+%endif
 
 %preun
 if [ "$1" -eq 0 ]; then
@@ -1081,17 +1053,10 @@ fi
 %config %{engine_data}/cinderlib/logger.conf
 %config %attr(0700,%{engine_user},%{engine_group}) %{engine_etc}/cinderlib/ssh_known_hosts
 
-%if 0%{?use_python_bytecompile}
 %{engine_data}/cinderlib/cinderlib-client.*
 %{engine_data}/cinderlib/config.*
-%if 0%{with_python3}
 %{engine_data}/cinderlib/__pycache__/cinderlib-client.*
 %{engine_data}/cinderlib/__pycache__/config.*
-%endif
-%else
-%{engine_data}/cinderlib/cinderlib-client.py*
-%{engine_data}/cinderlib/config.py*
-%endif
 
 #
 # ATTENTION:
@@ -1102,19 +1067,15 @@ fi
 %{_javadir}/%{name}
 %endif
 
-%if 0%{with_python2}
-%files -n python2-%{name}-lib
+%if !%{ovirt_provides_jboss}
+%files -n rhvm
 %license LICENSE
-%{engine_data}/bin/java-home
-%{python2_sitelib}/ovirt_engine/
 %endif
 
-%if 0%{with_python3}
 %files -n python%{python3_pkgversion}-%{name}-lib
 %license LICENSE
 %{engine_data}/bin/java-home
 %{python3_sitelib}/ovirt_engine/
-%endif
 
 %files backend -f .mfiles-backend
 %license LICENSE
@@ -1182,14 +1143,8 @@ fi
 #
 # engine-host-update.py tool
 #
-%if 0%{?use_python_bytecompile}
 %{engine_data}/bin/engine-host-update.*
-%if 0%{with_python3}
 %{engine_data}/bin/__pycache__/engine-host-update.*
-%endif
-%else
-%{engine_data}/bin/engine-host-update.py
-%endif
 
 %files setup-base
 %license LICENSE
@@ -1215,12 +1170,7 @@ fi
 %{engine_data}/setup/bin/ovirt-engine-setup
 %{engine_data}/setup/bin/ovirt-engine-setup.env
 %{engine_data}/setup/ovirt_engine_setup/*.py*
-
-%if 0%{?use_python_bytecompile}
-%if 0%{with_python3}
 %{engine_data}/setup/ovirt_engine_setup/__pycache__/
-%endif
-%endif
 
 %{engine_data}/setup/plugins/*/base/
 %{engine_state}/backups/
@@ -1250,6 +1200,7 @@ fi
 %{engine_data}/setup/plugins/*/ovirt-engine-common/
 %{engine_data}/firewalld/ovirt-common/
 %{engine_data}/setup/ovirt_engine_setup/engine/
+%config %{_sysconfdir}/httpd/conf.d/ovirt-disable-http-trace.conf
 
 
 %if %{ovirt_provides_jboss}
@@ -1257,13 +1208,11 @@ fi
 %config %{engine_etc}/engine.conf.d/20-setup-jboss-overlay.conf
 %endif
 
-%if %{ovirt_rh_postgresql}
-%config %{_sysconfdir}/ovirt-engine-setup.env.d/10-setup-scl-postgres.env
-%config %{engine_etc}/engine.conf.d/10-scl-postgres.conf
-%endif
-
 %files setup-plugin-websocket-proxy
 %license LICENSE
+%if !%{ovirt_provides_jboss}
+%config %{_sysconfdir}/ovirt-engine-setup.conf.d/10-packaging-wsp.conf
+%endif
 %{engine_data}/firewalld/websocket-proxy/
 %{engine_data}/setup/ovirt_engine_setup/websocket_proxy/
 %{engine_data}/setup/plugins/*/websocket_proxy/
@@ -1279,6 +1228,12 @@ fi
 %license LICENSE
 %{engine_data}/setup/ovirt_engine_setup/cinderlib/
 %{engine_data}/setup/plugins/*/cinderlib
+
+%files setup-plugin-imageio
+%license LICENSE
+%{engine_data}/firewalld/ovirt-imageio/
+%{engine_data}/setup/ovirt_engine_setup/ovirt_imageio/
+%{engine_data}/setup/plugins/ovirt-engine-setup/ovirt_imageio/
 
 %files dbscripts
 %license LICENSE
@@ -1331,11 +1286,15 @@ fi
 %{engine_data}/ansible-runner-service-project/project/ovirt-host-deploy.yml
 %{engine_data}/ansible-runner-service-project/project/replace-gluster.yml
 %{engine_data}/ansible-runner-service-project/project/ovirt-host-enroll-certificate.yml
+%{engine_data}/ansible-runner-service-project/project/ovirt-host-fix-encrypted-migrations.yml
 %{engine_data}/ansible-runner-service-project/project/ovirt-host-remove.yml
 %{engine_data}/ansible-runner-service-project/project/ovirt-host-upgrade.yml
 %{engine_data}/ansible-runner-service-project/project/ovirt-host-check-upgrade.yml
 %{engine_data}/ansible-runner-service-project/project/ovirt_host_upgrade_vars.yml
+%{engine_data}/ansible-runner-service-project/project/ovirt-host-remove-yum-conf.yml
+%{engine_data}/ansible-runner-service-project/project/ovirt-host-yum-conf.yml
 %{engine_data}/ansible-runner-service-project/project/ovirt-ova-export.yml
+%{engine_data}/ansible-runner-service-project/project/ovirt-ova-external-data.yml
 %{engine_data}/ansible-runner-service-project/project/ovirt-ova-import.yml
 %{engine_data}/ansible-runner-service-project/project/ovirt-ova-query.yml
 %{engine_data}/ansible-runner-service-project/project/ovirt-image-measure.yml
@@ -1377,14 +1336,8 @@ fi
 %{_mandir}/man8/engine-backup.*
 %{engine_data}/bin/engine-backup.sh
 
-%if 0%{?use_python_bytecompile}
 %{engine_data}/bin/engine-migrate-he.*
-%if 0%{with_python3}
 %{engine_data}/bin/__pycache__/engine-migrate-he.*
-%endif
-%else
-%{engine_data}/bin/engine-migrate-he.py
-%endif
 
 %{engine_backup_default_dir}
 %{engine_backup_log_default_dir}
@@ -1394,6 +1347,180 @@ fi
 %{engine_data}/setup/bin/ovirt-engine-health
 
 %changelog
+* Wed Jul 14 2021 Sandro Bonazzola <sbonazzo@redhat.com> - 4.4.8
+- Bump version to 4.4.8
+
+* Wed Jun 30 2021 Sandro Bonazzola <sbonazzo@redhat.com> - 4.4.7.6
+- Bump version to 4.4.7.6
+
+* Wed Jun 23 2021 Lev Veyde <lveyde@redhat.com> - 4.4.7.5
+- Bump version to 4.4.7.5
+
+* Thu Jun 17 2021 Sandro Bonazzola <sbonazzo@redhat.com> - 4.4.7.4
+- Bump version to 4.4.7.4
+
+* Thu Jun 10 2021 Martin Perinae <mperina@redhat.com> - 4.4.7.3
+- Bump version to 4.4.7.3
+
+* Tue Jun 08 2021 Lev Veyde <lveyde@redhat.com> - 4.4.7.2
+- Bump version to 4.4.7.2
+
+* Thu Jun 03 2021 Sandro Bonazzola <sbonazzo@redhat.com> - 4.4.7.1
+- Bump version to 4.4.7.1
+
+* Tue May 25 2021 Lev Veyde <lveyde@redhat.com> - 4.4.7
+- Bump version to 4.4.7
+
+* Wed Apr 28 2021 Lev Veyde <lveyde@redhat.com> - 4.4.6.6
+- Bump version to 4.4.6.6
+
+* Mon Apr 19 2021 Lev Veyde <lveyde@redhat.com> - 4.4.6.5
+- Bump version to 4.4.6.5
+
+* Tue Apr 13 2021 Lev Veyde <lveyde@redhat.com> - 4.4.6.4
+- Bump version to 4.4.6.4
+
+* Wed Apr 07 2021 Lev Veyde <lveyde@redhat.com> - 4.4.6.3
+- Bump version to 4.4.6.3
+
+* Wed Mar 31 2021 Lev Veyde <lveyde@redhat.com> - 4.4.6.2
+- Bump version to 4.4.6.2
+
+* Wed Mar 24 2021 Lev Veyde <lveyde@redhat.com> - 4.4.6.1
+- Bump version to 4.4.6.1
+
+* Thu Mar 18 2021 Sandro Bonazzola <sbonazzo@redhat.com> - 4.4.6
+- Bump version to 4.4.6
+
+* Tue Mar 02 2021 Sandro Bonazzola <sbonazzo@redhat.com> - 4.4.5.8
+- Bump version to 4.4.5.8
+
+* Wed Feb 24 2021 Lev Veyde <lveyde@redhat.com> - 4.4.5.7
+- Bump version to 4.4.5.7
+
+* Wed Feb 17 2021 Lev Veyde <lveyde@redhat.com> - 4.4.5.6
+- Bump version to 4.4.5.6
+
+* Wed Feb 10 2021 Lev Veyde <lveyde@redhat.com> - 4.4.5.5
+- Bump version to 4.4.5.5
+
+* Wed Feb 03 2021 Lev Veyde <lveyde@redhat.com> - 4.4.5.4
+- Bump version to 4.4.5.4
+
+* Wed Jan 27 2021 Lev Veyde <lveyde@redhat.com> - 4.4.5.3
+- Bump version to 4.4.5.3
+
+* Tue Jan 19 2021 Martin Perina <mperina@redhat.com> - 4.4.5.2
+- Bump version to 4.4.5.2
+
+* Tue Jan 19 2021 Lev Veyde <lveyde@redhat.com> - 4.4.5.1
+- Bump version to 4.4.5.1
+
+* Mon Jan 11 2021 Lev Veyde <lveyde@redhat.com> - 4.4.5
+- Bump version to 4.4.5
+
+* Tue Dec 15 2020 Sandro Bonazzola <sbonazzo@redhat.com> - 4.4.4.5
+- Bump version to 4.4.4.5
+
+* Wed Dec 09 2020 Lev Veyde <lveyde@redhat.com> - 4.4.4.4
+- Bump version to 4.4.4.4
+
+* Tue Dec 01 2020 Lev Veyde <lveyde@redhat.com> - 4.4.4.3
+- Bump version to 4.4.4.3
+
+* Wed Nov 25 2020 Sandro Bonazzola <sbonazzo@redhat.com> - 4.4.4.2
+- Bump version to 4.4.4.2
+
+* Wed Nov 18 2020 Sandro Bonazzola <sbonazzo@redhat.com> - 4.4.4.1
+- Bump version to 4.4.4.1
+
+* Wed Nov 11 2020 Sandro Bonazzola <sbonazzo@redhat.com> - 4.4.4
+- Bump version to 4.4.4
+
+* Mon Nov 09 2020 Sandro Bonazzola <sbonazzo@redhat.com> - 4.4.3.11
+- Bump version to 4.4.3.11
+
+* Mon Nov 02 2020 Lev Veyde <lveyde@redhat.com> - 4.4.3.10
+- Bump version to 4.4.3.10
+
+* Mon Oct 26 2020 Lev Veyde <lveyde@redhat.com> - 4.4.3.9
+- Bump version to 4.4.3.9
+
+* Wed Oct 21 2020 Lev Veyde <lveyde@redhat.com> - 4.4.3.8
+- Bump version to 4.4.3.8
+
+* Tue Oct 13 2020 Lev Veyde <lveyde@redhat.com> - 4.4.3.7
+- Bump version to 4.4.3.7
+
+* Tue Oct 06 2020 Lev Veyde <lveyde@redhat.com> - 4.4.3.6
+- Bump version to 4.4.3.6
+
+* Wed Sep 30 2020 Lev Veyde <lveyde@redhat.com> - 4.4.3.5
+- Bump version to 4.4.3.5
+
+* Tue Sep 22 2020 Lev Veyde <lveyde@redhat.com> - 4.4.3.4
+- Bump version to 4.4.3.4
+
+* Tue Sep 15 2020 Lev Veyde <lveyde@redhat.com> - 4.4.3.3
+- Bump version to 4.4.3.3
+
+* Wed Sep 09 2020 Lev Veyde <lveyde@redhat.com> - 4.4.3.2
+- Bump version to 4.4.3.2
+
+* Tue Sep 01 2020 Lev Veyde <lveyde@redhat.com> - 4.4.3.1
+- Bump version to 4.4.3.1
+
+* Wed Aug 26 2020 Sandro Bonazzola <sbonazzo@redhat.com> - 4.4.3
+- Bump version to 4.4.3
+
+* Wed Aug 12 2020 Sandro Bonazzola <sbonazzo@redhat.com> - 4.4.2.2
+- Bump version to 4.4.2.2
+
+* Tue Aug 04 2020 Lev Veyde <lveyde@redhat.com> - 4.4.2.1
+- Bump version to 4.4.2.1
+
+* Tue Jul 28 2020 Lev Veyde <lveyde@redhat.com> - 4.4.2
+- Bump version to 4.4.2
+
+* Mon Jul 06 2020 Sandro Bonazzola <sbonazzo@redhat.com> - 4.4.1.8
+- Bump version to 4.4.1.8
+
+* Fri Jul 03 2020 Sandro Bonazzola <sbonazzo@redhat.com> - 4.4.1.7
+- Bump version to 4.4.1.7
+
+* Thu Jul 02 2020 Sandro Bonazzola <sbonazzo@redhat.com> - 4.4.1.6
+- Bump version to 4.4.1.6
+
+* Mon Jun 29 2020 Sandro Bonazzola <sbonazzo@redhat.com> - 4.4.1.5
+- Bump version to 4.4.1.5
+
+* Tue Jun 16 2020 Sandro Bonazzola <sbonazzo@redhat.com> - 4.4.1.4
+- Bump version to 4.4.1.4
+
+* Mon Jun 08 2020 Sandro Bonazzola <sbonazzo@redhat.com> - 4.4.1.3
+- Bump version to 4.4.1.3
+
+* Tue Jun 02 2020 Lev Veyde <lveyde@redhat.com> - 4.4.1.2
+- Bump version to 4.4.1.2
+
+* Tue May 26 2020 Lev Veyde <lveyde@redhat.com> - 4.4.1.1
+- Bump version to 4.4.1.1
+
+* Tue May 19 2020 Lev Veyde <lveyde@redhat.com> - 4.4.1
+- Bump version to 4.4.1
+
+* Thu May 14 2020 Lev Veyde <lveyde@redhat.com> - 4.4.0.3
+- Bump version to 4.4.0.3
+
+* Wed May 13 2020 Lev Veyde <lveyde@redhat.com> - 4.4.0.2
+- Bump version to 4.4.0.2
+
+* Tue May 12 2020 Lev Veyde <lveyde@redhat.com> - 4.4.0.1
+- Bump version to 4.4.0.1
+
+* Thu Apr 23 2020 Lev Veyde <lveyde@redhat.com> - 4.4.0
+- Bump version to 4.4.0
+
 * Mon Mar 11 2019 Sandro Bonazzola <sbonazzo@redhat.com> - 4.3.2.1
 - Bump version to 4.3.2.1
 

@@ -110,7 +110,7 @@ public class VmsMonitoring {
         vmAnalyzers.stream().map(VmAnalyzer::getVmId).forEach(vmId -> {
             VmManager vmManager = getVmManager(vmId);
             vmManager.updateVmDataChangedTime();
-            vmManager.unlock();
+            vmManager.unlockVm();
         });
     }
 
@@ -138,7 +138,7 @@ public class VmsMonitoring {
                 } catch (RuntimeException ex) {
                     Guid vmId = getVmId(vm.getFirst(), vm.getSecond());
                     VmManager vmManager = getVmManager(vmId);
-                    vmManager.unlock();
+                    vmManager.unlockVm();
 
                     log.error("Failed during monitoring vm: {} , error is: {}", vmId, ex);
                     log.error("Exception:", ex);
@@ -164,7 +164,7 @@ public class VmsMonitoring {
         Guid vmId = getVmId(pair.getFirst(), pair.getSecond());
         VmManager vmManager = getVmManager(vmId);
 
-        if (!vmManager.trylock()) {
+        if (!vmManager.tryLockVm()) {
             log.debug("skipping VM '{}' from this monitoring cycle" +
                     " - the VM is locked by its VmManager ", vmId);
             return false;
@@ -173,14 +173,14 @@ public class VmsMonitoring {
         if (!vmManager.isLatestData(pair.getSecond(), vdsId)) {
             log.warn("skipping VM '{}' from this monitoring cycle" +
                     " - newer VM data was already processed", vmId);
-            vmManager.unlock();
+            vmManager.unlockVm();
             return false;
         }
 
         if (vmManager.getVmDataChangedTime() != null && fetchTime - vmManager.getVmDataChangedTime() <= 0) {
             log.warn("skipping VM '{}' from this monitoring cycle" +
                     " - the VM data has changed since fetching the data", vmId);
-            vmManager.unlock();
+            vmManager.unlockVm();
             return false;
         }
 
@@ -252,14 +252,14 @@ public class VmsMonitoring {
 
         getVdsEventListener().updateSlaPolicies(succeededToRunVms, vdsManager.getVdsId());
 
+        // process all vms that went down
+        getVdsEventListener().processOnVmStop(movedToDownVms, vdsManager.getVdsId());
+
         // run all vms that crashed that marked with auto startup
         getVdsEventListener().runFailedAutoStartVMs(autoVmsToRun);
 
         // run all vms that went down as a part of cold reboot process
         getVdsEventListener().runColdRebootVms(coldRebootVmsToRun);
-
-        // process all vms that went down
-        getVdsEventListener().processOnVmStop(movedToDownVms, vdsManager.getVdsId());
 
         getVdsEventListener().refreshHostIfAnyVmHasHostDevices(succeededToRunVms, vdsManager.getVdsId());
 

@@ -24,10 +24,6 @@ public class VmStatic extends VmBase {
     private Guid originalTemplateGuid;
 
     @EditableVmField
-    @Size(max = BusinessEntitiesDefinitions.GENERAL_MAX_SIZE)
-    private String cpuPinning;
-
-    @EditableVmField
     private Guid instanceTypeId;
     private Guid imageTypeId;
 
@@ -46,7 +42,7 @@ public class VmStatic extends VmBase {
         setCpuShares(0);
         setDefaultBootSequence(BootSequence.C);
         setDefaultDisplayType(DisplayType.qxl);
-        setVmType(VmType.Desktop);
+        setVmType(VmType.Server);
         vmtGuid = Guid.Empty;
     }
 
@@ -55,7 +51,6 @@ public class VmStatic extends VmBase {
         vmtGuid = vmStatic.getVmtGuid();
         originalTemplateGuid = vmStatic.originalTemplateGuid;
         originalTemplateName = vmStatic.originalTemplateName;
-        cpuPinning = vmStatic.cpuPinning;
         setInitialized(vmStatic.isInitialized());
         setUseLatestVersion(vmStatic.isUseLatestVersion());
         setInstanceTypeId(vmStatic.getInstanceTypeId());
@@ -98,14 +93,6 @@ public class VmStatic extends VmBase {
     @Override
     public Object getQueryableId() {
         return getId();
-    }
-
-    public String getCpuPinning() {
-        return cpuPinning;
-    }
-
-    public void setCpuPinning(String cpuPinning) {
-        this.cpuPinning = cpuPinning;
     }
 
     @Override

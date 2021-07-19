@@ -34,7 +34,6 @@ import org.ovirt.engine.ui.uicommonweb.models.storage.StorageIsoListModel;
 import org.ovirt.engine.ui.uicommonweb.models.storage.StorageLeaseListModel;
 import org.ovirt.engine.ui.uicommonweb.models.storage.StorageListModel;
 import org.ovirt.engine.ui.uicommonweb.models.storage.StorageRegisterDiskImageListModel;
-import org.ovirt.engine.ui.uicommonweb.models.storage.StorageRegisterDiskListModel;
 import org.ovirt.engine.ui.uicommonweb.models.storage.StorageRegisterTemplateListModel;
 import org.ovirt.engine.ui.uicommonweb.models.storage.StorageRegisterVmListModel;
 import org.ovirt.engine.ui.uicommonweb.models.storage.StorageSnapshotListModel;
@@ -107,6 +106,9 @@ public class StorageModule extends AbstractGinModule {
                         } else if (lastExecutedCommand.getName().equals("OnSave") //$NON-NLS-1$
                                   || lastExecutedCommand.getName().equals("OnImport")) { //$NON-NLS-1$
                             return forceCreateConfirmPopupProvider.get();
+                        } else if (lastExecutedCommand.getName().equals("HandleISOForNFS") //$NON-NLS-1$
+                                || lastExecutedCommand.getName().equals("HandleISOForPosix")) { //$NON-NLS-1$
+                            return defaultConfirmPopupProvider.get();
                         } else {
                             return super.getConfirmModelPopup(source, lastExecutedCommand);
                         }
@@ -227,27 +229,6 @@ public class StorageModule extends AbstractGinModule {
                         } else {
                             return super.getConfirmModelPopup(source, lastExecutedCommand);
                         }
-                    }
-                };
-        result.setMainModelProvider(mainModelProvider);
-        result.setModelProvider(modelProvider);
-        return result;
-    }
-
-    @Provides
-    @Singleton
-    public SearchableDetailModelProvider<Disk, StorageListModel, StorageRegisterDiskListModel> getStorageRegisterDiskListProvider(EventBus eventBus,
-            Provider<DefaultConfirmationPopupPresenterWidget> defaultConfirmPopupProvider,
-            final Provider<StorageListModel> mainModelProvider,
-            final Provider<StorageRegisterDiskListModel> modelProvider) {
-
-        SearchableDetailTabModelProvider<Disk, StorageListModel, StorageRegisterDiskListModel> result =
-                new SearchableDetailTabModelProvider<Disk, StorageListModel, StorageRegisterDiskListModel>(
-                        eventBus, defaultConfirmPopupProvider) {
-                    @Override
-                    public AbstractModelBoundPopupPresenterWidget<? extends ConfirmationModel, ?> getConfirmModelPopup(
-                            StorageRegisterDiskListModel source, UICommand lastExecutedCommand) {
-                        return super.getConfirmModelPopup(source, lastExecutedCommand);
                     }
                 };
         result.setMainModelProvider(mainModelProvider);
@@ -552,7 +533,6 @@ public class StorageModule extends AbstractGinModule {
         bind(StorageDataCenterListModel.class).in(Singleton.class);
         bind(StorageIsoListModel.class).in(Singleton.class);
         bind(StorageDiskListModel.class).in(Singleton.class);
-        bind(StorageRegisterDiskListModel.class).in(Singleton.class);
         bind(StorageRegisterDiskImageListModel.class).in(Singleton.class);
         bind(StorageSnapshotListModel.class).in(Singleton.class);
         bind(StorageTemplateListModel.class).in(Singleton.class);

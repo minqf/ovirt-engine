@@ -41,6 +41,7 @@ import org.ovirt.engine.core.common.action.ImportVmFromExternalProviderParameter
 import org.ovirt.engine.core.common.action.ImportVmFromExternalProviderParameters.Phase;
 import org.ovirt.engine.core.common.action.RemoveAllVmImagesParameters;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
+import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.OriginType;
 import org.ovirt.engine.core.common.businessentities.Snapshot.SnapshotStatus;
 import org.ovirt.engine.core.common.businessentities.StorageDomainStatus;
@@ -51,6 +52,7 @@ import org.ovirt.engine.core.common.businessentities.VMStatus;
 import org.ovirt.engine.core.common.businessentities.VmDynamic;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.DiskVmElement;
+import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeType;
 import org.ovirt.engine.core.common.errors.EngineException;
 import org.ovirt.engine.core.common.errors.EngineMessage;
@@ -111,6 +113,14 @@ implements SerialChildExecutingCommand, QuotaStorageDependent {
     }
 
     @Override
+    protected void initBiosType() {
+        if (getVm().getBiosType() == null) {
+            getVm().setBiosType(BiosType.I440FX_SEA_BIOS);
+        }
+        super.initBiosType();
+    }
+
+    @Override
     protected boolean validate() {
         if (!super.validate()) {
             return false;
@@ -139,10 +149,6 @@ implements SerialChildExecutingCommand, QuotaStorageDependent {
         }
 
         if (Guid.isNullOrEmpty(getVdsId()) && !validate(validateEligibleProxyHostExists())) {
-            return false;
-        }
-
-        if (!validateBallonDevice()) {
             return false;
         }
 
@@ -178,7 +184,9 @@ implements SerialChildExecutingCommand, QuotaStorageDependent {
             return false;
         }
 
-        if (getParameters().getVirtioIsoName() != null && getActiveIsoDomainId() == null) {
+        if (getVm().getOrigin() != OriginType.KVM &&
+                getParameters().getVirtioIsoName() != null &&
+                getActiveIsoDomainId() == null) {
             return failValidation(EngineMessage.ERROR_CANNOT_FIND_ISO_IMAGE_PATH);
         }
 
@@ -232,7 +240,8 @@ implements SerialChildExecutingCommand, QuotaStorageDependent {
                 String.format("$storagePoolName %s", getStoragePoolName()));
     }
 
-    private boolean isHostInSupportedClusterForProxyHost(VDS host) {
+    protected boolean isHostInSupportedClusterForProxyHost(VDS host) {
+        // virt-v2v is not available on PPC
         return clusterDao.get(host.getClusterId()).getArchitecture() != ArchitectureType.ppc64;
     }
 
@@ -348,11 +357,13 @@ implements SerialChildExecutingCommand, QuotaStorageDependent {
                 && getStorageDomain() != null
                 && getStorageDomain().getStorageType().isBlockDomain()) {
             getVm().getImages().forEach(image -> {
-                image.setActualSizeInBytes(image.getSize());
-                image.setVolumeType(VolumeType.Preallocated);
+                if (image.getVolumeFormat() == VolumeFormat.RAW) {
+                    image.setActualSizeInBytes(image.getSize());
+                    image.setVolumeType(VolumeType.Preallocated);
+                }
             });
 
-            log.info("Block Storage Domains do not support Sparseness. The Importing of VM: '{}'({}) is defaulting to Preallocated.",
+            log.info("Block Storage Domains do not support Sparseness for RAW files. The Importing of VM: '{}'({}) may default to Preallocated.",
                     getVm().getName(), getVm().getId());
         }
     }

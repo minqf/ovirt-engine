@@ -1,8 +1,10 @@
 package org.ovirt.engine.core.dao;
 
+import java.util.Date;
 import java.util.List;
 
 import org.ovirt.engine.core.common.businessentities.VmBackup;
+import org.ovirt.engine.core.common.businessentities.VmBackupPhase;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.compat.Guid;
 
@@ -52,10 +54,12 @@ public interface VmBackupDao extends GenericDao<VmBackup, Guid> {
     List<DiskImage> getDisksByBackupId(Guid backupId);
 
     /**
-     * Remove all disks from VM backup
+     * Deletes completed backups.
+     * Successful backups have {@link VmBackupPhase#SUCCEEDED} status.
+     * Failed backups have {@link VmBackupPhase#FAILED} status.
      *
-     * @param backupId the VM backup id
+     * @param succeededBackups all successful backups having older end time than this date will be deleted.
+     * @param failedBackups all failed backups having older end time than this date will be deleted.
      */
-    void removeAllDisksFromBackup(Guid backupId);
-
+    void deleteCompletedBackups(Date succeededBackups, Date failedBackups);
 }

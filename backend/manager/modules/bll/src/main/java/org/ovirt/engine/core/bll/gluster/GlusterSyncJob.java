@@ -18,6 +18,7 @@ import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.bll.interfaces.BackendInternal;
 import org.ovirt.engine.core.bll.job.ExecutionHandler;
+import org.ovirt.engine.core.bll.scheduling.OnTimerMethodAnnotation;
 import org.ovirt.engine.core.bll.utils.GlusterEventFactory;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.action.ActionReturnValue;
@@ -62,7 +63,6 @@ import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogable;
 import org.ovirt.engine.core.dao.gluster.GlusterDBUtils;
 import org.ovirt.engine.core.utils.lock.EngineLock;
-import org.ovirt.engine.core.utils.timer.OnTimerMethodAnnotation;
 import org.ovirt.engine.core.utils.transaction.TransactionSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -998,6 +998,17 @@ public class GlusterSyncJob extends GlusterJob {
                     brick.getBrickDetails().setBrickProperties(brickProperties);
                     brickPropertiesToUpdate.add(brick);
                 }
+            } else {
+                /**
+                 * brickProperties Returns data from vds Command
+                 * When Gluster service is down or peer is disconnected then
+                 * the bricks coming from host were not visible in vds output.
+                 * The status for these bricks are skipped and reflect the last queried status.
+                 * This else part will update the status of these brick to Unknown status.
+                 */
+                logBrickStatusChange(volume, brick, GlusterStatus.UNKNOWN);
+                brick.setStatus(GlusterStatus.UNKNOWN);
+                bricksToUpdate.add(brick);
             }
         }
 

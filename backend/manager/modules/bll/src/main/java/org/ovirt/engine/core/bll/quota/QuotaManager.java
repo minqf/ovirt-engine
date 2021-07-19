@@ -419,7 +419,7 @@ public class QuotaManager implements BackendService {
     }
 
     public Guid getFirstQuotaForUserId(Guid storagePoolId, Guid adElementId) {
-        List<Quota> quotas = getQuotaDao().getQuotaByAdElementId(adElementId, storagePoolId, false);
+        List<Quota> quotas = getQuotaDao().getQuotaByAdElementId(adElementId, storagePoolId, true);
         Guid defaultQuotaId = getDefaultQuotaId(storagePoolId);
         if (quotas.isEmpty()) {
             return defaultQuotaId;
@@ -831,7 +831,7 @@ public class QuotaManager implements BackendService {
 
         @Override
         public void apply() {
-            quotaStorage.setStorageSizeGBUsage(storageRequestGB);
+            quotaStorage.setStorageSizeGBUsage(quotaStorage.getStorageSizeGBUsage() + storageRequestGB);
         }
     }
 }

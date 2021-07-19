@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import javax.inject.Inject;
@@ -29,6 +30,8 @@ import org.ovirt.engine.core.bll.utils.CompensationUtils;
 import org.ovirt.engine.core.bll.utils.IconUtils;
 import org.ovirt.engine.core.bll.utils.VmDeviceUtils;
 import org.ovirt.engine.core.common.AuditLogType;
+import org.ovirt.engine.core.common.action.VmExternalDataKind;
+import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.Quota;
 import org.ovirt.engine.core.common.businessentities.Snapshot;
@@ -49,6 +52,7 @@ import org.ovirt.engine.core.common.businessentities.storage.DiskVmElement;
 import org.ovirt.engine.core.common.businessentities.storage.FullEntityOvfData;
 import org.ovirt.engine.core.common.businessentities.storage.ImageStatus;
 import org.ovirt.engine.core.common.businessentities.storage.ImageStorageDomainMap;
+import org.ovirt.engine.core.common.utils.VmDeviceCommonUtils;
 import org.ovirt.engine.core.common.utils.VmDeviceType;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.Version;
@@ -60,6 +64,7 @@ import org.ovirt.engine.core.dao.DiskImageDao;
 import org.ovirt.engine.core.dao.DiskVmElementDao;
 import org.ovirt.engine.core.dao.QuotaDao;
 import org.ovirt.engine.core.dao.SnapshotDao;
+import org.ovirt.engine.core.dao.VmDao;
 import org.ovirt.engine.core.dao.VmDeviceDao;
 import org.ovirt.engine.core.dao.VmDynamicDao;
 import org.ovirt.engine.core.dao.VmStaticDao;
@@ -96,6 +101,9 @@ public class SnapshotsManager {
 
     @Inject
     private VmStaticDao vmStaticDao;
+
+    @Inject
+    private VmDao vmDao;
 
     @Inject
     private VmNetworkInterfaceDao vmNetworkInterfaceDao;
@@ -207,6 +215,7 @@ public class SnapshotsManager {
                 SnapshotType.ACTIVE,
                 vm,
                 false,
+                null,
                 memoryDumpDiskId,
                 memoryConfDiskId,
                 creationDate,
@@ -230,6 +239,8 @@ public class SnapshotsManager {
      *            The VM to link to & save configuration for (if necessary).
      * @param saveVmConfiguration
      *            Should VM configuration be generated and saved?
+     * @param Set<String> changedFields
+     *            Fields changed (applicable for next run)
      * @param memoryDumpDiskId
      *            The memory dump disk ID
      * @param memoryConfDiskId
@@ -242,6 +253,7 @@ public class SnapshotsManager {
      *            The devices contained in the snapshot
      * @param compensationContext
      *            In case compensation is needed.
+     *
      * @return the saved snapshot
      */
     public Snapshot addSnapshot(Guid snapshotId,
@@ -250,12 +262,14 @@ public class SnapshotsManager {
             SnapshotType snapshotType,
             VM vm,
             boolean saveVmConfiguration,
+            Set<String> changedFields,
             Guid memoryDumpDiskId,
             Guid memoryConfDiskId,
             Date creationDate,
             List<DiskImage> disks,
             Map<Guid, VmDevice> vmDevices,
-            final CompensationContext compensationContext) {
+            final CompensationContext compensationContext
+            ) {
         final Snapshot snapshot = new Snapshot(snapshotId,
                 snapshotStatus,
                 vm.getId(),
@@ -265,7 +279,8 @@ public class SnapshotsManager {
                 creationDate != null ? creationDate : new Date(),
                 vm.getAppList(),
                 memoryDumpDiskId,
-                memoryConfDiskId);
+                memoryConfDiskId,
+                changedFields);
 
         CompensationUtils.saveEntity(snapshot, snapshotDao, compensationContext);
         return snapshot;
@@ -303,6 +318,7 @@ public class SnapshotsManager {
         disks.forEach(image -> image.setStorageIds(null));
         FullEntityOvfData fullEntityOvfData = new FullEntityOvfData(vm);
         fullEntityOvfData.setDiskImages(disks);
+        addVmExternalData(fullEntityOvfData.getVmExternalData(), vm);
 
         if (vm.getStaticData().getVmInit() == null) {
             vmHandler.updateVmInitFromDB(vm.getStaticData(), true);
@@ -316,6 +332,21 @@ public class SnapshotsManager {
         for (Disk disk : disks) {
             DiskVmElement dve = diskVmElementDao.get(new VmDeviceId(disk.getId(), vmId));
             disk.setDiskVmElements(Collections.singletonList(dve));
+        }
+    }
+
+    private void addVmExternalData(Map<VmExternalDataKind, String> vmExternalData, VM vm) {
+        if (VmDeviceCommonUtils.isVmDeviceExists(vm.getStaticData().getManagedDeviceMap(), VmDeviceType.TPM)) {
+            String tpmData = vmDao.getTpmData(vm.getId()).getFirst();
+            if (tpmData != null && !tpmData.equals("")) {
+                vmExternalData.put(VmExternalDataKind.TPM, tpmData);
+            }
+        }
+        if (vm.getBiosType() == BiosType.Q35_SECURE_BOOT) {
+            String nvramData = vmDao.getNvramData(vm.getId()).getFirst();
+            if (nvramData != null && !nvramData.equals("")) {
+                vmExternalData.put(VmExternalDataKind.NVRAM, nvramData);
+            }
         }
     }
 
@@ -418,7 +449,13 @@ public class SnapshotsManager {
 
         vm.setAppList(snapshot.getAppList());
         vmDynamicDao.update(vm.getDynamicData());
-        synchronizeDisksFromSnapshot(vm.getId(), snapshot.getId(), activeSnapshotId, vm.getImages(), vm.getName());
+
+        List<DiskImage> imagesToExclude = diskImageDao.getAttachedDiskSnapshotsToVm(vm.getId(), Boolean.TRUE);
+
+        List<DiskImage> diskImagesToSyncFromSnapshot = (images == null || imagesToExclude.isEmpty()) ?
+                vm.getImages() : images;
+        synchronizeDisksFromSnapshot(vm.getId(), snapshot.getId(), activeSnapshotId,
+                diskImagesToSyncFromSnapshot, vm.getName());
 
         if (vmUpdatedFromConfiguration) {
             vmStaticDao.update(vm.getStaticData());
@@ -436,6 +473,7 @@ public class SnapshotsManager {
             }
 
             vmDeviceUtils.addImportedDevices(vm.getStaticData(), false, withMemory);
+            vmDeviceUtils.updateVmExternalData(vm);
         }
     }
 
@@ -513,6 +551,7 @@ public class SnapshotsManager {
             IconUtils.preserveIcons(vm.getStaticData(), oldVmStatic);
             vm.setImages((ArrayList<DiskImage>) fullEntityOvfData.getDiskImages());
             vm.setInterfaces(fullEntityOvfData.getInterfaces());
+            vm.setVmExternalData(fullEntityOvfData.getVmExternalData());
 
             // These fields are not saved in the OVF, so get them from the current VM.
             vm.setIsoPath(oldVmStatic.getIsoPath());

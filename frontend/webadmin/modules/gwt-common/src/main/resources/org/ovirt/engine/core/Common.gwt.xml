@@ -43,6 +43,7 @@
         <include name="common/businessentities/GraphicsInfo.java" />
         <include name="common/businessentities/LeaseStatus.java" />
         <include name="common/businessentities/LocationInfo.java" />
+        <include name="common/businessentities/ManagedBlockStorageLocationInfo.java" />
         <include name="common/businessentities/HttpLocationInfo.java" />
         <include name="common/businessentities/VdsmImageLocationInfo.java" />
         <include name="common/businessentities/ConnectionMethod.java" />
@@ -63,7 +64,6 @@
         <include name="common/businessentities/OpenStackProtocolType.java" />
         <include name="common/businessentities/ExternalNetworkPluginType.java" />
         <include name="common/businessentities/OpenStackImageProviderProperties.java" />
-        <include name="common/businessentities/storage/OpenStackVolumeProviderProperties.java" />
         <include name="common/businessentities/VmBalloonInfo.java" />
         <include name="common/businessentities/ArchitectureType.java" />
         <include name="common/businessentities/IscsiBond.java" />
@@ -80,6 +80,8 @@
         <include name="common/businessentities/HugePage.java" />
         <include name="common/businessentities/ConsoleTargetType.java" />
         <include name="common/businessentities/BiosType.java" />
+        <include name="common/businessentities/AutoPinningPolicy.java" />
+        <include name="common/businessentities/FipsMode.java" />
 
         <!-- Network business entities -->
         <include name="common/businessentities/network/VdsNetworkInterface.java" />
@@ -237,6 +239,7 @@
         <include name="common/businessentities/SnapshotActionEnum.java"/>
         <include name="common/businessentities/VmRngDevice.java" />
         <include name="common/businessentities/UserProfile.java" />
+        <include name="common/businessentities/UserProfileProperty.java" />
         <include name="common/locks/LockInfo.java" />
         <include name="common/businessentities/OsType.java" />
         <include name="common/businessentities/VmHostDevice.java" />
@@ -247,6 +250,7 @@
         <include name="common/businessentities/ClusterEditWarnings.java" />
         <include name="common/businessentities/HostedEngineDeployConfiguration.java" />
         <include name="common/businessentities/SubjectEntity.java" />
+        <include name="common/businessentities/ReplaceHostConfiguration.java" />
         <include name="common/job/*.java" />
 
         <!-- Console -->
@@ -298,6 +302,8 @@
         <include name="common/businessentities/storage/ImageStatus.java" />
         <include name="common/businessentities/storage/ImageTransfer.java" />
         <include name="common/businessentities/storage/ImageTransferPhase.java" />
+        <include name="common/businessentities/storage/TimeoutPolicyType.java" />
+        <include name="common/businessentities/storage/TransferClientType.java" />
         <include name="common/businessentities/storage/TransferType.java" />
         <include name="common/businessentities/storage/LUNs.java" />
         <include name="common/businessentities/storage/LunDisk.java" />
@@ -328,6 +334,10 @@
         <include name="common/businessentities/storage/ImageTransferBackend.java" />
         <include name="common/businessentities/VmBackup.java" />
         <include name="common/businessentities/VmBackupPhase.java" />
+        <include name="common/businessentities/VmCheckpoint.java" />
+        <include name="common/businessentities/VmCheckpointState.java" />
+        <include name="common/businessentities/storage/DiskBackupMode.java" />
+        <include name="common/businessentities/storage/LeaseJobStatus.java" />
 
         <!-- Misc -->
         <include name="common/AuditLogType.java" />
@@ -353,7 +363,11 @@
         <include name="common/utils/NetworkCommonUtils.java"/>
         <include name="common/utils/CompatibilityVersionUtils.java"/>
         <include name="common/utils/MathUtils.java"/>
+        <include name="common/utils/NumaUtils.java"/>
         <include name="common/utils/EmulatedMachineCommonUtils.java" />
+        <include name="common/utils/ClusterEmulatedMachines.java" />
+        <include name="common/utils/CpuUtils.java" />
+        <include name="common/utils/BiosTypeUtils.java" />
 
         <!-- TODO: Remove when UI will be refactored to use FenceProxySourceType -->
         <include name="common/utils/pm/FenceProxySourceTypeHelper.java"/>
@@ -402,6 +416,7 @@
         <include name="common/interfaces/ITagsHandler.java" />
         <!-- UiCommon -->
         <include name="common/ActionUtils.java" />
+        <include name="common/FeatureSupported.java" />
         <include name="common/KubevirtSupportedActions.java" />
 
         <!-- Backend Validation framework -->

@@ -663,7 +663,6 @@ CREATE OR REPLACE FUNCTION InsertVmStatic (
     v_vmt_guid UUID,
     v_creation_date TIMESTAMP WITH TIME ZONE,
     v_num_of_monitors INT,
-    v_single_qxl_pci BOOLEAN,
     v_allow_console_reconnect BOOLEAN,
     v_is_initialized BOOLEAN,
     v_num_of_sockets INT,
@@ -708,7 +707,6 @@ CREATE OR REPLACE FUNCTION InsertVmStatic (
     v_serial_number_policy SMALLINT,
     v_custom_serial_number VARCHAR(255),
     v_is_boot_menu_enabled BOOLEAN,
-    v_numatune_mode VARCHAR(20),
     v_is_spice_file_transfer_enabled BOOLEAN,
     v_is_spice_copy_paste_enabled BOOLEAN,
     v_cpu_profile_id UUID,
@@ -726,8 +724,10 @@ CREATE OR REPLACE FUNCTION InsertVmStatic (
     v_migration_policy_id UUID,
     v_lease_sd_id UUID,
     v_multi_queues_enabled BOOLEAN,
+    v_virtio_scsi_multi_queues_enabled BOOLEAN,
     v_use_tsc_frequency BOOLEAN,
-    v_namespace VARCHAR(253))
+    v_namespace VARCHAR(253),
+    v_balloon_enabled BOOLEAN)
   RETURNS VOID
    AS $procedure$
 DECLARE
@@ -748,7 +748,6 @@ INSERT INTO vm_static(description,
                       vmt_guid,
                       creation_date,
                       num_of_monitors,
-                      single_qxl_pci,
                       allow_console_reconnect,
                       is_initialized,
                       num_of_sockets,
@@ -758,7 +757,6 @@ INSERT INTO vm_static(description,
                       time_zone,
                       auto_startup,
                       is_stateless,
-                      dedicated_vm_for_vds,
                       default_boot_sequence,
                       vm_type,
                       nice_level,
@@ -794,7 +792,6 @@ INSERT INTO vm_static(description,
                       serial_number_policy,
                       custom_serial_number,
                       is_boot_menu_enabled,
-                      numatune_mode,
                       is_spice_file_transfer_enabled,
                       is_spice_copy_paste_enabled,
                       cpu_profile_id,
@@ -812,8 +809,10 @@ INSERT INTO vm_static(description,
                       migration_policy_id,
                       lease_sd_id,
                       multi_queues_enabled,
+                      virtio_scsi_multi_queues_enabled,
                       use_tsc_frequency,
-                      namespace)
+                      namespace,
+                      balloon_enabled)
     VALUES(v_description,
            v_free_text_comment,
            v_mem_size_mb,
@@ -826,7 +825,6 @@ INSERT INTO vm_static(description,
            v_vmt_guid,
            v_creation_date,
            v_num_of_monitors,
-           v_single_qxl_pci,
            v_allow_console_reconnect,
            v_is_initialized,
            v_num_of_sockets,
@@ -836,7 +834,6 @@ INSERT INTO vm_static(description,
            v_time_zone,
            v_auto_startup,
            v_is_stateless,
-           v_dedicated_vm_for_vds,
            v_default_boot_sequence,
            v_vm_type,
            v_nice_level,
@@ -872,7 +869,6 @@ INSERT INTO vm_static(description,
            v_serial_number_policy,
            v_custom_serial_number,
            v_is_boot_menu_enabled,
-           v_numatune_mode,
            v_is_spice_file_transfer_enabled,
            v_is_spice_copy_paste_enabled,
            v_cpu_profile_id,
@@ -890,8 +886,10 @@ INSERT INTO vm_static(description,
            v_migration_policy_id,
            v_lease_sd_id,
            v_multi_queues_enabled,
+           v_virtio_scsi_multi_queues_enabled,
            v_use_tsc_frequency,
-           v_namespace);
+           v_namespace,
+           v_balloon_enabled);
 
     -- perform deletion from vm_ovf_generations to ensure that no record exists when performing insert to avoid PK violation.
     DELETE
@@ -1030,7 +1028,6 @@ Create or replace FUNCTION UpdateVmStatic(v_description VARCHAR(4000) ,
  v_vmt_guid UUID,
  v_creation_date TIMESTAMP WITH TIME ZONE,
  v_num_of_monitors INTEGER,
- v_single_qxl_pci BOOLEAN,
  v_allow_console_reconnect BOOLEAN,
  v_is_initialized BOOLEAN,
     v_num_of_sockets INTEGER,
@@ -1075,7 +1072,6 @@ v_template_version_number INTEGER,
 v_serial_number_policy SMALLINT,
 v_custom_serial_number VARCHAR(255),
 v_is_boot_menu_enabled BOOLEAN,
-v_numatune_mode VARCHAR(20),
 v_is_spice_file_transfer_enabled BOOLEAN,
 v_is_spice_copy_paste_enabled BOOLEAN,
 v_cpu_profile_id UUID,
@@ -1094,8 +1090,10 @@ v_custom_compatibility_version VARCHAR(40),
 v_migration_policy_id UUID,
 v_lease_sd_id UUID,
 v_multi_queues_enabled BOOLEAN,
+v_virtio_scsi_multi_queues_enabled BOOLEAN,
 v_use_tsc_frequency BOOLEAN,
-v_namespace VARCHAR(253))
+v_namespace VARCHAR(253),
+v_balloon_enabled BOOLEAN)
 
 RETURNS VOID
 
@@ -1115,7 +1113,6 @@ BEGIN
      vmt_guid = v_vmt_guid,
      creation_date = v_creation_date,
      num_of_monitors = v_num_of_monitors,
-     single_qxl_pci = v_single_qxl_pci,
      allow_console_reconnect = v_allow_console_reconnect,
      is_initialized = v_is_initialized,
      num_of_sockets = v_num_of_sockets,
@@ -1125,7 +1122,6 @@ BEGIN
      time_zone = v_time_zone,
      auto_startup = v_auto_startup,
      is_stateless = v_is_stateless,
-     dedicated_vm_for_vds = v_dedicated_vm_for_vds,
      vm_type = v_vm_type,
      nice_level = v_nice_level,
      cpu_shares = v_cpu_shares,
@@ -1160,7 +1156,6 @@ BEGIN
      serial_number_policy = v_serial_number_policy,
      custom_serial_number = v_custom_serial_number,
      is_boot_menu_enabled = v_is_boot_menu_enabled,
-     numatune_mode = v_numatune_mode,
      is_spice_file_transfer_enabled = v_is_spice_file_transfer_enabled,
      is_spice_copy_paste_enabled = v_is_spice_copy_paste_enabled,
      cpu_profile_id = v_cpu_profile_id,
@@ -1179,8 +1174,10 @@ BEGIN
      migration_policy_id = v_migration_policy_id,
      lease_sd_id = v_lease_sd_id,
      multi_queues_enabled = v_multi_queues_enabled,
+     virtio_scsi_multi_queues_enabled = v_virtio_scsi_multi_queues_enabled,
      use_tsc_frequency = v_use_tsc_frequency,
-     namespace = v_namespace
+     namespace = v_namespace,
+     balloon_enabled = v_balloon_enabled
      WHERE vm_guid = v_vm_guid
          AND entity_type = 'VM';
 
@@ -1228,24 +1225,23 @@ LANGUAGE plpgsql;
 
 
 
-Create or replace FUNCTION GetAllFromVmStatic() RETURNS SETOF vm_static STABLE
+Create or replace FUNCTION GetAllFromVmStatic() RETURNS SETOF vm_static_view STABLE
    AS $procedure$
 BEGIN
-RETURN QUERY SELECT vm_static.*
-   FROM vm_static
+RETURN QUERY SELECT vm_static_view.*
+   FROM vm_static_view
    WHERE entity_type = 'VM';
-
 END; $procedure$
 LANGUAGE plpgsql;
 
 
 
 
-Create or replace FUNCTION GetVmStaticWithoutIcon() RETURNS SETOF vm_static STABLE
+Create or replace FUNCTION GetVmStaticWithoutIcon() RETURNS SETOF vm_static_view STABLE
 AS $procedure$
 BEGIN
-RETURN QUERY SELECT vm_static.*
-   FROM vm_static
+RETURN QUERY SELECT vm_static_view.*
+   FROM vm_static_view
    WHERE entity_type = 'VM'
       AND (small_icon_id IS NULL OR large_icon_id IS NULL);
 END; $procedure$
@@ -1300,11 +1296,11 @@ LANGUAGE plpgsql;
 
 
 
-Create or replace FUNCTION GetVmStaticByVmGuid(v_vm_guid UUID) RETURNS SETOF vm_static STABLE
+Create or replace FUNCTION GetVmStaticByVmGuid(v_vm_guid UUID) RETURNS SETOF vm_static_view STABLE
    AS $procedure$
 BEGIN
-RETURN QUERY SELECT vm_static.*
-   FROM vm_static
+RETURN QUERY SELECT vm_static_view.*
+   FROM vm_static_view
    WHERE vm_guid = v_vm_guid
        AND   entity_type = 'VM';
 
@@ -1313,11 +1309,11 @@ LANGUAGE plpgsql;
 
 
 
-CREATE OR REPLACE FUNCTION GetVmStaticByVmGuids(v_vm_guids UUID[]) RETURNS SETOF vm_static STABLE
+CREATE OR REPLACE FUNCTION GetVmStaticByVmGuids(v_vm_guids UUID[]) RETURNS SETOF vm_static_view STABLE
    AS $procedure$
 BEGIN
-RETURN QUERY SELECT vm_static.*
-   FROM vm_static
+RETURN QUERY SELECT vm_static_view.*
+   FROM vm_static_view
    WHERE vm_guid = ANY(v_vm_guids)
        AND entity_type = 'VM';
 END; $procedure$
@@ -1325,46 +1321,29 @@ LANGUAGE plpgsql;
 
 
 
-DROP TYPE IF EXISTS GetNamesOfVmStaticDedicatedToVds_rs CASCADE;
-CREATE TYPE GetNamesOfVmStaticDedicatedToVds_rs AS (vm_name CHARACTER VARYING);
-Create or replace FUNCTION GetNamesOfVmStaticDedicatedToVds(v_vds_id UUID) RETURNS SETOF GetNamesOfVmStaticDedicatedToVds_rs STABLE
+Create or replace FUNCTION GetAllFromVmStaticByStoragePoolId(v_sp_id uuid) RETURNS SETOF vm_static_view STABLE
    AS $procedure$
 BEGIN
-   RETURN QUERY
-      SELECT vm_name
-      FROM vm_static
-      WHERE dedicated_vm_for_vds LIKE '%'||v_vds_id::text||'%'
-          AND   migration_support = 2
-          AND   entity_type = 'VM';
-
-END; $procedure$
-LANGUAGE plpgsql;
-
-
-
-Create or replace FUNCTION GetAllFromVmStaticByStoragePoolId(v_sp_id uuid) RETURNS SETOF vm_static STABLE
-   AS $procedure$
-BEGIN
-RETURN QUERY SELECT vm_static.*
-   FROM vm_static INNER JOIN
-        cluster ON vm_static.cluster_id = cluster.cluster_id LEFT OUTER JOIN
-        storage_pool ON vm_static.cluster_id = cluster.cluster_id
+RETURN QUERY SELECT vm_static_view.*
+   FROM vm_static_view INNER JOIN
+        cluster ON vm_static_view.cluster_id = cluster.cluster_id LEFT OUTER JOIN
+        storage_pool ON vm_static_view.cluster_id = cluster.cluster_id
         AND cluster.storage_pool_id = storage_pool.id
    WHERE v_sp_id = storage_pool.id
-       AND   entity_type = 'VM';
+       AND entity_type = 'VM';
 
 END; $procedure$
 LANGUAGE plpgsql;
 
 
 
-Create or replace FUNCTION GetVmStaticByName(v_vm_name VARCHAR(255)) RETURNS SETOF vm_static STABLE
+Create or replace FUNCTION GetVmStaticByName(v_vm_name VARCHAR(255)) RETURNS SETOF vm_static_view STABLE
    AS $procedure$
 BEGIN
-RETURN QUERY SELECT vm_static.*
-   FROM vm_static
+RETURN QUERY SELECT vm_static_view.*
+   FROM vm_static_view
    WHERE vm_name = v_vm_name
-       AND   entity_type = 'VM';
+       AND entity_type = 'VM';
 
 END; $procedure$
 LANGUAGE plpgsql;
@@ -1373,13 +1352,13 @@ LANGUAGE plpgsql;
 
 
 
-Create or replace FUNCTION GetVmStaticByCluster(v_cluster_id UUID) RETURNS SETOF vm_static STABLE
+Create or replace FUNCTION GetVmStaticByCluster(v_cluster_id UUID) RETURNS SETOF vm_static_view STABLE
    AS $procedure$
 BEGIN
-RETURN QUERY SELECT vm_static.*
-   FROM vm_static
+RETURN QUERY SELECT vm_static_view.*
+   FROM vm_static_view
    WHERE cluster_id = v_cluster_id
-       AND   entity_type = 'VM';
+       AND entity_type = 'VM';
 
 END; $procedure$
 LANGUAGE plpgsql;
@@ -1446,17 +1425,17 @@ LANGUAGE plpgsql;
 
 
 
-Create or replace FUNCTION GetAllFromVmsForUserAndActionGroup(v_user_id UUID, v_action_group_id INTEGER) RETURNS SETOF vms STABLE
+Create or replace FUNCTION GetAllRunningVmsForUserAndActionGroup(v_user_id UUID, v_action_group_id INTEGER) RETURNS SETOF vm_dynamic STABLE
    AS $procedure$
 BEGIN
-RETURN QUERY SELECT DISTINCT vms.*
-      FROM vms, vm_permissions_view, permissions_view, engine_session_user_flat_groups
-      WHERE vms.vm_guid = vm_permissions_view.entity_id
-
+RETURN QUERY SELECT DISTINCT vm_dynamic.*
+      FROM vm_dynamic, vm_permissions_view, permissions_view, engine_session_user_flat_groups
+      WHERE vm_dynamic.run_on_vds IS NOT NULL
+          AND   vm_dynamic.vm_guid = vm_permissions_view.entity_id
           AND   vm_permissions_view.user_id = v_user_id
           AND   engine_session_user_flat_groups.user_id = vm_permissions_view.user_id
           -- check the user has permission on any parent for this vm id and Object type 2 (vm)
-          AND   permissions_view.object_id IN (SELECT id FROM fn_get_entity_parents(vms.vm_guid, 2))
+          AND   permissions_view.object_id IN (SELECT id FROM fn_get_entity_parents(vm_dynamic.vm_guid, 2))
           AND   permissions_view.ad_element_id = engine_session_user_flat_groups.granted_id
           AND   permissions_view.role_id IN (SELECT role_id FROM roles_groups WHERE action_group_id = v_action_group_id)
       ORDER BY vm_guid;
@@ -1742,7 +1721,7 @@ RETURNS VOID
    DECLARE
    v_vmt_guid  UUID;
 BEGIN
-      select   vm_static.vmt_guid INTO v_vmt_guid FROM vm_static WHERE vm_guid = v_vm_guid;
+      SELECT vm_static.vmt_guid INTO v_vmt_guid FROM vm_static WHERE vm_guid = v_vm_guid;
       UPDATE vm_static
       SET child_count =(SELECT COUNT(*) FROM vm_static WHERE vmt_guid = v_vmt_guid) -1
       WHERE vm_guid = v_vmt_guid;
@@ -2250,11 +2229,11 @@ LANGUAGE plpgsql;
 
 
 Create or replace FUNCTION GetVmsWithLeaseOnStorageDomain(v_storage_domain_id UUID)
-RETURNS SETOF vm_static STABLE
+RETURNS SETOF vm_static_view STABLE
    AS $procedure$
 BEGIN
-    RETURN QUERY SELECT *
-    FROM vm_static
+    RETURN QUERY SELECT vm_static_view.*
+    FROM vm_static_view
     WHERE lease_sd_id = v_storage_domain_id
         AND entity_type = 'VM';
 END; $procedure$
@@ -2263,11 +2242,11 @@ LANGUAGE plpgsql;
 
 
 
-Create or replace FUNCTION GetActiveVmsWithLeaseOnStorageDomain(v_storage_domain_id UUID)
-RETURNS SETOF vm_static STABLE
+Create or replace FUNCTION GetActiveVmNamesWithLeaseOnStorageDomain(v_storage_domain_id UUID)
+RETURNS SETOF varchar(255) STABLE
    AS $procedure$
 BEGIN
-    RETURN QUERY SELECT vs.*
+    RETURN QUERY SELECT vs.vm_name
     FROM vm_static vs
     JOIN vm_dynamic vd ON vd.vm_guid = vs.vm_guid
     WHERE lease_sd_id = v_storage_domain_id
@@ -2335,11 +2314,11 @@ LANGUAGE plpgsql;
 
 
 Create or replace FUNCTION GetVmsStaticRunningOnVds(v_vds_id UUID)
-RETURNS SETOF vm_static STABLE
+RETURNS SETOF vm_static_view STABLE
    AS $procedure$
 BEGIN
     RETURN QUERY SELECT vs.*
-    FROM vm_static vs
+    FROM vm_static_view vs
     JOIN vm_dynamic vd ON vd.vm_guid = vs.vm_guid
     WHERE run_on_vds = v_vds_id;
 END; $procedure$
@@ -2355,3 +2334,156 @@ BEGIN
     WHERE pin.vds_id = v_host_id;
 END; $procedure$
 LANGUAGE plpgsql;
+
+
+
+
+DROP TYPE IF EXISTS VmExternalData_rs CASCADE;
+CREATE TYPE VmExternalData_rs AS (data TEXT, hash TEXT);
+
+CREATE OR REPLACE FUNCTION GetTpmData (
+    v_vm_id UUID
+)
+RETURNS SETOF VmExternalData_rs STABLE AS $FUNCTION$
+    SELECT tpm_data, tpm_hash
+    FROM vm_external_data
+    WHERE vm_id = v_vm_id
+$FUNCTION$
+LANGUAGE sql;
+
+CREATE OR REPLACE FUNCTION UpdateTpmData (
+    v_vm_id UUID,
+    v_tpm_data TEXT,
+    v_tpm_hash TEXT
+)
+RETURNS VOID AS $PROCEDURE$
+BEGIN
+    INSERT INTO vm_external_data (
+        device_id,
+        vm_id,
+        tpm_data,
+        tpm_hash
+    )
+    SELECT device_id, v_vm_id, v_tpm_data, v_tpm_hash
+    FROM vm_device
+    WHERE v_tpm_data IS NOT NULL AND vm_id = v_vm_id AND type = 'tpm'
+    ON CONFLICT (device_id, vm_id) DO
+    UPDATE
+    SET tpm_data = v_tpm_data,
+        tpm_hash = v_tpm_hash;
+END;$PROCEDURE$
+LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION DeleteTpmData (
+    v_vm_id UUID
+)
+RETURNS VOID AS $PROCEDURE$
+    DELETE FROM vm_external_data
+    WHERE vm_id = v_vm_id
+$PROCEDURE$
+LANGUAGE sql;
+
+CREATE OR REPLACE FUNCTION CopyTpmData (
+    v_source_vm_id UUID,
+    v_target_vm_id UUID
+)
+RETURNS VOID AS $PROCEDURE$
+DECLARE
+    v_device_id UUID := (SELECT device_id
+                         FROM vm_device
+                         WHERE vm_id = v_target_vm_id AND type = 'tpm');
+BEGIN
+    IF v_device_id IS NOT NULL THEN
+        INSERT INTO vm_external_data (
+            device_id,
+            vm_id,
+            tpm_data,
+            tpm_hash
+        )
+        SELECT v_device_id, v_target_vm_id, tpm_data, tpm_hash
+        FROM vm_external_data
+        WHERE vm_id = v_source_vm_id;
+    END IF;
+END;$PROCEDURE$
+LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION GetNvramData (
+    v_vm_id UUID
+)
+RETURNS SETOF VmExternalData_rs AS $FUNCTION$
+    SELECT nvram_data, nvram_hash
+    FROM vm_nvram_data
+    WHERE vm_id = v_vm_id
+$FUNCTION$
+LANGUAGE sql;
+
+CREATE OR REPLACE FUNCTION UpdateNvramData (
+    v_vm_id UUID,
+    v_nvram_data TEXT,
+    v_nvram_hash TEXT
+)
+RETURNS VOID AS $PROCEDURE$
+BEGIN
+    INSERT INTO vm_nvram_data (
+        vm_id,
+        nvram_data,
+        nvram_hash
+    )
+    VALUES (
+        v_vm_id,
+        v_nvram_data,
+        v_nvram_hash
+    )
+    ON CONFLICT (vm_id) DO
+    UPDATE
+    SET nvram_data = v_nvram_data,
+        nvram_hash = v_nvram_hash;
+END;$PROCEDURE$
+LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION DeleteNvramData (
+    v_vm_id UUID
+)
+RETURNS VOID AS $PROCEDURE$
+    DELETE FROM vm_nvram_data
+    WHERE vm_id = v_vm_id
+$PROCEDURE$
+LANGUAGE sql;
+
+CREATE OR REPLACE FUNCTION CopyNvramData (
+    v_source_vm_id UUID,
+    v_target_vm_id UUID
+)
+RETURNS VOID AS $PROCEDURE$
+BEGIN
+    INSERT INTO vm_nvram_data (
+        vm_id,
+        nvram_data,
+        nvram_hash
+    )
+    SELECT v_target_vm_id, nvram_data, nvram_hash
+    FROM vm_nvram_data
+    WHERE vm_id = v_source_vm_id;
+END;$PROCEDURE$
+LANGUAGE plpgsql;
+
+DROP TRIGGER
+IF EXISTS remove_nvram_data_on_update
+    ON vm_static;
+
+CREATE OR REPLACE FUNCTION remove_nvram_data ()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.bios_type = 4 AND NEW.bios_type != 4 THEN
+        DELETE FROM vm_nvram_data
+        WHERE vm_id = OLD.vm_guid;
+    END IF;
+    RETURN NEW;
+END;$$
+LANGUAGE plpgsql;
+
+CREATE TRIGGER remove_nvram_data_on_update AFTER
+UPDATE
+    ON vm_static
+FOR EACH ROW
+EXECUTE FUNCTION remove_nvram_data();

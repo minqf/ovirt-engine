@@ -9,12 +9,12 @@ import org.ovirt.engine.core.vdsbroker.irsbroker.FileStatsReturn;
 import org.ovirt.engine.core.vdsbroker.irsbroker.GetVmsInfoReturn;
 import org.ovirt.engine.core.vdsbroker.irsbroker.IIrsServer;
 import org.ovirt.engine.core.vdsbroker.irsbroker.ImagesListReturn;
+import org.ovirt.engine.core.vdsbroker.irsbroker.LeaseTaskInfoReturn;
 import org.ovirt.engine.core.vdsbroker.irsbroker.OneUuidReturn;
 import org.ovirt.engine.core.vdsbroker.irsbroker.StatusReturn;
 import org.ovirt.engine.core.vdsbroker.irsbroker.StoragePoolInfo;
 import org.ovirt.engine.core.vdsbroker.irsbroker.StorageStatusReturn;
 import org.ovirt.engine.core.vdsbroker.irsbroker.UUIDListReturn;
-import org.ovirt.engine.core.vdsbroker.irsbroker.VmLeaseTaskInfoReturn;
 import org.ovirt.engine.core.vdsbroker.irsbroker.VolumeListReturn;
 import org.ovirt.engine.core.vdsbroker.vdsbroker.LeaseInfoReturn;
 import org.ovirt.engine.core.vdsbroker.vdsbroker.ResizeStorageDomainPVMapReturn;
@@ -48,7 +48,8 @@ public class JsonRpcIIrsServer implements IIrsServer {
             String descr,
             String srcImgGUID,
             String srcVolUUID,
-            String initialSize) {
+            String initialSize,
+            boolean shouldAddBitmaps) {
         JsonRpcRequest request =
                 new RequestBuilder("Volume.create").withParameter("volumeID", volUUID)
                         .withParameter("storagepoolID", spUUID)
@@ -62,6 +63,7 @@ public class JsonRpcIIrsServer implements IIrsServer {
                         .withParameter("srcImgUUID", srcImgGUID)
                         .withParameter("srcVolUUID", srcVolUUID)
                         .withOptionalParameter("initialSize", initialSize)
+                        .withOptionalParameter("addBitmaps", shouldAddBitmaps)
                         .build();
         Map<String, Object> response =
                 new FutureMap(this.client, request).withResponseKey("uuid");
@@ -615,7 +617,7 @@ public class JsonRpcIIrsServer implements IIrsServer {
     }
 
     @Override
-    public VmLeaseTaskInfoReturn addVmLease(String leaseUUID, String sdUUID) {
+    public LeaseTaskInfoReturn addLease(String leaseUUID, String sdUUID, Map<String, Object> leaseMetadata) {
         Map<String, Object> leaseDict = new HashMap<>();
         leaseDict.put("lease_id", leaseUUID);
         leaseDict.put("sd_id", sdUUID);
@@ -623,13 +625,14 @@ public class JsonRpcIIrsServer implements IIrsServer {
         JsonRpcRequest request =
                 new RequestBuilder("Lease.create")
                           .withParameter("lease", leaseDict)
+                          .withParameter("metadata", leaseMetadata)
                         .build();
         Map<String, Object> response = new FutureMap(this.client, request);
-        return new VmLeaseTaskInfoReturn(response);
+        return new LeaseTaskInfoReturn(response);
     }
 
     @Override
-    public VmLeaseTaskInfoReturn removeVmLease(String leaseUUID, String sdUUID) {
+    public LeaseTaskInfoReturn removeLease(String leaseUUID, String sdUUID) {
         Map<String, Object> leaseDict = new HashMap<>();
         leaseDict.put("lease_id", leaseUUID);
         leaseDict.put("sd_id", sdUUID);
@@ -639,11 +642,11 @@ public class JsonRpcIIrsServer implements IIrsServer {
                         .withParameter("lease", leaseDict)
                         .build();
         Map<String, Object> response = new FutureMap(this.client, request);
-        return new VmLeaseTaskInfoReturn(response);
+        return new LeaseTaskInfoReturn(response);
     }
 
     @Override
-    public LeaseInfoReturn getVmLeaseInfo(String leaseUUID, String sdUUID) {
+    public LeaseInfoReturn getLeaseInfo(String leaseUUID, String sdUUID) {
         Map<String, Object> leaseDict = new HashMap<>();
         leaseDict.put("lease_id", leaseUUID);
         leaseDict.put("sd_id", sdUUID);
@@ -656,4 +659,17 @@ public class JsonRpcIIrsServer implements IIrsServer {
         return new LeaseInfoReturn(response);
     }
 
+    @Override
+    public OneUuidReturn switchMaster(String spUUID, String oldMasterUUID, String newMasterUUID,
+            int masterVersion) {
+        JsonRpcRequest request =
+                new RequestBuilder("StoragePool.switchMaster")
+                        .withParameter("storagepoolID", spUUID)
+                        .withParameter("oldMasterUUID", oldMasterUUID)
+                        .withParameter("newMasterUUID", newMasterUUID)
+                        .withParameter("masterVersion", masterVersion)
+                        .build();
+        Map<String, Object> response = new FutureMap(this.client, request).withResponseKey("uuid");
+        return new OneUuidReturn(response);
+    }
 }

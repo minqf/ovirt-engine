@@ -5,6 +5,7 @@
 
 package org.ovirt.engine.core.common.utils.ansible;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
@@ -32,6 +33,11 @@ public class AnsibleReturnValue {
      * Log file of playbook execution. It is only set if user enabled logging
      */
     private Path logFile;
+
+    /**
+     *  Holds the playbook execution UUID. Needed to async executions.
+     */
+    private String playUuid;
 
     public AnsibleReturnValue(AnsibleReturnCode ansibleReturnCode) {
         this(ansibleReturnCode, null);
@@ -72,5 +78,19 @@ public class AnsibleReturnValue {
 
     public void setLogFile(Path logFile) {
         this.logFile = logFile;
+    }
+
+    public void setAnsibleRunnerServiceLogFile() {
+        if (!Files.exists(this.logFile)) {
+            this.logFile = AnsibleConstants.ANSIBLE_RUNNER_SERVICE_LOG;
+        }
+    }
+
+    public void setPlayUuid(String playUuid) {
+        this.playUuid = playUuid;
+    }
+
+    public String getPlayUuid() {
+        return playUuid;
     }
 }

@@ -9,7 +9,6 @@ import org.ovirt.engine.core.common.businessentities.BootSequence;
 import org.ovirt.engine.core.common.businessentities.ConsoleDisconnectAction;
 import org.ovirt.engine.core.common.businessentities.DisplayType;
 import org.ovirt.engine.core.common.businessentities.MigrationSupport;
-import org.ovirt.engine.core.common.businessentities.NumaTuneMode;
 import org.ovirt.engine.core.common.businessentities.OriginType;
 import org.ovirt.engine.core.common.businessentities.SerialNumberPolicy;
 import org.ovirt.engine.core.common.businessentities.SsoMethod;
@@ -48,7 +47,6 @@ public abstract class VmBaseDao<T extends VmBase> extends DefaultGenericDao<T, G
                 .addValue("threads_per_cpu", entity.getThreadsPerCpu())
                 .addValue("os", entity.getOsId())
                 .addValue("num_of_monitors", entity.getNumOfMonitors())
-                .addValue("single_qxl_pci", entity.getSingleQxlPci())
                 .addValue("allow_console_reconnect", entity.isAllowConsoleReconnect())
                 .addValue("vm_type", entity.getVmType())
                 .addValue("priority", entity.getPriority())
@@ -82,7 +80,6 @@ public abstract class VmBaseDao<T extends VmBase> extends DefaultGenericDao<T, G
                 .addValue("is_spice_file_transfer_enabled", entity.isSpiceFileTransferEnabled())
                 .addValue("is_spice_copy_paste_enabled", entity.isSpiceCopyPasteEnabled())
                 .addValue("cpu_profile_id", entity.getCpuProfileId())
-                .addValue("numatune_mode", entity.getNumaTuneMode().getValue())
                 .addValue("is_auto_converge", entity.getAutoConverge())
                 .addValue("is_migrate_compressed", entity.getMigrateCompressed())
                 .addValue("is_migrate_encrypted", entity.getMigrateEncrypted())
@@ -100,7 +97,10 @@ public abstract class VmBaseDao<T extends VmBase> extends DefaultGenericDao<T, G
                 .addValue("migration_policy_id", entity.getMigrationPolicyId())
                 .addValue("lease_sd_id", entity.getLeaseStorageDomainId())
                 .addValue("multi_queues_enabled", entity.isMultiQueuesEnabled())
-                .addValue("use_tsc_frequency", entity.getUseTscFrequency());
+                .addValue("use_tsc_frequency", entity.getUseTscFrequency())
+                .addValue("cpu_pinning", entity.getCpuPinning())
+                .addValue("virtio_scsi_multi_queues_enabled", entity.isVirtioScsiMultiQueuesEnabled())
+                .addValue("balloon_enabled", entity.isBalloonEnabled());
     }
 
     /**
@@ -116,7 +116,6 @@ public abstract class VmBaseDao<T extends VmBase> extends DefaultGenericDao<T, G
             entity.setOsId(rs.getInt("os"));
             entity.setNumOfMonitors(rs.getInt("num_of_monitors"));
             entity.setAllowConsoleReconnect(rs.getBoolean("allow_console_reconnect"));
-            entity.setSingleQxlPci(rs.getBoolean("single_qxl_pci"));
             entity.setDefaultDisplayType(DisplayType.forValue(rs.getInt("default_display_type")));
             entity.setDescription(rs.getString("description"));
             entity.setComment(rs.getString("free_text_comment"));
@@ -157,7 +156,6 @@ public abstract class VmBaseDao<T extends VmBase> extends DefaultGenericDao<T, G
             entity.setMinAllocatedMem(rs.getInt("min_allocated_mem"));
             entity.setQuotaId(getGuid(rs, "quota_id"));
             entity.setCpuProfileId(getGuid(rs, "cpu_profile_id"));
-            entity.setNumaTuneMode(NumaTuneMode.forValue(rs.getString("numatune_mode")));
             entity.setAutoConverge((Boolean) rs.getObject("is_auto_converge"));
             entity.setMigrateCompressed((Boolean) rs.getObject("is_migrate_compressed"));
             entity.setMigrateEncrypted((Boolean) rs.getObject("is_migrate_encrypted"));
@@ -181,6 +179,9 @@ public abstract class VmBaseDao<T extends VmBase> extends DefaultGenericDao<T, G
             entity.setMigrationPolicyId(getGuid(rs, "migration_policy_id"));
             entity.setMultiQueuesEnabled(rs.getBoolean("multi_queues_enabled"));
             entity.setUseTscFrequency(rs.getBoolean("use_tsc_frequency"));
+            entity.setCpuPinning(rs.getString("cpu_pinning"));
+            entity.setVirtioScsiMultiQueuesEnabled(rs.getBoolean("virtio_scsi_multi_queues_enabled"));
+            entity.setBalloonEnabled(rs.getBoolean("balloon_enabled"));
         }
     }
 

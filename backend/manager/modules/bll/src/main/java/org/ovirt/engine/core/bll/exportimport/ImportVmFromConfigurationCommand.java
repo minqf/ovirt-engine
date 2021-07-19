@@ -27,13 +27,12 @@ import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.AttachDetachVmDiskParameters;
 import org.ovirt.engine.core.common.action.ImportVmFromConfParameters;
-import org.ovirt.engine.core.common.action.LockProperties;
-import org.ovirt.engine.core.common.action.LockProperties.Scope;
-import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.Label;
+import org.ovirt.engine.core.common.businessentities.OriginType;
 import org.ovirt.engine.core.common.businessentities.OvfEntityData;
 import org.ovirt.engine.core.common.businessentities.VM;
+import org.ovirt.engine.core.common.businessentities.VmStatic;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
@@ -178,11 +177,6 @@ public class ImportVmFromConfigurationCommand<T extends ImportVmFromConfParamete
     }
 
     @Override
-    protected LockProperties applyLockProperties(LockProperties lockProperties) {
-        return lockProperties.withScope(Scope.Execution);
-    }
-
-    @Override
     protected void init() {
         VM vmFromConfiguration = getParameters().getVm();
         if (vmFromConfiguration != null) {
@@ -228,10 +222,6 @@ public class ImportVmFromConfigurationCommand<T extends ImportVmFromConfParamete
                 setClusterId(getParameters().getClusterId());
                 if (getCluster() != null && getCluster().getBiosType() != null) {
                     vmFromConfiguration.setClusterBiosType(getCluster().getBiosType());
-                }
-
-                if (vmFromConfiguration.getBiosType() == null) {
-                    vmFromConfiguration.setBiosType(BiosType.CLUSTER_DEFAULT);
                 }
 
                 vmFromConfiguration.setClusterId(getParameters().getClusterId());
@@ -345,6 +335,7 @@ public class ImportVmFromConfigurationCommand<T extends ImportVmFromConfParamete
             } else if (!vmDisksToAttach.isEmpty()) {
                 auditLogDirector.log(this, attemptToAttachDisksToImportedVm(vmDisksToAttach));
             }
+            updateBiosType();
         }
         setActionReturnValue(getVm().getId());
     }
@@ -530,6 +521,20 @@ public class ImportVmFromConfigurationCommand<T extends ImportVmFromConfParamete
                 .collect(Collectors.toSet());
         missingRoles = importValidator.findMissingEntities(candidateRoles, val -> roleDao.getByName(val));
         getParameters().getUserToRoles().forEach((k, v) -> v.removeAll(missingRoles));
+    }
+
+    private void updateBiosType() {
+        if (getVm().getOrigin() != OriginType.VMWARE) {
+            return;
+        }
+
+        VmStatic oldVm = getVm().getStaticData();
+        VmStatic newVm = new VmStatic(oldVm);
+
+        vmHandler.updateToQ35(oldVm,
+                newVm,
+                getCluster(),
+                null);
     }
 
     @Override

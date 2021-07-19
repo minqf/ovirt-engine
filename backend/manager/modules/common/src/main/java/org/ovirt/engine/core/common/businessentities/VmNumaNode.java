@@ -10,9 +10,13 @@ import java.util.Objects;
  */
 public class VmNumaNode extends NumaNode {
 
-    private static final long serialVersionUID = -5384287037435972730L;
+    private static final long serialVersionUID = -8359874676349954401L;
+
+    public static final NumaTuneMode DEFAULT_NUMA_TUNE = NumaTuneMode.INTERLEAVE;
 
     private List<Integer> vdsNumaNodeList = new ArrayList<>();
+
+    private NumaTuneMode numaTuneMode = DEFAULT_NUMA_TUNE;
 
     /**
      * @return pNUMA node index
@@ -25,11 +29,20 @@ public class VmNumaNode extends NumaNode {
         this.vdsNumaNodeList = vdsNumaNodeList;
     }
 
+    public NumaTuneMode getNumaTuneMode() {
+        return numaTuneMode;
+    }
+
+    public void setNumaTuneMode(NumaTuneMode numaTuneMode) {
+        this.numaTuneMode = numaTuneMode;
+    }
+
     @Override
     public int hashCode() {
         return Objects.hash(
                 super.hashCode(),
-                vdsNumaNodeList
+                vdsNumaNodeList,
+                numaTuneMode
         );
     }
 
@@ -43,7 +56,8 @@ public class VmNumaNode extends NumaNode {
         }
         VmNumaNode other = (VmNumaNode) obj;
         return super.equals(obj)
-                && Objects.equals(vdsNumaNodeList, other.vdsNumaNodeList);
+                && Objects.equals(vdsNumaNodeList, other.vdsNumaNodeList)
+                && numaTuneMode == other.numaTuneMode;
     }
 
 }

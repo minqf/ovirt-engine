@@ -27,6 +27,7 @@ maven-eclipse.xml
 *.iml
 .idea
 .pydevproject
+.vscode
 
 # python files
 ###########################
@@ -97,6 +98,7 @@ packaging/setup/bin/ovirt-engine-upgrade-check
 packaging/setup/ovirt_engine_setup/config.py
 packaging/setup/ovirt_engine_setup/engine/config.py
 packaging/setup/ovirt_engine_setup/engine_common/config.py
+packaging/setup/ovirt_engine_setup/ovirt_imageio/config.py
 packaging/setup/ovirt_engine_setup/vmconsole_proxy_helper/config.py
 packaging/setup/ovirt_engine_setup/websocket_proxy/config.py
 packaging/sys-etc/logrotate.d/ovirt-engine

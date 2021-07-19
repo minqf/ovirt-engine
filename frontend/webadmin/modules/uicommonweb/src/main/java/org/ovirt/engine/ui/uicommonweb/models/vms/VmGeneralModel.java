@@ -1,11 +1,12 @@
 package org.ovirt.engine.ui.uicommonweb.models.vms;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Objects;
-import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
+import org.ovirt.engine.core.common.businessentities.ArchitectureType;
+import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.QuotaEnforcementTypeEnum;
 import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VM;
@@ -37,7 +38,13 @@ public class VmGeneralModel extends AbstractGeneralModel<VM> {
 
     public static final String CONFIGURED_CPU_TYPE_PROPERTY_CHANGE = "ConfiguredCpuType";//$NON-NLS-1$
 
+    public static final String IS_HOSTED_ENGINE = "IsHostedEngine";//$NON-NLS-1$
+
     public static final String STATUS = "Status";//$NON-NLS-1$
+
+    public static final String ARCHITECTURE = "VmArchitecture";//$NON-NLS-1$
+
+    public static final String BIOS_TYPE = "VmBiosType";//$NON-NLS-1$
 
     private static final VmTemplateNameRenderer vmTemplateNameRenderer = new VmTemplateNameRenderer();
 
@@ -146,6 +153,29 @@ public class VmGeneralModel extends AbstractGeneralModel<VM> {
         }
     }
 
+    private String guestFreeCachedBufferedCombinedMemInfo;
+
+    public String getGuestFreeCachedBufferedCombinedMemInfo() {
+        return guestFreeCachedBufferedCombinedMemInfo;
+    }
+
+    public void setGuestFreeCachedBufferedCombinedMemInfo(String value) {
+        if (!Objects.equals(guestFreeCachedBufferedCombinedMemInfo, value)) {
+            guestFreeCachedBufferedCombinedMemInfo = value;
+            onPropertyChanged(new PropertyChangedEventArgs("GuestFreeCachedBufferedCombinedMemInfo")); //$NON-NLS-1$
+        }
+    }
+
+    private boolean guestMemInfoUsingUnusedMem;
+
+    public boolean isGuestMemInfoUsingUnusedMem() {
+        return guestMemInfoUsingUnusedMem;
+    }
+
+    public void setGuestMemInfoUsingUnusedMem(boolean value) {
+        guestMemInfoUsingUnusedMem = value;
+    }
+
     private String minAllocatedMemory;
 
     public String getMinAllocatedMemory() {
@@ -172,16 +202,29 @@ public class VmGeneralModel extends AbstractGeneralModel<VM> {
         }
     }
 
-    private String biosType;
+    private ArchitectureType architecture;
 
-    public String getBiosType() {
+    public ArchitectureType getArchitecture() {
+        return architecture;
+    }
+
+    public void setArchitecture(ArchitectureType value) {
+        if (!Objects.equals(architecture, value)) {
+            architecture = value;
+            onPropertyChanged(new PropertyChangedEventArgs(ARCHITECTURE));
+        }
+    }
+
+    private BiosType biosType;
+
+    public BiosType getBiosType() {
         return biosType;
     }
 
-    public void setBiosType(String value) {
+    public void setBiosType(BiosType value) {
         if (!Objects.equals(biosType, value)) {
             biosType = value;
-            onPropertyChanged(new PropertyChangedEventArgs("BiosType")); //$NON-NLS-1$
+            onPropertyChanged(new PropertyChangedEventArgs(BIOS_TYPE));
         }
     }
 
@@ -559,6 +602,19 @@ public class VmGeneralModel extends AbstractGeneralModel<VM> {
         }
     }
 
+    private boolean hostedEngine;
+
+    public boolean isHostedEngine() {
+        return hostedEngine;
+    }
+
+    public void setHostedEngine(boolean value) {
+        if (!Objects.equals(hostedEngine, value)) {
+            hostedEngine = value;
+            onPropertyChanged(new PropertyChangedEventArgs(IS_HOSTED_ENGINE));
+        }
+    }
+
     static {
         updateCompleteEventDefinition = new EventDefinition("UpdateComplete", VmGeneralModel.class); //$NON-NLS-1$
     }
@@ -605,18 +661,31 @@ public class VmGeneralModel extends AbstractGeneralModel<VM> {
         setDefinedMemory(vm.getVmMemSizeMb() + " MB"); //$NON-NLS-1$
         setMinAllocatedMemory(vm.getMinAllocatedMem() + " MB"); //$NON-NLS-1$
 
-        if(vm.isRunningOrPaused() && vm.getGuestMemoryBuffered() != null && vm.getGuestMemoryCached() != null  && vm.getGuestMemoryFree() != null) {
-            setGuestFreeCachedBufferedMemInfo((vm.getGuestMemoryFree() / 1024L) + " / " // $NON-NLS-1$
-                                            + (vm.getGuestMemoryBuffered() / 1024L)  + " / " // $NON-NLS-1$
-                                            + (vm.getGuestMemoryCached() / 1024L) + " MB"); //$NON-NLS-1$
-        } else {
-            setGuestFreeCachedBufferedMemInfo(null); // Handled in form
+        if(vm.isRunningOrPaused() && vm.getGuestMemoryFree() != null) {
+            // If old OGA guest memory reported. Zero checks is for windows OGA.
+            if (vm.getGuestMemoryBuffered() != null && vm.getGuestMemoryCached() != null && vm.getGuestMemoryBuffered() != 0 && vm.getGuestMemoryCached() != 0) {
+                setGuestMemInfoUsingUnusedMem(false);
+                setGuestFreeCachedBufferedMemInfo((vm.getGuestMemoryFree() / 1024L) + " / " // $NON-NLS-1$
+                                                + (vm.getGuestMemoryBuffered() / 1024L)  + " / " // $NON-NLS-1$
+                                                + (vm.getGuestMemoryCached() / 1024L) + " MB"); //$NON-NLS-1$
+            } else if (vm.getGuestMemoryUnused() != null && vm.getGuestMemoryUnused() != 0) {
+                setGuestMemInfoUsingUnusedMem(true);
+                setGuestFreeCachedBufferedCombinedMemInfo((vm.getGuestMemoryFree() / 1024L) + " / " // $NON-NLS-1$
+                                                        + ((vm.getGuestMemoryFree() - vm.getGuestMemoryUnused()) / 1024L )
+                                                        + " MB"); // $NON-NLS-1$
+            } else {
+                setGuestFreeCachedBufferedMemInfo(null); // Handled in form
+                setGuestFreeCachedBufferedCombinedMemInfo(null); // Handled in form
+            }
         }
 
         setOS(AsyncDataProvider.getInstance().getOsName(vm.getVmOsId()));
 
         EnumTranslator translator = EnumTranslator.getInstance();
-        setBiosType(translator.translate(vm.getBiosType()));
+
+        setArchitecture(vm.getClusterArch());
+
+        setBiosType(vm.getBiosType());
 
         setDefaultDisplayType(translator.translate(vm.getDefaultDisplayType()));
 
@@ -721,26 +790,38 @@ public class VmGeneralModel extends AbstractGeneralModel<VM> {
             setDefaultHost(ConstantsManager.getInstance().getConstants().anyHostInCluster());
         }
 
-        String guestCpuType = vm.getCpuName() != null
+        setHostedEngine(vm.isHostedEngine());
+        setGuestCpuType(calculateGuestCpuTypeText(vm));
+        setConfiguredCpuType(vm.getConfiguredCpuVerb());
+    }
+
+    private String calculateGuestCpuTypeText(VM vm) {
+        if (vm.isHostedEngine()) {
+            return constants.notAvailableLabel();
+        }
+
+        if (vm.isUseHostCpuFlags()) {
+            if (vm.getCpuName() != null && !vm.getCpuName().isEmpty()) {
+                String guestCpuType = vm.getCpuName();
+
+                // if cpu-pass through is enabled then guestCpuType includes a list of cpu flags and supported cpu
+                // models reported by the host.
+                // Need to filter out all supported CPU models from of the list and leave only all cpu flags that the vm
+                // is running with
+                guestCpuType = Stream.of(guestCpuType.split(",")) //$NON-NLS-1$
+                        .filter(flag -> !flag.contains("model_")) //$NON-NLS-1$
+                        .collect(Collectors.joining(", ")); //$NON-NLS-1$
+                return guestCpuType;
+            } else {
+                return constants.cpuPassthrough();
+            }
+        }
+
+        return vm.getCpuName() != null
                 ? vm.getCpuName()
                 : (vm.getCustomCpuName() != null
                         ? vm.getCustomCpuName()
                         : vm.getClusterCpuVerb());
-
-        if (vm.getCpuName() == null && vm.isUseHostCpuFlags()) {
-            guestCpuType = constants.cpuPassthrough();
-        }
-
-        // if cpu-pass through is enabled then guestCpuType includes a list of cpu flags and supported cpu models reported by the host.
-        // Need to filter out all supported CPU models from of the list and leave only all cpu flags that the vm is running with
-        if (guestCpuType != null && !guestCpuType.isEmpty() && vm.isUseHostCpuFlags()) {
-            Set<String> excludedModelFlags = Arrays.stream(guestCpuType.split(",")) //$NON-NLS-1$
-                    .filter(flag -> !flag.contains("model_")).collect(Collectors.toSet()); //$NON-NLS-1$
-            guestCpuType = String.join(", ", excludedModelFlags); //$NON-NLS-1$
-        }
-
-        setGuestCpuType(guestCpuType);
-        setConfiguredCpuType(vm.getConfiguredCpuVerb());
     }
 
     @Override

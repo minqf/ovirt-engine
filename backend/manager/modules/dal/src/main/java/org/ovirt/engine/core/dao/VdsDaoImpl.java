@@ -352,6 +352,7 @@ public class VdsDaoImpl extends BaseDao implements VdsDao {
         entity.setLibrbdVersion(new RpmVersion(rs.getString("librbd1_version")));
         entity.setGlusterfsCliVersion(new RpmVersion(rs.getString("glusterfs_cli_version")));
         entity.setOvsVersion(new RpmVersion(rs.getString("openvswitch_version")));
+        entity.setNmstateVersion(new RpmVersion(rs.getString("nmstate_version")));
         entity.setKvmVersion(rs.getString("kvm_version"));
         entity.setLibvirtVersion(new RpmVersion(rs.getString("libvirt_version")));
         entity.setSpiceVersion(rs.getString("spice_version"));
@@ -365,6 +366,7 @@ public class VdsDaoImpl extends BaseDao implements VdsDao {
         entity.setVdsSpmPriority(rs.getInt("vds_spm_priority"));
         entity.setAutoRecoverable(rs.getBoolean("recoverable"));
         entity.setSshKeyFingerprint(rs.getString("sshKeyFingerprint"));
+        entity.setSshPublicKey(rs.getString("ssh_public_key"));
         entity.setHostProviderId(getGuid(rs, "host_provider_id"));
         entity.setHardwareManufacturer(rs.getString("hw_manufacturer"));
         entity.setHardwareProductName(rs.getString("hw_product_name"));
@@ -385,7 +387,6 @@ public class VdsDaoImpl extends BaseDao implements VdsDao {
         entity.setBalloonEnabled(rs.getBoolean("enable_balloon"));
         entity.setCountThreadsAsCores(rs.getBoolean("count_threads_as_cores"));
         entity.setMaintenanceReason(rs.getString("maintenance_reason"));
-        entity.getStaticData().setOpenstackNetworkProviderId(getGuid(rs, "openstack_network_provider_id"));
         entity.setUpdateAvailable(rs.getBoolean("is_update_available"));
         entity.setHostDevicePassthroughEnabled(rs.getBoolean("is_hostdev_enabled"));
         entity.setHostedEngineHost(rs.getBoolean("is_hosted_engine_host"));
@@ -405,6 +406,8 @@ public class VdsDaoImpl extends BaseDao implements VdsDao {
         entity.setConnectorInfo(ObjectUtils.mapNullable(
                 rs.getString("connector_info"), JsonHelper::jsonToMapUnchecked));
         entity.setBackupEnabled(rs.getBoolean("backup_enabled"));
+        entity.setColdBackupEnabled(rs.getBoolean("cold_backup_enabled"));
+        entity.setClearBitmapsEnabled(rs.getBoolean("clear_bitmaps_enabled"));
         entity.setSupportedDomainVersionsAsString(rs.getString("supported_domain_versions"));
         entity.setClusterSmtDisabled(rs.getBoolean("cluster_smt_disabled"));
         entity.setSupportedBlockSize(ObjectUtils.mapNullable(
@@ -413,6 +416,7 @@ public class VdsDaoImpl extends BaseDao implements VdsDao {
         entity.setTscScalingEnabled(rs.getBoolean("tsc_scaling"));
         entity.setFipsEnabled(rs.getBoolean("fips_enabled"));
         entity.setBootUuid(rs.getString("boot_uuid"));
+        entity.setCdChangePdiv(rs.getBoolean("cd_change_pdiv"));
         return entity;
     };
 }

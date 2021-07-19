@@ -23,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.ovirt.engine.core.bll.ValidationResult;
+import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.OriginType;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.network.Network;
@@ -30,6 +31,7 @@ import org.ovirt.engine.core.common.businessentities.network.VmInterfaceType;
 import org.ovirt.engine.core.common.businessentities.network.VmNic;
 import org.ovirt.engine.core.common.businessentities.network.VnicProfile;
 import org.ovirt.engine.core.common.errors.EngineMessage;
+import org.ovirt.engine.core.common.network.SwitchType;
 import org.ovirt.engine.core.common.osinfo.OsRepository;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.Version;
@@ -67,10 +69,13 @@ public class VmNicValidatorTest {
 
     private VM vm;
 
+    private Cluster cluster;
+
     @BeforeEach
     public void setup() {
         validator = spy(new VmNicValidator(nic, version));
         vm = new VM();
+        cluster = new Cluster();
     }
 
     @Test
@@ -240,5 +245,80 @@ public class VmNicValidatorTest {
     public void allowEmptyProfileForNonHostedEngineVm(){
         vm.setOrigin(OriginType.RHEV);
         assertThat(validator.validateProfileNotEmptyForHostedEngineVm(vm), isValid());
+    }
+
+    @Test
+    public void networkSupportedByClusterSwitchLegacyTypeSuccess() {
+        ovsSwitchTypeValidationTest(isValid(),
+                false,
+                true,
+                false);
+    }
+
+    @Test
+    public void networkSupportedByClusterSwitchTypeNonExternalNetworkFail() {
+        ovsSwitchTypeValidationTest(failsWith(EngineMessage.ACTION_TYPE_FAILED_ONLY_EXTERNAL_NETWORK_IS_SUPPORTED_IN_OVS_SWITCH_TYPE),
+                true,
+                false,
+                false);
+    }
+
+    @Test
+    public void networkSupportedByClusterSwitchTypeSuccess() {
+        ovsSwitchTypeValidationTest(isValid(),
+                true,
+                true,
+                false);
+    }
+
+    @Test
+    public void networkSupportedByClusterSwitchTypeEmptyNetworkSuccess() {
+        ovsSwitchTypeValidationTest(isValid(),
+                true,
+                false,
+                true);
+    }
+
+    private void ovsSwitchTypeValidationTest(Matcher<ValidationResult> matcher,
+            boolean clusterSwitchOvs,
+            boolean networkIsExternal,
+            boolean nullNetwork) {
+        cluster.setRequiredSwitchTypeForCluster(clusterSwitchOvs ? SwitchType.OVS : SwitchType.LEGACY);
+        when(network.isExternal()).thenReturn(networkIsExternal);
+        doReturn(nullNetwork ? null : network).when(validator).getNetwork();
+
+        assertThat(validator.isNetworkSupportedByClusterSwitchType(cluster), matcher);
+    }
+
+    @Test
+    public void withoutFailoverCluster45Success() {
+        failoverClusterVersionTest(isValid(), false, Version.v4_5);
+    }
+
+    @Test
+    public void withoutFailoverCluster46Success() {
+        failoverClusterVersionTest(isValid(), false, Version.v4_6);
+    }
+
+    @Test
+    public void withFailoverCluster45Fail() {
+        failoverClusterVersionTest(failsWith(EngineMessage.ACTION_TYPE_FAILED_VM_INTERFACE_WITH_FAILOVER_IS_SUPPORTED_ONLY_IN_CLUSTER_4_6_AND_ABOVE),
+                true,
+                Version.v4_5);
+    }
+
+    @Test
+    public void withFailoverCluster46Success() {
+        failoverClusterVersionTest(isValid(), true, Version.v4_6);
+    }
+
+    private void failoverClusterVersionTest(Matcher<ValidationResult> matcher,
+            boolean hasFailover,
+            Version clusterVersion) {
+        validator.version = clusterVersion;
+        doReturn(vnicProfile).when(validator).getVnicProfile();
+        doReturn(hasFailover ? Guid.newGuid() : null).when(vnicProfile).getFailoverVnicProfileId();
+
+        assertThat(validator.isFailoverInSupportedClusterVersion(), matcher);
     }
 }

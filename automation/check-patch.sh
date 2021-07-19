@@ -1,12 +1,6 @@
 #!/bin/bash -xe
 
-# CI is not updating build root.
-DISTVER="$(rpm --eval "%dist"|cut -c2-4)"
-if [[ "${DISTVER}" == "el7" ]]; then
-    PACKAGER=yum
-else
-    PACKAGER=dnf
-fi
+PACKAGER=dnf
 export PACKAGER
 ARCH="$(rpm --eval "%_arch")"
 
@@ -35,14 +29,18 @@ source automation/jvm-opts.sh
 MAVEN_OPTS="$MAVEN_OPTS $JVM_MEM_OPTS"
 export MAVEN_OPTS
 
-BUILD_UT=0
+BUILD_UT=1
 RUN_DAO_TESTS=0
-BUILD_GWT=0
-if [ -z "${MILESTONE}" ]; then
-	BUILD_UT=1
+
+if [ -z "${MILESTONE}" ] || { [ -n "${MILESTONE}" ] && [ "${MILESTONE}" != "master" ]; }; then
 	RUN_DAO_TESTS=1
-	BUILD_GWT=1
 fi
+
+# Check asciidoc documentation
+for doc in $(find . -name "*.adoc"); do
+	echo "Checking asciidoc ${doc}"
+	asciidoc "${doc}"
+done
 
 # Check for copyright notices in files that do not also include an SPDX tag.
 non_removed_files=$( \
@@ -109,15 +107,6 @@ dao_tests_paths=("backend/manager/modules/dal" \
 #create a search string with OR on all paths
 dao_tests_paths_search_string=$(IFS='|'; echo "${dao_tests_paths[*]}")
 
-if git show --pretty="format:" --name-only | egrep -q "\.(xml|java)$"; then
-    BUILD_UT=1
-fi
-
-if git show --pretty="format:" --name-only | egrep -q \
-    "^(frontend/webadmin|${common_modules_search_string})"; then
-    BUILD_GWT=1
-fi
-
 if git show --pretty="format:" --name-only | egrep \
     "(sql|${dao_tests_paths_search_string})" | \
     egrep -v -q "backend/manager/modules/dal/src/main/resources/bundles"; then
@@ -181,20 +170,19 @@ mkdir -p exported-artifacts/tests
 make clean \
     "EXTRA_BUILD_FLAGS=$EXTRA_BUILD_FLAGS"
 
-# execute packaging/setup tests
+# execute packaging tests
 automation/packaging-setup-tests.sh
+automation/packaging-pythonlib-tests.sh
 
 # perform quick validations
 make validations
 
-# Since spotbugs is a pure java task, there's no reason to run it on multiple
-# platforms.
-# Spotbugs currently has false negatives using mvn 3.5.0, which is the current
-# CentOS version from SCL (rh-maven35).
-# We will work with the Fedora version meanwhile which has maven 3.5.4 and is
-# known to work.
-if [[ "$STD_CI_DISTRO" =~ "fc" ]]; then
-    source automation/spotbugs.sh
+# CentOS 8 contains maven 3.5.4, which is known to work, but on earlier maven
+# releases we got false positives.
+source automation/spotbugs.sh
+
+if [ -n "${MILESTONE}" ] && [ "${MILESTONE}" == "master" ]; then
+    OVIRT_BUILD_QUICK=1
 fi
 
 # Get the tarball
@@ -206,27 +194,20 @@ rpmbuild \
     -D "_topmdir $PWD/rpmbuild" \
     ${SUFFIX:+-D "release_suffix ${SUFFIX}"} \
     -D "ovirt_build_extra_flags $EXTRA_BUILD_FLAGS" \
-    ${MILESTONE:+-D "ovirt_build_quick 1"} \
+    ${OVIRT_BUILD_QUICK:+-D "ovirt_build_quick 1"} \
     -ts ./*.gz
 
 # install any build requirements
 yum-builddep output/*src.rpm
 
 # create the rpms
-# default runs without GWT
-RPM_BUILD_MODE="ovirt_build_quick"
-
-if [[ $BUILD_GWT -eq 1 ]]; then
-    RPM_BUILD_MODE="ovirt_build_draft"
-fi
-
 rpmbuild \
     -D "_rpmdir $PWD/output" \
     -D "_topmdir $PWD/rpmbuild" \
     ${SUFFIX:+-D "release_suffix ${SUFFIX}"} \
     -D "ovirt_build_ut $BUILD_UT" \
     -D "ovirt_build_extra_flags $EXTRA_BUILD_FLAGS" \
-    ${MILESTONE:+-D "${RPM_BUILD_MODE} 1"} \
+    ${OVIRT_BUILD_QUICK:+-D "ovirt_build_draft 1"} \
     --rebuild output/*.src.rpm
 
 # Store any relevant artifacts in exported-artifacts for the ci system to
@@ -237,25 +218,21 @@ rpmbuild \
 # archive
 find output -iname \*rpm -exec mv "{}" exported-artifacts/ \;
 
-if [[ "$STD_CI_DISTRO" =~ "fc" ]]; then
-    # Collect any mvn spotbugs artifacts
-    mkdir -p exported-artifacts/find-bugs
-    find * -name "*spotbugs.xml" -o -name "spotbugsXml.xml" | \
-        while read source_file; do
-            destination_file=$(
-                sed -e 's#/#-#g' -e 's#\(.*\)-#\1.#' <<< "$source_file"
-            )
-            mv $source_file exported-artifacts/find-bugs/"$destination_file"
-        done
-    mv ./*tar.gz exported-artifacts/
-fi
+
+# Collect any mvn spotbugs artifacts
+mkdir -p exported-artifacts/find-bugs
+find * -name "*spotbugs.xml" -o -name "spotbugsXml.xml" | \
+    while read source_file; do
+        destination_file=$(
+            sed -e 's#/#-#g' -e 's#\(.*\)-#\1.#' <<< "$source_file"
+        )
+        mv $source_file exported-artifacts/find-bugs/"$destination_file"
+    done
+mv ./*tar.gz exported-artifacts/
 
 # Rename junit surefire reports to match jenkins report plugin
 # Error code 4 means nothing changed, ignore it
-if [[ "$(rpm --eval "%dist")" != ".fc30" ]]; then
-# On fc30 following fails, while investigating on it, keeping it working on the other distro
 rename .xml .junit.xml exported-artifacts/tests/* ||  [[ $? -eq 4 ]]
-fi
 
 if git show --name-only | grep ovirt-engine.spec.in; then
 pushd exported-artifacts
@@ -266,30 +243,14 @@ pushd exported-artifacts
     [[ -d /etc/dnf ]] && sed -i -re 's#^(reposdir *= *).*$#\1/etc/yum.repos.d#' '/etc/dnf/dnf.conf'
     [[ -e /etc/dnf/dnf.conf ]] && echo "deltarpm=False" >> /etc/dnf/dnf.conf
     rm -f /etc/yum/yum.conf
-    if [[ "${DISTVER}" == "el7" ]]; then
-        #Enable CR repo
-        sed -i "s:enabled=0:enabled=1:" /etc/yum.repos.d/CentOS-CR.repo
-    fi
 
     ${PACKAGER} repolist enabled
     ${PACKAGER} clean all
     ${PACKAGER} install -y http://resources.ovirt.org/pub/yum-repo/ovirt-release-master.rpm
 
-    if [[ "$(rpm --eval "%dist")" == ".fc31" ]]; then
-        # fc31 support is broken, just provide a hint on what's missing
-        # without causing the test to fail.
-        echo "fc31"
-    elif
-     [[ "$(rpm --eval "%dist")" == ".fc30" ]]; then
-        # fc30 support is broken, just provide a hint on what's missing
-        # without causing the test to fail.
-        ${PACKAGER} --downloadonly install *noarch.rpm || true
-        if [[ "${ARCH}" == "x86_64" ]]; then
-            echo "Reference installation from ovirt-release repo."
-            ${PACKAGER} --downloadonly install ovirt-engine ovirt-engine-setup-plugin-websocket-proxy || true
-        fi
-    elif
-     [[ "$(rpm --eval "%dist")" == ".el8" ]]; then
+    if [[ "$(rpm --eval "%dist")" == ".el8" ]]; then
+        ${PACKAGER} module reset postgresql
+        ${PACKAGER} module enable pki-deps javapackages-tools postgresql:12
         ${PACKAGER} --downloadonly install *noarch.rpm
         if [[ "${ARCH}" == "x86_64" ]]; then
             echo "Reference installation from ovirt-release repo."

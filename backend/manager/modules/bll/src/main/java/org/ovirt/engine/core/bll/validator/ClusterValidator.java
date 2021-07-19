@@ -18,6 +18,7 @@ import org.ovirt.engine.core.common.FeatureSupported;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
 import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.Cluster;
+import org.ovirt.engine.core.common.businessentities.Label;
 import org.ovirt.engine.core.common.businessentities.MigrateOnErrorOptions;
 import org.ovirt.engine.core.common.businessentities.StoragePool;
 import org.ovirt.engine.core.common.businessentities.SupportedAdditionalClusterFeature;
@@ -26,17 +27,20 @@ import org.ovirt.engine.core.common.businessentities.VDSStatus;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VmRngDevice;
 import org.ovirt.engine.core.common.businessentities.gluster.GlusterVolumeEntity;
+import org.ovirt.engine.core.common.businessentities.network.Network;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.ClusterDao;
 import org.ovirt.engine.core.dao.ClusterFeatureDao;
+import org.ovirt.engine.core.dao.LabelDao;
 import org.ovirt.engine.core.dao.StoragePoolDao;
 import org.ovirt.engine.core.dao.SupportedHostFeatureDao;
 import org.ovirt.engine.core.dao.VdsDao;
 import org.ovirt.engine.core.dao.VmDao;
 import org.ovirt.engine.core.dao.gluster.GlusterVolumeDao;
+import org.ovirt.engine.core.dao.network.NetworkDao;
 import org.ovirt.engine.core.utils.MemoizingSupplier;
 
 public class ClusterValidator {
@@ -52,8 +56,10 @@ public class ClusterValidator {
     private GlusterVolumeDao glusterVolumeDao;
     private ClusterFeatureDao clusterFeatureDao;
     private SupportedHostFeatureDao hostFeatureDao;
+    private NetworkDao networkDao;
 
     private CpuFlagsManagerHandler cpuFlagsManagerHandler;
+    private LabelDao labelDao;
     private Cluster newCluster;
 
     private int compareCompatibilityVersions;
@@ -84,7 +90,9 @@ public class ClusterValidator {
                             VmDao vmDao,
                             GlusterVolumeDao glusterVolumeDao,
                             ClusterFeatureDao clusterFeatureDao,
-                            SupportedHostFeatureDao hostFeatureDao) {
+                            SupportedHostFeatureDao hostFeatureDao,
+                            LabelDao labelDao,
+                            NetworkDao networkDao) {
         this.cluster = cluster;
         this.clusterDao = clusterDao;
         this.dataCenterDao = dataCenterDao;
@@ -93,9 +101,15 @@ public class ClusterValidator {
         this.glusterVolumeDao = glusterVolumeDao;
         this.clusterFeatureDao = clusterFeatureDao;
         this.hostFeatureDao = hostFeatureDao;
+        this.labelDao = labelDao;
+        this.networkDao = networkDao;
 
         allHostsForCluster = new MemoizingSupplier<>(() -> vdsDao.getAllForCluster(cluster.getId()));
         allVmsForCluster = new MemoizingSupplier<>(() -> vmDao.getAllForCluster(cluster.getId()));
+    }
+
+    Cluster getNewCluster() {
+        return newCluster;
     }
 
     public ValidationResult nameNotUsed() {
@@ -133,6 +147,15 @@ public class ClusterValidator {
     public ValidationResult newClusterVersionSupported() {
         return ValidationResult.failWith(VersionSupport.getUnsupportedVersionMessage())
                 .unless(VersionSupport.checkVersionSupported(newCluster.getCompatibilityVersion()));
+    }
+
+    public ValidationResult atLeastOneHostSupportingClusterVersion() {
+        return ValidationResult.failWith(EngineMessage.CLUSTER_CANNOT_UPDATE_VERSION_WHEN_NO_HOST_SUPPORTS_THE_VERSION)
+                .unless(allHostsForCluster.get().isEmpty()
+                        || allHostsForCluster.get()
+                                .stream()
+                                .anyMatch(h -> h.getSupportedClusterVersionsSet().contains(
+                                        newCluster.getCompatibilityVersion())));
     }
 
     public ValidationResult dataCenterVersionMismatch() {
@@ -242,6 +265,15 @@ public class ClusterValidator {
                         && !oldClusterValidator.dataCenterVersionMismatch().isValid());
     }
 
+
+    public ValidationResult decreaseClusterWithPortIsolation() {
+        return ValidationResult
+                .failWith(EngineMessage.ACTION_TYPE_FAILED_PORT_ISOLATION_UNSUPPORTED_CLUSTER_LEVEL)
+                .when(networkDao.getAllForCluster(cluster.getId()).stream().anyMatch(Network::isPortIsolation)
+                        && !FeatureSupported.isPortIsolationSupported(getNewCluster().getCompatibilityVersion()));
+    }
+
+
     private boolean areAllVdssInMaintenance(List<VDS> vdss) {
         return vdss.stream().allMatch(vds -> vds.getStatus() == VDSStatus.Maintenance);
     }
@@ -270,6 +302,12 @@ public class ClusterValidator {
                         && !allVdssInMaintenance);
     }
 
+    public ValidationResult updateFipsIsLegal() {
+        return ValidationResult.failWith(EngineMessage.CLUSTER_CANNOT_UPDATE_FIPS_VDS_MAINTENANCE)
+                .when(cluster.getFipsMode() != newCluster.getFipsMode()
+                        && !areAllVdssInMaintenance(allHostsForCluster.get()));
+    }
+
     /**
      * cannot change the processor architecture while there are attached hosts or VMs to the cluster
      */
@@ -286,6 +324,14 @@ public class ClusterValidator {
         boolean isOldCPUEmpty = StringUtils.isEmpty(cluster.getCpuName());
         return ValidationResult.failWith(EngineMessage.CLUSTER_CPU_IS_NOT_UPDATABLE)
                 .when(!isOldCPUEmpty && !sameCpuNames && !isCpuUpdatable && hasVmOrHost);
+    }
+
+    public ValidationResult canAutoDetectCpu() {
+        boolean oldCpuEmpty = StringUtils.isEmpty(cluster.getCpuName());
+        boolean newCpuEmpty = StringUtils.isEmpty(newCluster.getCpuName());
+        boolean hasVmOrHost = !allVmsForCluster.get().isEmpty() || !allHostsForCluster.get().isEmpty();
+        return ValidationResult.failWith(EngineMessage.CLUSTER_CANNOT_SET_CPU_AUTODETECTION)
+                .when(!oldCpuEmpty && newCpuEmpty && hasVmOrHost);
     }
 
     /**
@@ -412,14 +458,14 @@ public class ClusterValidator {
                         && newCluster.getMigrateOnError() != MigrateOnErrorOptions.NO);
     }
 
-    protected boolean migrationSupportedForArch(ArchitectureType arch) {
-        return FeatureSupported.isMigrationSupported(arch, cluster.getCompatibilityVersion());
+    public ValidationResult implicitAffinityGroup() {
+        return ValidationResult.failWith(EngineMessage.CLUSTER_IMPLICIT_AFFINITY_GROUP_IS_NOT_SUPPORTED)
+                .when(!FeatureSupported.isImplicitAffinityGroupSupported(newCluster.getCompatibilityVersion())
+                        && labelDao.getAllByClusterId(newCluster.getId()).stream().anyMatch(Label::isImplicitAffinityGroup));
     }
 
-    public ValidationResult invalidBiosType() {
-        return ValidationResult.failWith(EngineMessage.BIOS_TYPE_INVALID_FOR_CLUSTER)
-                .when(newCluster != null && newCluster.getBiosType() == BiosType.CLUSTER_DEFAULT
-                        || cluster.getBiosType() == BiosType.CLUSTER_DEFAULT);
+    protected boolean migrationSupportedForArch(ArchitectureType arch) {
+        return FeatureSupported.isMigrationSupported(arch, cluster.getCompatibilityVersion());
     }
 
     public ValidationResult nonDefaultBiosType() {
@@ -428,9 +474,7 @@ public class ClusterValidator {
         return ValidationResult.failWith(EngineMessage.NON_DEFAULT_BIOS_TYPE_FOR_X86_ONLY)
                 .when(FeatureSupported.isBiosTypeSupported(eCluster.getCompatibilityVersion())
                     && eCluster.getBiosType() != null
-                    && eCluster.getBiosType() != BiosType.CLUSTER_DEFAULT
                     && eCluster.getBiosType() != BiosType.I440FX_SEA_BIOS
-                    && architecture != ArchitectureType.undefined
                     && architecture.getFamily() != ArchitectureType.x86);
     }
 
@@ -469,5 +513,4 @@ public class ClusterValidator {
         }
         return volumes;
     }
-
 }

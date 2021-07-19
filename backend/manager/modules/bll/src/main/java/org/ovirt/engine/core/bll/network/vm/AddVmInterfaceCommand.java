@@ -162,10 +162,12 @@ public class AddVmInterfaceCommand<T extends AddVmInterfaceParameters> extends A
         Version compatibilityVersion = getVm().getClusterCompatibilityVersion();
         VmNicValidator nicValidator = new VmNicValidator(getInterface(), compatibilityVersion, getVm().getOs());
         if (!validate(nicValidator.isCompatibleWithOs())
+                ||!validate(nicValidator.isNetworkSupportedByClusterSwitchType(getCluster()))
                 || !validate(nicValidator.profileValid(getVm().getClusterId()))
                 || !validate(nicValidator.typeMatchesProfile())
                 || !validate(nicValidator.passthroughIsLinked())
-                || !validate(nicValidator.validateProfileNotEmptyForHostedEngineVm(getVm()))) {
+                || !validate(nicValidator.validateProfileNotEmptyForHostedEngineVm(getVm()))
+                || !validate(nicValidator.isFailoverInSupportedClusterVersion())) {
             return false;
         }
 
@@ -229,7 +231,8 @@ public class AddVmInterfaceCommand<T extends AddVmInterfaceParameters> extends A
             for (VmNicFilterParameter parameter : getParameters().getFilterParameters()) {
                 parameter.setVmInterfaceId(getInterface().getId());
                 runInternalAction(ActionType.AddVmNicFilterParameter,
-                        new VmNicFilterParameterParameters(getParameters().getVmId(), parameter));
+                        new VmNicFilterParameterParameters(getParameters().getVmId(), parameter),
+                        cloneContextWithNoCleanupCompensation());
             }
         }
     }

@@ -1,6 +1,7 @@
 package org.ovirt.engine.core.vdsbroker.vdsbroker;
 
 import java.security.cert.Certificate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Future;
@@ -8,6 +9,8 @@ import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.http.impl.client.CloseableHttpClient;
+import org.ovirt.engine.core.common.action.VmExternalDataKind;
+import org.ovirt.engine.core.common.businessentities.storage.ImageTicket;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.vdsbroker.gluster.GlusterHookContentInfoReturn;
 import org.ovirt.engine.core.vdsbroker.gluster.GlusterHooksListReturn;
@@ -22,6 +25,7 @@ import org.ovirt.engine.core.vdsbroker.gluster.GlusterVDOVolumeListReturn;
 import org.ovirt.engine.core.vdsbroker.gluster.GlusterVolumeGeoRepConfigList;
 import org.ovirt.engine.core.vdsbroker.gluster.GlusterVolumeGeoRepStatus;
 import org.ovirt.engine.core.vdsbroker.gluster.GlusterVolumeGeoRepStatusDetail;
+import org.ovirt.engine.core.vdsbroker.gluster.GlusterVolumeGlobalOptionsInfoReturn;
 import org.ovirt.engine.core.vdsbroker.gluster.GlusterVolumeOptionsInfoReturn;
 import org.ovirt.engine.core.vdsbroker.gluster.GlusterVolumeProfileInfoReturn;
 import org.ovirt.engine.core.vdsbroker.gluster.GlusterVolumeSnapshotConfigReturn;
@@ -36,7 +40,9 @@ import org.ovirt.engine.core.vdsbroker.gluster.StorageDeviceListReturn;
 import org.ovirt.engine.core.vdsbroker.irsbroker.OneUuidReturn;
 import org.ovirt.engine.core.vdsbroker.irsbroker.StatusReturn;
 import org.ovirt.engine.core.vdsbroker.irsbroker.StoragePoolInfo;
+import org.ovirt.engine.core.vdsbroker.irsbroker.UUIDListReturn;
 import org.ovirt.engine.core.vdsbroker.irsbroker.VmBackupInfo;
+import org.ovirt.engine.core.vdsbroker.irsbroker.VmCheckpointIds;
 import org.ovirt.vdsm.jsonrpc.client.BrokerCommandCallback;
 
 public class NullVdsServer implements IVdsServer {
@@ -55,7 +61,7 @@ public class NullVdsServer implements IVdsServer {
         return null;
     }
 
-    @Override public StatusOnlyReturn copyData(String jobId, Map src, Map dst) {
+    @Override public StatusOnlyReturn copyData(String jobId, Map src, Map dst, boolean copyBitmaps) {
         return null;
     }
 
@@ -71,7 +77,9 @@ public class NullVdsServer implements IVdsServer {
         return null;
     }
 
-    @Override public StatusOnlyReturn mergeSubchain(String jobId, Map<String, Object> subchainInfo) {
+    @Override public StatusOnlyReturn mergeSubchain(String jobId,
+            Map<String, Object> subchainInfo,
+            boolean mergeBitmaps) {
         return null;
     }
 
@@ -84,6 +92,10 @@ public class NullVdsServer implements IVdsServer {
     }
 
     @Override public StatusOnlyReturn shutdown(String vmId, String timeout, String message, boolean reboot) {
+        return null;
+    }
+
+    @Override public StatusOnlyReturn reset(String vmId) {
         return null;
     }
 
@@ -139,14 +151,7 @@ public class NullVdsServer implements IVdsServer {
         return null;
     }
 
-    @Override public StatusOnlyReturn add_image_ticket(String ticketId,
-            String[] ops,
-            long timeout,
-            long size,
-            String url,
-            String filename,
-            boolean sparse,
-            String transferId) {
+    @Override public StatusOnlyReturn add_image_ticket(ImageTicket ticket) {
         return null;
     }
 
@@ -175,6 +180,10 @@ public class NullVdsServer implements IVdsServer {
     }
 
     @Override public VMInfoListReturn getAllVmStats() {
+        return null;
+    }
+
+    @Override public VmExternalDataReturn getVmExternalData(String vmId, VmExternalDataKind kind, boolean forceUpdate) {
         return null;
     }
 
@@ -953,15 +962,34 @@ public class NullVdsServer implements IVdsServer {
         return null;
     }
 
-    @Override public VmBackupInfo vmBackupInfo(String vmId, String backupId) {
+    @Override public VmBackupInfo vmBackupInfo(String vmId, String backupId, String checkpointId) {
         return null;
     }
 
-    @Override public StatusOnlyReturn redefineVmCheckpoints(String vmId, Map<String, Object>[] checkpoints) {
+    @Override public VmCheckpointIds redefineVmCheckpoints(String vmId, Collection<Map<String, Object>> checkpoints) {
         return null;
     }
 
-    @Override public StatusOnlyReturn deleteVmCheckpoints(String vmId, String[] checkpointIds) {
+    @Override public VmCheckpointIds deleteVmCheckpoints(String vmId, String[] checkpointIds) {
+        return null;
+    }
+
+    @Override public UUIDListReturn listVmCheckpoints(String vmId) {
+        return null;
+    }
+
+    @Override
+    public StatusOnlyReturn addBitmap(String jobId, Map<String, Object> volInfo, String bitmapName) {
+        return null;
+    }
+
+    @Override
+    public StatusOnlyReturn removeBitmap(String jobId, Map<String, Object> volInfo, String bitmapName) {
+        return null;
+    }
+
+    @Override
+    public StatusOnlyReturn clearBitmaps(String jobId, Map<String, Object> volInfo) {
         return null;
     }
 
@@ -991,7 +1019,12 @@ public class NullVdsServer implements IVdsServer {
     }
 
     @Override
-    public MeasureReturn measureVolume(String sdUUID, String spUUID, String imgUUID, String volUUID, int dstVolFormat) {
+    public MeasureReturn measureVolume(String sdUUID,
+            String spUUID,
+            String imgUUID,
+            String volUUID,
+            int dstVolFormat,
+            boolean withBacking) {
         return null;
     }
 
@@ -1013,7 +1046,7 @@ public class NullVdsServer implements IVdsServer {
         return null;
     }
 
-    @Override public StatusOnlyReturn sealDisks(String templateId,
+    @Override public StatusOnlyReturn sealDisks(String vmId,
             String jobId,
             String storagePoolId,
             List<Map<String, Object>> images) {
@@ -1050,6 +1083,20 @@ public class NullVdsServer implements IVdsServer {
     }
 
     @Override public StatusOnlyReturn detachManagedBlockStorageVolume(Guid volumeId) {
+        return null;
+    }
+
+    @Override public VDSInfoReturn getLeaseStatus(String leaseUUID, String sdUUID) {
+        return null;
+    }
+
+    @Override
+    public StatusOnlyReturn fenceLeaseJob(String leaseUUID, String sdUUID, Map<String, Object> leaseMetadata) {
+        return null;
+    }
+
+    @Override
+    public GlusterVolumeGlobalOptionsInfoReturn glusterVolumeGlobalOptionsGet() {
         return null;
     }
 }

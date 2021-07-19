@@ -19,29 +19,20 @@ BUILD_JAVA_OPTS_MAVEN?=
 BUILD_JAVA_OPTS_GWT?=
 DEV_REBUILD=1
 DEV_BUILD_GWT_DRAFT=0
-DEV_BUILD_GWT_SUPER_DEV_MODE=0
+DEV_BUILD_GWT_SUPER_DEV_MODE=1
 DEV_EXTRA_BUILD_FLAGS=
 DEV_EXTRA_BUILD_FLAGS_GWT_DEFAULTS=
-DEV_BUILD_SCL_POSTGRESQL=0
+IMAGEIO_SYSCONF_DIR=/etc/ovirt-imageio
 VMCONSOLE_SYSCONF_DIR=/etc/ovirt-vmconsole
 VMCONSOLE_PKI_DIR=/etc/pki/ovirt-vmconsole
 
 PACKAGE_NAME=ovirt-engine
 ENGINE_NAME=$(PACKAGE_NAME)
 MVN=mvn
-PYTHON=$(shell which python2 2> /dev/null)
-PYTHON3=$(shell which python3 2> /dev/null)
-WITH_PYTHON2=0
-WITH_PYTHON3=0
-ifneq ($(PYTHON),)
-WITH_PYTHON2=1
-endif
-ifneq ($(PYTHON3),)
-WITH_PYTHON3=1
-endif
+PYTHON=$(shell which python3 2> /dev/null)
 PYFLAKES=$(shell which pyflakes 2> /dev/null)
-PY_VERSION=$(if $(PYTHON3),3,2)
-PEP8=pep8
+PY_VERSION=3
+PEP8=$(shell which pycodestyle-3 2> /dev/null)
 ISORT=isort
 PREFIX=/usr/local
 LOCALSTATE_DIR=$(PREFIX)/var
@@ -71,9 +62,7 @@ PKG_TMP_DIR=$(LOCALSTATE_DIR)/tmp/$(ENGINE_NAME)
 JBOSS_HOME=/usr/share/ovirt-engine-wildfly
 JBOSS_RUNTIME=$(PKG_STATE_DIR)/jboss_runtime
 PYTHON_DIR=$(PYTHON_SYS_DIR)
-PYTHON3_DIR=$(PYTHON3_SYS_DIR)
 DEV_PYTHON_DIR=
-DEV_PYTHON3_DIR=
 DEV_SETUP_ENV_DIR=
 PKG_USER=ovirt
 PKG_GROUP=ovirt
@@ -129,38 +118,13 @@ BUILD_FLAGS:=$(BUILD_FLAGS) -D gwt.jvmArgs="$(BUILD_JAVA_OPTS_GWT)"
 endif
 BUILD_FLAGS:=$(BUILD_FLAGS) $(EXTRA_BUILD_FLAGS)
 
-ifeq ($(WITH_PYTHON2),1)
 PYTHON_SYS_DIR:=$(shell $(PYTHON) -c "from distutils.sysconfig import get_python_lib as f;print(f())")
-endif
-ifeq ($(WITH_PYTHON3),1)
-PYTHON3_SYS_DIR:=$(shell $(PYTHON3) -c "from distutils.sysconfig import get_python_lib as f;print(f())")
-endif
 TARBALL=$(PACKAGE_NAME)-$(PACKAGE_VERSION).tar.gz
 ARCH=noarch
 BUILD_FILE=tmp.built
 MAVEN_OUTPUT_DIR=.
 BUILD_TARGET=install
 
-# SCL rh-postgresql10 customization
-SCL_PG_BASE=rh-postgresql10
-define ENVFILEC
-RHPOSTGRESQLSCLROOT="/opt/rh/$(SCL_PG_BASE)/root"
-RHPOSTGRESQLSCLDATA="/var/opt/rh/$(SCL_PG_BASE)/lib/pgsql/data"
-if [ -e $${RHPOSTGRESQLSCLROOT}/usr/bin/postgresql-setup ]
-then
-  export sclenv="$(SCL_PG_BASE)"
-  export POSTGRESQLENV="COMMAND/pg_dump=str:$${RHPOSTGRESQLSCLROOT}/usr/bin/pg_dump \
-         COMMAND/psql=str:$${RHPOSTGRESQLSCLROOT}/usr/bin/psql \
-         COMMAND/pg_restore=str:$${RHPOSTGRESQLSCLROOT}/usr/bin/pg_restore \
-         COMMAND/postgresql-setup=str:$${RHPOSTGRESQLSCLROOT}/usr/bin/postgresql-setup \
-         OVESETUP_PROVISIONING/oldPostgresService=str:rh-postgresql95-postgresql \
-         OVESETUP_PROVISIONING/postgresService=str:$(SCL_PG_BASE)-postgresql \
-         OVESETUP_PROVISIONING/postgresConf=str:$${RHPOSTGRESQLSCLDATA}/postgresql.conf \
-         OVESETUP_PROVISIONING/postgresPgHba=str:$${RHPOSTGRESQLSCLDATA}/pg_hba.conf \
-         OVESETUP_PROVISIONING/postgresPgVersion=str:$${RHPOSTGRESQLSCLDATA}/PG_VERSION"
-fi
-endef
-export ENVFILEC
 
 # Don't use any of the bultin rules, in particular don't use the rule
 # for .sh files, as that means that we can't generate .sh files from
@@ -197,7 +161,6 @@ export ENVFILEC
 	-e "s|@SETUP_USR@|$(DATA_DIR)|g" \
 	-e "s|@SETUP_VAR@|$(PKG_STATE_DIR)|g" \
 	-e "s|@DEV_PYTHON_DIR@|$(DEV_PYTHON_DIR)|g" \
-	-e "s|@DEV_PYTHON3_DIR@|$(DEV_PYTHON3_DIR)|g" \
 	-e "s|@DEV_SETUP_ENV_DIR@|$(DEV_SETUP_ENV_DIR)|g" \
 	-e "s|@RPM_VERSION@|$(ENGINE_VERSION)|g" \
 	-e "s|@RPM_RELEASE@|$(RPM_RELEASE)|g" \
@@ -220,6 +183,7 @@ export ENVFILEC
 	-e "s|@VMCONSOLE_PROXY_HELPER_DEFAULTS@|$(DATA_DIR)/conf/ovirt-vmconsole-proxy-helper.conf|g" \
 	-e "s|@BIN_DIR@|$(BIN_DIR)|g" \
 	-e "s|@AAA_JDBC_USR@|$(DATAROOT_DIR)/ovirt-engine-extension-aaa-jdbc|g" \
+	-e "s|@IMAGEIO_SYSCONF_DIR@|$(IMAGEIO_SYSCONF_DIR)|g" \
 	-e "s|@GENERATED_FILE_LIST@|$${GENERATED_FILE_LIST}|g" \
 	$< > $@
 
@@ -279,6 +243,7 @@ GENERATED = \
 	packaging/setup/ovirt_engine_setup/config.py \
 	packaging/setup/ovirt_engine_setup/engine/config.py \
 	packaging/setup/ovirt_engine_setup/engine_common/config.py \
+	packaging/setup/ovirt_engine_setup/ovirt_imageio/config.py \
 	packaging/setup/ovirt_engine_setup/vmconsole_proxy_helper/config.py \
 	packaging/setup/ovirt_engine_setup/websocket_proxy/config.py \
 	packaging/sys-etc/logrotate.d/ovirt-engine \
@@ -503,12 +468,7 @@ install-packaging-files: \
 		EXCLUDE_GEN="$(GENERATED)" \
 		EXCLUDE="$$(echo $$(find packaging/setup/tests)) packaging/setup/plugins/README"
 
-ifeq ($(WITH_PYTHON3),1)
-	$(MAKE) copy-recursive SOURCEDIR=packaging/pythonlib TARGETDIR="$(DESTDIR)$(PYTHON3_DIR)" EXCLUDE_GEN="$(GENERATED)"
-endif
-ifeq ($(WITH_PYTHON2),1)
-	$(MAKE) copy-recursive SOURCEDIR=packaging/pythonlib TARGETDIR="$(DESTDIR)$(PYTHON_DIR)" EXCLUDE_GEN="$(GENERATED)"
-endif
+	$(MAKE) copy-recursive SOURCEDIR=packaging/pythonlib TARGETDIR="$(DESTDIR)$(PYTHON_DIR)" EXCLUDE="$$(echo $$(find packaging/pythonlib/tests))" EXCLUDE_GEN="$(GENERATED)"
 
 	# we should avoid make these directories dirty
 	$(MAKE) copy-recursive SOURCEDIR=packaging/dbscripts TARGETDIR="$(DESTDIR)$(DATA_DIR)/dbscripts" \
@@ -551,6 +511,7 @@ install-layout: \
 	install -d -m 755 "$(DESTDIR)$(PKG_PKI_DIR)/requests-qemu"
 	install -d -m 755 "$(DESTDIR)$(DATA_DIR)/ui-plugins"
 	install -d -m 755 "$(DESTDIR)$(PKG_SYSCONF_DIR)/branding"
+	install -d -m 750 "$(DESTDIR)$(PKG_STATE_DIR)"
 	install -d -m 750 "$(DESTDIR)$(PKG_STATE_DIR)/backups"
 	install -d -m 750 "$(DESTDIR)$(PKG_BACKUP_DEFAULT_DIR)"
 	install -d -m 750 "$(DESTDIR)$(PKG_BACKUP_LOG_DEFAULT_DIR)"
@@ -585,8 +546,8 @@ all-dev:
 		all \
 		BUILD_DEV=1 \
 		DEV_PYTHON_DIR="$(PREFIX)$(PYTHON_SYS_DIR)" \
-		DEV_PYTHON3_DIR="$(PREFIX)$(PYTHON3_SYS_DIR)" \
 		DEV_SETUP_ENV_DIR="$(PREFIX)/etc/ovirt-engine-setup.env.d" \
+		IMAGEIO_SYSCONF_DIR="$(PREFIX)/etc/ovirt-imageio" \
 		VMCONSOLE_SYSCONF_DIR="$(PREFIX)/etc/ovirt-vmconsole" \
 		VMCONSOLE_PKI_DIR="$(PREFIX)/etc/pki/ovirt-vmconsole" \
 		$(NULL)
@@ -611,7 +572,6 @@ install-dev:	\
 		BUILD_DEV=1 \
 		BUILD_VALIDATION=0 \
 		PYTHON_DIR="$(PREFIX)$(PYTHON_SYS_DIR)" \
-		PYTHON3_DIR="$(PREFIX)$(PYTHON3_SYS_DIR)" \
 		DEV_FLIST=tmp.dev.flist \
 		$(NULL)
 	cp tmp.dev.flist "$(DESTDIR)$(PREFIX)/dev.$(PACKAGE_NAME).flist"
@@ -635,8 +595,3 @@ install-dev:	\
 		touch "$(DESTDIR)$(PKG_STATE_DIR)/jboss_runtime/deployments/engine.ear.deployed"; \
 	fi
 
-ifneq ($(DEV_BUILD_SCL_POSTGRESQL),0)
-	mkdir -p "$(PREFIX)/etc/ovirt-engine-setup.env.d"
-	echo "$$ENVFILEC" > "$(PREFIX)/etc/ovirt-engine-setup.env.d/10-setup-scl-postgres.env"
-	echo "sclenv=\"rh-postgresql10\"" > "$(PREFIX)/etc/ovirt-engine/engine.conf.d/10-scl-postgres.conf"
-endif

@@ -8,7 +8,7 @@
   <parent>
     <groupId>org.ovirt.engine.core.manager</groupId>
     <artifactId>dependencies</artifactId>
-    <version>4.4.0-SNAPSHOT</version>
+    <version>4.4.8.1-SNAPSHOT</version>
   </parent>
 
   <artifactId>common-dependencies</artifactId>
@@ -54,10 +54,17 @@
       <artifactId>sshd-common</artifactId>
       <version>${sshd-core.version}</version>
     </dependency>
+
     <dependency>
       <groupId>org.apache.sshd</groupId>
       <artifactId>sshd-core</artifactId>
       <version>${sshd-core.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>net.i2p.crypto</groupId>
+      <artifactId>eddsa</artifactId>
+      <version>${eddsa.version}</version>
     </dependency>
 
     <dependency>
@@ -88,12 +95,6 @@
         <groupId>org.ovirt.vdsm-jsonrpc-java</groupId>
         <artifactId>vdsm-jsonrpc-java-client</artifactId>
         <version>${vdsm-jsonrpc-java.version}</version>
-    </dependency>
-
-    <dependency>
-      <groupId>org.quartz-scheduler</groupId>
-      <artifactId>quartz</artifactId>
-      <version>${quartz.version}</version>
     </dependency>
 
     <dependency>
@@ -289,6 +290,12 @@
               </module>
 
               <module>
+                <groupId>net.i2p.crypto</groupId>
+                <artifactId>eddsa</artifactId>
+                <moduleName>net.i2p.crypto.eddsa</moduleName>
+              </module>
+
+              <module>
                 <groupId>org.apache.ws.commons.util</groupId>
                 <artifactId>ws-commons-util</artifactId>
                 <moduleName>org.apache.ws.commons</moduleName>
@@ -316,12 +323,6 @@
                 <groupId>org.ovirt.vdsm-jsonrpc-java</groupId>
                 <artifactId>vdsm-jsonrpc-java-client</artifactId>
                 <moduleName>org.ovirt.vdsm-jsonrpc-java</moduleName>
-              </module>
-
-              <module>
-                <groupId>org.quartz-scheduler</groupId>
-                <artifactId>quartz</artifactId>
-                <moduleName>org.quartz</moduleName>
               </module>
 
               <module>

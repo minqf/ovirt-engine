@@ -13,11 +13,11 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.lang.StringUtils;
-import org.ovirt.engine.core.sso.utils.InteractiveAuth;
-import org.ovirt.engine.core.sso.utils.OAuthException;
-import org.ovirt.engine.core.sso.utils.SsoConstants;
-import org.ovirt.engine.core.sso.utils.SsoSession;
-import org.ovirt.engine.core.sso.utils.SsoUtils;
+import org.ovirt.engine.core.sso.api.InteractiveAuth;
+import org.ovirt.engine.core.sso.api.OAuthException;
+import org.ovirt.engine.core.sso.api.SsoConstants;
+import org.ovirt.engine.core.sso.api.SsoSession;
+import org.ovirt.engine.core.sso.service.SsoService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,14 +32,14 @@ public class OpenIdAuthorizeServlet extends OAuthAuthorizeServlet {
         try {
             handleRequest(request, response);
         } catch (Exception ex) {
-            SsoSession ssoSession = SsoUtils.getSsoSession(request, true);
+            SsoSession ssoSession = SsoService.getSsoSession(request, true);
             ssoSession.setRedirectUri(request.getParameter(SsoConstants.HTTP_PARAM_REDIRECT_URI));
             if (ex instanceof OAuthException &&
                     ((OAuthException) ex).getCode().equals(SsoConstants.ERR_CODE_INVALID_REQUEST) &&
                     ex.getMessage().equals(SsoConstants.ERR_REDIRECT_URI_NOTREG_MSG)) {
-                SsoUtils.sendJsonDataWithMessage(request, response, (OAuthException) ex);
+                SsoService.sendJsonDataWithMessage(request, response, (OAuthException) ex);
             } else {
-                SsoUtils.redirectToErrorPage(request, response, ex);
+                SsoService.redirectToErrorPage(request, response, ex);
             }
         }
     }
@@ -49,10 +49,10 @@ public class OpenIdAuthorizeServlet extends OAuthAuthorizeServlet {
             String clientId,
             String scope,
             String redirectUri) {
-        List<String> scopes = new ArrayList<>(SsoUtils.scopeAsList(scope));
+        List<String> scopes = new ArrayList<>(SsoService.scopeAsList(scope));
         // remove all unsupported scopes
         scopes.removeAll(unsupportedScopes);
-        SsoUtils.validateClientRequest(request, clientId, null, StringUtils.join(scopes, ' '), redirectUri);
+        SsoService.validateClientRequest(request, clientId, null, StringUtils.join(scopes, ' '), redirectUri);
     }
 
     protected SsoSession buildSsoSession(HttpServletRequest request)
@@ -65,8 +65,7 @@ public class OpenIdAuthorizeServlet extends OAuthAuthorizeServlet {
         String maxAgeStr = request.getParameter(SsoConstants.HTTP_PARAM_OPENID_MAX_AGE);
         if ("login".equals(ssoSession.getOpenIdPrompt())) {
             ssoSession.setStatus(SsoSession.Status.unauthenticated);
-        } else
-        if (ssoSession.getStatus() == SsoSession.Status.authenticated && StringUtils.isNotEmpty(maxAgeStr)) {
+        } else if (ssoSession.getStatus() == SsoSession.Status.authenticated && StringUtils.isNotEmpty(maxAgeStr)) {
             long maxAge = Long.parseLong(maxAgeStr) * 1000;
             if (Duration.between(ssoSession.getAuthTime().toInstant(), Instant.now()).toMillis() > maxAge) {
                 ssoSession.setStatus(SsoSession.Status.unauthenticated);
@@ -83,17 +82,17 @@ public class OpenIdAuthorizeServlet extends OAuthAuthorizeServlet {
         log.debug("Entered login queryString: {}", request.getQueryString());
 
         switch (ssoSession.getStatus()) {
-            case unauthenticated:
-                if (StringUtils.isNotEmpty(ssoSession.getAccessToken()) &&
-                        StringUtils.isNotEmpty(ssoSession.getAuthorizationCode())) {
-                    ssoSession = (SsoSession) ssoSession.clone();
-                    request.getSession().setAttribute(SsoConstants.OVIRT_SSO_SESSION, ssoSession);
-                }
-                break;
-            case authenticated:
-                ssoSession.setTokenIssued(false);
-                ssoSession.setActive(true);
-                break;
+        case unauthenticated:
+            if (StringUtils.isNotEmpty(ssoSession.getAccessToken()) &&
+                    StringUtils.isNotEmpty(ssoSession.getAuthorizationCode())) {
+                ssoSession = (SsoSession) ssoSession.clone();
+                request.getSession().setAttribute(SsoConstants.OVIRT_SSO_SESSION, ssoSession);
+            }
+            break;
+        case authenticated:
+            ssoSession.setTokenIssued(false);
+            ssoSession.setActive(true);
+            break;
         }
 
         super.login(request, response, ssoSession);

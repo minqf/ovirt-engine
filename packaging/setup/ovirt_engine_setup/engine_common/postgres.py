@@ -10,7 +10,6 @@
 import datetime
 import gettext
 import os
-import platform
 import random
 import re
 import shutil
@@ -325,7 +324,7 @@ class Provisioning(base.Base):
             )
         )
 
-    def _addPgHbaDatabaseAccess(
+    def addPgHbaDatabaseAccess(
         self,
         transaction,
     ):
@@ -381,67 +380,33 @@ class Provisioning(base.Base):
             ]
         )
 
-    def startPG(self):
-        service = self.environment[
-            oengcommcons.ProvisioningEnv.POSTGRES_SERVICE
-        ]
-        try:
-            self.services.state(
-                name=service,
-                state=True,
-            )
-        except RuntimeError:
-            self.logger.warn(
-                _('Failed to start {service}, trying a workaround').format(
-                    service=service,
-                )
-            )
-            # A workaround for rhbz#1518599.
-            # TODO remove this once it's fixed.
-            # Under certain conditions, selinux contexts are not set
-            # correctly. Re-run the postinstall scriptlet.
-            self.logger.debug(
-                'Re-running postinstall scriptlet of the postgresql runtime '
-                'package as a workaround for '
-                'https://bugzilla.redhat.com/1518599'
-            )
-            if service == 'rh-postgresql95-postgresql':
-                runtimerpm = 'rh-postgresql95-runtime'
-            elif service == 'rh-postgresql10-postgresql':
-                runtimerpm = 'rh-postgresql10-runtime'
-            else:
-                raise
-            rc, stdout, stderr = self._plugin.execute(
-                (
-                    self.command.get('rpm'),
-                    '-q',
-                    '--scripts',
-                    runtimerpm
-                )
-            )
-            if 'postinstall scriptlet' in stdout[0]:
-                lines = stdout[1:]
-                self._plugin.execute(
-                    (
-                        '/bin/sh',
-                        '-x',
-                    ),
-                    stdin=lines,
-                )
-            # Now try again
-            self.services.state(
-                name=service,
-                state=True,
-            )
-
     def restartPG(self):
+        for state in (False, True):
             self.services.state(
                 name=self.environment[
                     oengcommcons.ProvisioningEnv.POSTGRES_SERVICE
                 ],
-                state=False,
+                state=state,
             )
-            self.startPG()
+        # If using systemd, reset its service-restart counter, so that
+        # we do not fail if restarting PG too much - which can happen
+        # e.g. during engine-backup --mode=restore with lots of db entities
+        # provisioned.
+        systemctl = self.command.get(
+            command='systemctl',
+            optional=True
+        )
+        if systemctl is not None:
+            self._plugin.execute(
+                args=(
+                    systemctl,
+                    'reset-failed',
+                    self.environment[
+                        oengcommcons.ProvisioningEnv.POSTGRES_SERVICE
+                    ],
+                ),
+                raiseOnError=False,
+            )
 
     def _waitForDatabase(self, environment=None):
         dbovirtutils = database.OvirtUtils(
@@ -483,9 +448,7 @@ class Provisioning(base.Base):
         self.command.detect('psql')
 
     def supported(self):
-        return platform.linux_distribution(
-            full_distribution_name=0
-        )[0] in ('redhat', 'fedora', 'centos')
+        return osetuputil.is_ovirt_packaging_supported_distro()
 
     def validate(self):
         if not self.services.exists(
@@ -577,7 +540,7 @@ class Provisioning(base.Base):
             self._updatePostgresConf(
                 transaction=localtransaction,
             )
-            self._addPgHbaDatabaseAccess(
+            self.addPgHbaDatabaseAccess(
                 transaction=localtransaction,
             )
 
@@ -631,15 +594,31 @@ class Provisioning(base.Base):
                 self._waitForDatabase(
                     environment=usockenv,
                 )
-                existing = self._userExists(
-                    environment=usockenv,
-                )
-                self._performDatabase(
-                    environment=usockenv,
+                perform_role_sql = (
+                    """
+                        {op} role {user}
+                        with
+                            login
+                            encrypted password %(password)s
+                    """
+                ).format(
                     op=(
-                        'alter' if existing
+                        'alter'
+                        if self._userExists(environment=usockenv)
                         else 'create'
                     ),
+                    user=_ind_env(self, DEK.USER),
+                )
+                database.Statement(
+                    dbenvkeys=self._dbenvkeys,
+                    environment=usockenv,
+                ).execute(
+                    statement=perform_role_sql,
+                    args=dict(
+                        password=_ind_env(self, DEK.PASSWORD),
+                    ),
+                    ownConnection=True,
+                    transaction=False,
                 )
         finally:
             # restore everything
@@ -752,6 +731,71 @@ class Provisioning(base.Base):
                     ownConnection=True,
                     transaction=False,
                 )
+
+    def grantReadOnlyAccessToUser(self):
+        with AlternateUser(
+            user=self.environment[
+                oengcommcons.SystemEnv.USER_POSTGRES
+            ],
+        ):
+            usockenv = {
+                self._dbenvkeys[DEK.HOST]: '',  # usock
+                self._dbenvkeys[DEK.PORT]: '',
+                self._dbenvkeys[DEK.SECURED]: False,
+                self._dbenvkeys[DEK.HOST_VALIDATION]: False,
+                self._dbenvkeys[DEK.USER]: 'postgres',
+                self._dbenvkeys[DEK.PASSWORD]: '',
+                self._dbenvkeys[DEK.DATABASE]: _ind_env(self, DEK.DATABASE)
+            }
+            self._waitForDatabase(
+                environment=usockenv,
+            )
+            dbstatement = database.Statement(
+                dbenvkeys=self._dbenvkeys,
+                environment=usockenv,
+            )
+            dbstatement.execute(
+                statement="""
+                    GRANT CONNECT ON DATABASE {database} TO {user}
+                """.format(
+                    user=_ind_env(self, DEK.USER),
+                    database=_ind_env(self, DEK.DATABASE),
+                ),
+                args=None,
+                ownConnection=True,
+                transaction=False,
+            )
+            dbstatement.execute(
+                statement="""
+                    GRANT USAGE ON SCHEMA public TO {user}
+                """.format(
+                    user=_ind_env(self, DEK.USER),
+                ),
+                args=None,
+                ownConnection=True,
+                transaction=False,
+            )
+            dbstatement.execute(
+                statement="""
+                    GRANT SELECT ON ALL TABLES IN SCHEMA public TO {user}
+                """.format(
+                    user=_ind_env(self, DEK.USER),
+                ),
+                args=None,
+                ownConnection=True,
+                transaction=False,
+            )
+            dbstatement.execute(
+                statement="""
+                    ALTER DEFAULT PRIVILEGES IN SCHEMA public
+                    GRANT SELECT ON TABLES TO {user}
+                """.format(
+                    user=_ind_env(self, DEK.USER),
+                ),
+                args=None,
+                ownConnection=True,
+                transaction=False,
+            )
 
     def getPostgresLocaleAndEncodingInitEnv(
         self,

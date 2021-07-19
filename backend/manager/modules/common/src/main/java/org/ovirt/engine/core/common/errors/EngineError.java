@@ -66,6 +66,7 @@ public enum EngineError {
     freezeErr(76),
     thawErr(77),
     ReplicationNotInProgress(88),
+    InvalidParameter(91),
     recovery(99),
     GeneralException(100),
     StorageException(200),
@@ -558,7 +559,9 @@ public enum EngineError {
 
     SESSION_ERROR(9999),
 
-    HOST_DEVICES_TAKEN_BY_OTHER_VM(6000);
+    HOST_DEVICES_TAKEN_BY_OTHER_VM(6000),
+
+    METHOD_NOT_FOUND(-32601);
 
     private int intValue;
     private static final Map<Integer, EngineError> mappings = new HashMap<>();

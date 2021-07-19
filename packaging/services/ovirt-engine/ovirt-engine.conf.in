@@ -108,9 +108,24 @@ ENGINE_DEPLOYMENT_SCANNER=false
 
 #
 # Change following to true if you want to enable garbage collection debug
-# information (will be sent to the console.log file):
+# information (will be sent to the gc.log file):
 #
 ENGINE_VERBOSE_GC=false
+
+#
+# Defines  GC log level verbosity. Valid options: off, error, warning, info, debug, trace
+#
+ENGINE_VERBOSE_GC_LOG_LEVEL=info
+
+#
+# Defines GC logging max file size
+#
+ENGINE_VERBOSE_GC_LOG_FILE_SIZE=2M
+
+#
+# Defines max number of files used in the rotation for GC logging
+#
+ENGINE_VERBOSE_GC_LOG_FILES_NUMBER=50
 
 #
 # Extra system properties to be added to the java virtual machine
@@ -137,6 +152,10 @@ ENGINE_PROPERTIES="${ENGINE_PROPERTIES} sun.rmi.dgc.client.gcInterval=3600000 su
 ENGINE_PROPERTIES="${ENGINE_PROPERTIES} jsse.enableSNIExtension=false"
 ENGINE_PROPERTIES="${ENGINE_PROPERTIES} resteasy.preferJacksonOverJsonB=true"
 ENGINE_PROPERTIES="${ENGINE_PROPERTIES} jackson.deserialization.whitelist.packages=org,com,java,javax"
+
+# We need to disable FIPS configuration of OpenJDK to be able to work with
+# file system keystores and interoperability with openssl
+ENGINE_PROPERTIES="${ENGINE_PROPERTIES} com.redhat.fips=false"
 
 #
 # Extra Java arguments to be added to command-line.
@@ -462,6 +481,18 @@ SSO_ALTERNATE_ENGINE_FQDNS=""
 # uses to communicate with the engine:
 SSO_CALLBACK_CLIENT_POOL_SIZE=10
 
+# The maximum allowed unique SSO client IDs used when dynamically loading missing client's info.
+# This very rare situation can take place when new SSO client is registered by ovirt-register-sso-client-tool
+# and is requested by authorisation flow for the first time without restarting ovirt-engine.
+# Sample real life scenario: new external(not configured by engine-setup) instance of Grafana is being added
+SSO_MAX_ALLOWED_MISSING_UNIQUE_CLIENTS=2
+
+# The maximum allowed attempts per minute to refresh missing SSO client info.
+# This very rare situation can take place when new SSO client is registered by ovirt-register-sso-client-tool
+# and is requested by authorisation flow for the first time without restarting ovirt-engine.
+# Sample real life scenario: new external(not configured by engine-setup) instance of Grafana is being added
+SSO_MAX_MISSING_CLIENT_REFRESH_ATTEMPTS_PER_MINUTE=5
+
 # The maximal allowed number of sessions per user, where -1 indicates that no limit has been set
 ENGINE_MAX_USER_SESSIONS=-1
 
@@ -570,31 +601,6 @@ DASHBOARD_UTILIZATION_CACHE_UPDATE_INTERVAL=300
 # queries select from standard engine tables.
 #
 DASHBOARD_INVENTORY_CACHE_UPDATE_INTERVAL=60
-
-#
-# Quartz thread pool pool class
-# We can use two pools:
-# - provided by quartz: org.quartz.simpl.SimpleThreadPool
-# - based on ThreadPoolExecutor: org.ovirt.engine.core.utils.timer.SchedulerThreadPool
-#
-ENGINE_SCHEDULER_POOL_CLASS=org.ovirt.engine.core.utils.timer.SchedulerThreadPool
-
-#
-# Number of threads used in quartz thread pool
-#
-ENGINE_SCHEDULER_POOL_THREAD_SIZE=100
-
-#
-# Size of the queue used by quartz thread pool
-#
-ENGINE_SCHEDULER_POOL_QUEUE_SIZE=350
-
-#
-# Define rejection policy for the pool when a task queue is full.
-# When 'false' is set it will block if the queue is full.
-# When 'true' is set it would reject the task.
-#
-ENGINE_SCHEDULER_POOL_REJECT_POLICY=false
 
 #
 # Specify the thread pool size for jboss managed executor services used by the command executor framework. This thread

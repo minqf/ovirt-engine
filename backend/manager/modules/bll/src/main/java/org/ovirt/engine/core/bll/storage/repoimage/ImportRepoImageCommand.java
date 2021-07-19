@@ -157,7 +157,9 @@ public class ImportRepoImageCommand<T extends ImportRepoImageParameters> extends
 
     private HttpLocationInfo prepareRepoImageLocation() {
         return new HttpLocationInfo(
-                getProviderProxy().getImageUrl(getParameters().getSourceRepoImageId()),
+                getProviderProxy().getImageUrl(
+                        imagesHandler.getSpmCompatibilityVersion(getParameters().getStoragePoolId()),
+                        getParameters().getSourceRepoImageId()),
                 getProviderProxy().getDownloadHeaders());
     }
 
@@ -261,8 +263,6 @@ public class ImportRepoImageCommand<T extends ImportRepoImageParameters> extends
                     osRepository.getGraphicsAndDisplays(masterVm.getOsId(), vdsGroup.getCompatibilityVersion()).get(0).getSecond();
             masterVm.setDefaultDisplayType(defaultDisplayType);
         }
-
-        parameters.setBalloonEnabled(true);
 
         ActionReturnValue addVmTemplateReturnValue =
                 backend.runInternalAction(ActionType.AddVmTemplate,

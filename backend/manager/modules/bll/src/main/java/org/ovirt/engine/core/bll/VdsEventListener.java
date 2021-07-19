@@ -27,6 +27,7 @@ import org.ovirt.engine.core.bll.storage.pool.StoragePoolStatusHandler;
 import org.ovirt.engine.core.bll.tasks.CommandCoordinatorUtil;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.action.ActionParametersBase;
+import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.AddUnmanagedVmsParameters;
 import org.ovirt.engine.core.common.action.ConnectHostToStoragePoolServersParameters;
@@ -37,6 +38,7 @@ import org.ovirt.engine.core.common.action.MaintenanceNumberOfVdssParameters;
 import org.ovirt.engine.core.common.action.ProcessDownVmParameters;
 import org.ovirt.engine.core.common.action.ReconstructMasterParameters;
 import org.ovirt.engine.core.common.action.RunVmParams;
+import org.ovirt.engine.core.common.action.SaveVmExternalDataParameters;
 import org.ovirt.engine.core.common.action.SetNonOperationalVdsParameters;
 import org.ovirt.engine.core.common.action.SetStoragePoolStatusParameters;
 import org.ovirt.engine.core.common.action.StorageDomainPoolParametersBase;
@@ -360,6 +362,11 @@ public class VdsEventListener implements IVdsEventListener {
     }
 
     @Override
+    public void handleVdsFips(Guid vdsId) {
+        backend.runInternalAction(ActionType.HandleVdsFips, new VdsActionParameters(vdsId));
+    }
+
+    @Override
     public void processOnVmPoweringUp(Guid vmId) {
         IVdsAsyncCommand command = vdsBroker.getAsyncCommandForVm(vmId);
 
@@ -601,13 +608,14 @@ public class VdsEventListener implements IVdsEventListener {
     }
 
     @Override
-    public void restartVmsWithLease(List<Guid> vmIds) {
+    public void restartVmsWithLease(List<Guid> vmIds, Guid hostId) {
         if (vmIds.isEmpty()) {
             return;
         }
 
         EngineLock engineLock = new EngineLock(Collections.emptyMap(), Collections.emptyMap());
         ThreadPoolUtil.execute(() -> {
+            log.info("trying to run VMs with a lease on a non-responding host {} elsewhere", hostId);
             for (Guid vmId : vmIds) {
                 resourceManagerProvider.get().removeAsyncRunningVm(vmId);
                 backend.runInternalAction(
@@ -626,5 +634,9 @@ public class VdsEventListener implements IVdsEventListener {
         RunVmParams parameters = new RunVmParams(vmId);
         parameters.setRunInUnknownStatus(true);
         return parameters;
+    }
+
+    public ActionReturnValue saveExternalData(SaveVmExternalDataParameters parameters) {
+        return backend.runInternalAction(ActionType.SaveVmExternalData, parameters);
     }
 }

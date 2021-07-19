@@ -16,10 +16,8 @@ import org.ovirt.engine.core.bll.SerialChildCommandsExecutionCallback;
 import org.ovirt.engine.core.bll.SerialChildExecutingCommand;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.job.ExecutionHandler;
-import org.ovirt.engine.core.bll.storage.utils.VdsCommandsHelper;
 import org.ovirt.engine.core.bll.tasks.interfaces.CommandCallback;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
-import org.ovirt.engine.core.common.FeatureSupported;
 import org.ovirt.engine.core.common.action.ActionParametersBase.EndProcedure;
 import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
@@ -30,6 +28,7 @@ import org.ovirt.engine.core.common.action.CopyImageGroupWithDataCommandParamete
 import org.ovirt.engine.core.common.action.CopyImageGroupWithDataCommandParameters.CopyStage;
 import org.ovirt.engine.core.common.action.CreateVolumeContainerCommandParameters;
 import org.ovirt.engine.core.common.action.MeasureVolumeParameters;
+import org.ovirt.engine.core.common.action.UpdateVolumeCommandParameters;
 import org.ovirt.engine.core.common.businessentities.LocationInfo;
 import org.ovirt.engine.core.common.businessentities.VdsmImageLocationInfo;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
@@ -51,8 +50,6 @@ public class CopyImageGroupWithDataCommand<T extends CopyImageGroupWithDataComma
     @Typed(SerialChildCommandsExecutionCallback.class)
     private Instance<SerialChildCommandsExecutionCallback> callbackProvider;
     @Inject
-    private VdsCommandsHelper vdsCommandsHelper;
-    @Inject
     private ImagesHandler imagesHandler;
 
     private DiskImage diskImage;
@@ -73,15 +70,19 @@ public class CopyImageGroupWithDataCommand<T extends CopyImageGroupWithDataComma
         }
     }
 
-    @Override
-    protected void executeCommand() {
-        prepareParameters();
-        persistCommandIfNeeded();
+    protected void createVolumes() {
         if (getParameters().isCollapse()) {
             createVolume();
         } else {
             cloneStructureNotCollapsed();
         }
+    }
+
+    @Override
+    protected void executeCommand() {
+        prepareParameters();
+        persistCommandIfNeeded();
+        createVolumes();
 
         setSucceeded(true);
     }
@@ -125,7 +126,10 @@ public class CopyImageGroupWithDataCommand<T extends CopyImageGroupWithDataComma
     }
 
     private void createVolume() {
-        populateDiskSnapshotsInfoFromStorage();
+        if (getActionType() != ActionType.CopyManagedBlockDisk) {
+            populateDiskSnapshotsInfoFromStorage();
+        }
+
         CreateVolumeContainerCommandParameters parameters = new CreateVolumeContainerCommandParameters(
                 getParameters().getStoragePoolId(),
                 getParameters().getDestDomain(),
@@ -140,7 +144,7 @@ public class CopyImageGroupWithDataCommand<T extends CopyImageGroupWithDataComma
                 determineTotalImageInitialSize(getDiskImage(),
                         getParameters().getDestinationFormat(),
                         getParameters().getSrcDomain()));
-
+        parameters.setDiskAlias(getParameters().getDiskAlias());
         parameters.setJobWeight(getParameters().getOperationsJobWeight().get(CopyStage.DEST_CREATION.name()));
         parameters.setParentCommand(getActionType());
         parameters.setParentParameters(getParameters());
@@ -151,39 +155,75 @@ public class CopyImageGroupWithDataCommand<T extends CopyImageGroupWithDataComma
     @Override
     public boolean performNextOperation(int completedChildCount) {
         if (getParameters().getStage() == CopyStage.DEST_CREATION) {
-            updateStage(CopyStage.DATA_COPY);
-            Integer weight = getParameters().getOperationsJobWeight().get(CopyStage.DATA_COPY.name());
-            if (getParameters().isCollapse()) {
-                CopyDataCommandParameters parameters = new CopyDataCommandParameters(getParameters().getStoragePoolId(),
-                        buildImageLocationInfo(getParameters().getSrcDomain(), getParameters().getImageGroupID(),
-                                getParameters().getImageId()),
-                        buildImageLocationInfo(getParameters().getDestDomain(), getParameters().getDestImageGroupId(),
-                                getParameters().getDestinationImageId()), true);
+            copyData();
+            return true;
+        } else if (getParameters().getStage() == CopyStage.DATA_COPY) {
+            updateStage(CopyStage.UPDATE_VOLUME);
 
-                parameters.setEndProcedure(EndProcedure.COMMAND_MANAGED);
-                parameters.setParentCommand(getActionType());
-                parameters.setParentParameters(getParameters());
-                parameters.setJobWeight(weight);
-                runInternalAction(ActionType.CopyData, parameters);
-            } else {
-                CopyImageGroupVolumesDataCommandParameters p = new CopyImageGroupVolumesDataCommandParameters(
-                        getParameters().getStoragePoolId(),
-                        getParameters().getSrcDomain(),
-                        getParameters().getImageGroupID(),
-                        getParameters().getDestDomain(),
-                        getActionType(),
-                        getParameters()
-                );
-                p.setDestImageGroupId(getParameters().getDestImageGroupId());
-                p.setDestImageId(getParameters().getDestinationImageId());
-                p.setDestImages(getParameters().getDestImages());
-                p.setEndProcedure(EndProcedure.COMMAND_MANAGED);
-                p.setJobWeight(weight);
-                runInternalAction(ActionType.CopyImageGroupVolumesData, p);
+            // There is no need to update the volume if we are creating a cloned VM from template
+            if (!isTemplate(getDiskImage()) || getParameters().getParentCommand() == ActionType.CreateCloneOfTemplate) {
+                return true;
             }
+
+            UpdateVolumeCommandParameters parameters = new UpdateVolumeCommandParameters(
+                    getParameters().getStoragePoolId(),
+                    // vol_info
+                    (VdsmImageLocationInfo) buildImageLocationInfo(getParameters().getDestDomain(),
+                            getParameters().getDestImageGroupId(),
+                            getParameters().getDestinationImageId()),
+                    // legality
+                    null,
+                    // description
+                    null,
+                    // generation
+                    null,
+                    // VolumeRole, true will set the volume as SHARED
+                    Boolean.TRUE);
+
+            parameters.setParentCommand(getActionType());
+            parameters.setParentParameters(getParameters());
+            parameters.setEndProcedure(EndProcedure.COMMAND_MANAGED);
+
+            runInternalActionWithTasksContext(ActionType.UpdateVolume, parameters);
+
             return true;
         }
+
         return false;
+    }
+
+    protected void copyData() {
+        updateStage(CopyStage.DATA_COPY);
+        Integer weight = getParameters().getOperationsJobWeight().get(CopyStage.DATA_COPY.name());
+
+        if (getParameters().isCollapse()) {
+            CopyDataCommandParameters parameters = new CopyDataCommandParameters(getParameters().getStoragePoolId(),
+                    buildImageLocationInfo(getParameters().getSrcDomain(), getParameters().getImageGroupID(),
+                            getParameters().getImageId()),
+                    buildImageLocationInfo(getParameters().getDestDomain(), getParameters().getDestImageGroupId(),
+                            getParameters().getDestinationImageId()), true);
+
+            parameters.setEndProcedure(EndProcedure.COMMAND_MANAGED);
+            parameters.setParentCommand(getActionType());
+            parameters.setParentParameters(getParameters());
+            parameters.setJobWeight(weight);
+            runInternalAction(ActionType.CopyData, parameters);
+        } else {
+            CopyImageGroupVolumesDataCommandParameters p = new CopyImageGroupVolumesDataCommandParameters(
+                    getParameters().getStoragePoolId(),
+                    getParameters().getSrcDomain(),
+                    getParameters().getImageGroupID(),
+                    getParameters().getDestDomain(),
+                    getActionType(),
+                    getParameters()
+            );
+            p.setDestImageGroupId(getParameters().getDestImageGroupId());
+            p.setDestImageId(getParameters().getDestinationImageId());
+            p.setDestImages(getParameters().getDestImages());
+            p.setEndProcedure(EndProcedure.COMMAND_MANAGED);
+            p.setJobWeight(weight);
+            runInternalAction(ActionType.CopyImageGroupVolumesData, p);
+        }
     }
 
     private Long determineTotalImageInitialSize(DiskImage sourceImage,
@@ -191,20 +231,19 @@ public class CopyImageGroupWithDataCommand<T extends CopyImageGroupWithDataComma
             Guid srcDomain) {
         // Check if we have a host in the DC capable of running the measure volume verb,
         // otherwise fallback to the legacy method
-        Guid hostId = vdsCommandsHelper.getHostForExecution(sourceImage.getStoragePoolId(),
-                vds -> FeatureSupported.isMeasureVolumeSupported(vds));
-        if (hostId == null) {
+        Guid hostId = imagesHandler.getHostForMeasurement(sourceImage.getStoragePoolId(),
+                sourceImage.getId());
+        // We are collapsing the chain, so we want to measure the leaf to get the size
+        // of the entire chain
+        List<DiskImage> images = diskImageDao.getAllSnapshotsForImageGroup(sourceImage.getId());
+        imagesHandler.sortImageList(images);
+        DiskImage leaf = images.get(images.size() - 1);
+        if (hostId == null || (leaf.getActive() && !leaf.getStorageTypes().get(0).isBlockDomain())) {
             return imagesHandler.determineTotalImageInitialSize(getDiskImage(),
                     getParameters().getDestinationFormat(),
                     getParameters().getSrcDomain(),
                     getParameters().getDestDomain());
         } else {
-            // We are collapsing the chain, so we want to measure the leaf to get the size
-            // of the entire chain
-            List<DiskImage> images = diskImageDao.getAllSnapshotsForImageGroup(sourceImage.getId());
-            imagesHandler.sortImageList(images);
-            DiskImage leaf = images.get(images.size() - 1);
-
             MeasureVolumeParameters parameters = new MeasureVolumeParameters(leaf.getStoragePoolId(),
                     srcDomain,
                     leaf.getId(),
@@ -228,6 +267,10 @@ public class CopyImageGroupWithDataCommand<T extends CopyImageGroupWithDataComma
 
     private LocationInfo buildImageLocationInfo(Guid domId, Guid imageGroupId, Guid imageId) {
         return new VdsmImageLocationInfo(domId, imageGroupId, imageId, null);
+    }
+
+    private boolean isTemplate(DiskImage diskImage) {
+        return diskImage.getVmEntityType() != null && diskImage.getVmEntityType().isTemplateType();
     }
 
     private DiskImage getDiskImage() {

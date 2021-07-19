@@ -75,6 +75,11 @@ public class AnsibleConstants {
     public static final String IMPORT_OVA_PLAYBOOK = "ovirt-ova-import.yml";
 
     /**
+     * This is name of file which executes the ova-external-data via Ansible.
+     */
+    public static final String OVA_EXTERNAL_DATA_PLAYBOOK = "ovirt-ova-external-data.yml";
+
+    /**
      * This is name of file which executes the lvmcache via Ansible.
      */
     public static final String CREATE_BRICK_PLAYBOOK = "create-brick.yml";
@@ -83,10 +88,18 @@ public class AnsibleConstants {
      *  This is the name of file which executes Replace Gluster
      */
     public static final String REPLACE_GLUSTER_PLAYBOOK = "replace-gluster.yml";
+
+    /**
+     *  This is the name of file which executes host-fix-encrypted-migrations via Ansible
+     */
+    public static final String HOST_MIGRATION_CERTS = "ovirt-host-fix-encrypted-migrations.yml";
+
     /**
      * Name of the task where VDSM_ID is loaded, so we can distinguish this task and parse it.
      */
     public static final String TASK_VDSM_ID = "Fetch vdsm id";
 
     public static final String HOST_DEPLOY_LOG_DIRECTORY = "host-deploy";
+
+    public static final Path ANSIBLE_RUNNER_SERVICE_LOG = Paths.get("/var/log/ovirt-engine/ansible-runner-service.log");
 }

@@ -2,12 +2,12 @@ package org.ovirt.engine.core.aaa.servlet;
 
 import java.io.IOException;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Map;
 
 import javax.naming.InitialContext;
 import javax.naming.NamingException;
-import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -16,6 +16,7 @@ import javax.servlet.http.HttpSession;
 import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.api.extensions.ExtMap;
 import org.ovirt.engine.core.aaa.CreateUserSessionsError;
+import org.ovirt.engine.core.aaa.SsoUtils;
 import org.ovirt.engine.core.aaa.filters.FiltersHelper;
 import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
@@ -40,7 +41,7 @@ public class SsoPostLoginServlet extends HttpServlet {
     }
 
     @Override
-    public void init() throws ServletException {
+    public void init() {
         String strVal = getServletConfig().getInitParameter("login-as-admin");
         if (strVal == null) {
             throw new RuntimeException("No login-as-admin init parameter specified for SsoPostLoginServlet.");
@@ -58,10 +59,11 @@ public class SsoPostLoginServlet extends HttpServlet {
     }
 
     @Override
-    protected void service(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+    protected void service(HttpServletRequest request, HttpServletResponse response) throws IOException {
         log.debug("Entered SsoPostLoginServlet");
-        String username = null;
+        String username;
         String profile = null;
+        String authzName;
         InitialContext ctx = null;
         try {
             String error_description = request.getParameter("error_description");
@@ -73,21 +75,27 @@ public class SsoPostLoginServlet extends HttpServlet {
             if (StringUtils.isEmpty(code)){
                 throw new RuntimeException("No authorization code found in request");
             }
+            //appUrl not encoded
             String appUrl = request.getParameter("app_url");
+
             log.debug("Received app_url '{}'", appUrl);
+            if (!SsoUtils.isDomainValid(appUrl)) {
+                throw new RuntimeException(
+                        "app_url domain differs from SSO_ENGINE_URL or SSO_ALTERNATE_ENGINE_FQDN domains");
+            }
             Map<String, Object> jsonResponse = FiltersHelper.getPayloadForAuthCode(
                     code,
                     "ovirt-app-admin ovirt-app-portal ovirt-app-api",
-                    URLEncoder.encode(postActionUrl, "UTF-8"));
+                    URLEncoder.encode(postActionUrl, StandardCharsets.UTF_8));
             Map<String, Object> payload = (Map<String, Object>) jsonResponse.get("ovirt");
 
             username = (String) jsonResponse.get("user_id");
-            profile = "";
             int index = username.lastIndexOf("@");
             if (index != -1) {
-                profile = username.substring(index+1);
+                profile = username.substring(index + 1);
                 username = username.substring(0, index);
             }
+            authzName = (String) jsonResponse.get("user_authz");
 
             try {
                 ctx = new InitialContext();
@@ -109,15 +117,17 @@ public class SsoPostLoginServlet extends HttpServlet {
                 if (!queryRetVal.getSucceeded() ) {
                     if (queryRetVal.getActionReturnValue() == CreateUserSessionsError.NUM_OF_SESSIONS_EXCEEDED) {
                         throw new RuntimeException(String.format(
-                                "Unable to login user %s@%s because the maximum number of allowed sessions %s is"
-                                        + " exceeded",
+                                "Unable to login user %s@%s with profile [%s]" +
+                                        " because the maximum number of allowed sessions %s is exceeded",
                                 username,
+                                authzName,
                                 profile,
                                 maxUserSessions));
                     }
                     throw new RuntimeException(String.format(
-                            "The user %s@%s is not authorized to perform login",
+                            "The user %s@%s with profile [%s] is not authorized to perform login",
                             username,
+                            authzName,
                             profile));
                 } else {
                     HttpSession httpSession = request.getSession(true);
@@ -133,7 +143,9 @@ public class SsoPostLoginServlet extends HttpServlet {
             } catch (RuntimeException ex) {
                 throw ex;
             } catch (Exception ex) {
-                throw new RuntimeException(String.format("User login failure: %s", username), ex);
+                throw new RuntimeException(
+                        String.format("User login failure: %s@%s with profile [%s]", username, authzName, profile),
+                        ex);
             } finally {
                 try {
                     if (ctx != null) {

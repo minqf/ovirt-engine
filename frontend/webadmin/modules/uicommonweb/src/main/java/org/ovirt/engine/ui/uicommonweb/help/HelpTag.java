@@ -628,6 +628,8 @@ public enum HelpTag {
 
     reboot_virtual_machine("reboot_virtual_machine", HelpTagType.WEBADMIN, "VMs main tab -> Reboot confirmation dialog"), //$NON-NLS-1$ //$NON-NLS-2$
 
+    reset_virtual_machine("reset_virtual_machine", HelpTagType.WEBADMIN, "VMs main tab -> Reset confirmation dialog"), //$NON-NLS-1$ //$NON-NLS-2$
+
     remove_disk_snapshot("remove_disk_snapshot", HelpTagType.WEBADMIN, "Storage Tab > Snapshots Sub-Tab > Remove Disk Snapshot(s)"), //$NON-NLS-1$ //$NON-NLS-2$
 
     storage_qos("storage_qos", HelpTagType.UNKNOWN), //$NON-NLS-1$
@@ -678,7 +680,9 @@ public enum HelpTag {
 
     errata("errata", HelpTagType.WEBADMIN, "System tree > Errata"), //$NON-NLS-1$ //$NON-NLS-2$
 
-    reset_brick("reset_brick", HelpTagType.WEBADMIN, "Volumes Tab > Bricks Sub-Tab > Reset Bricks"); //$NON-NLS-1$ //$NON-NLS-2$
+    reset_brick("reset_brick", HelpTagType.WEBADMIN, "Volumes Tab > Bricks Sub-Tab > Reset Bricks"), //$NON-NLS-1$ //$NON-NLS-2$
+
+    create_iso_domain("create_iso_domain", HelpTagType.WEBADMIN, "Storage Tab > New Domain > Confirm ISO domain type"); //$NON-NLS-1$ //$NON-NLS-2$
 
     public final String name;
 

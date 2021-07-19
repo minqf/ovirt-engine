@@ -25,6 +25,7 @@ import org.ovirt.engine.core.common.businessentities.VmTemplate;
 import org.ovirt.engine.core.common.businessentities.network.Network;
 import org.ovirt.engine.core.common.businessentities.network.NetworkFilter;
 import org.ovirt.engine.core.common.businessentities.network.NetworkQoS;
+import org.ovirt.engine.core.common.businessentities.network.ProviderNetwork;
 import org.ovirt.engine.core.common.businessentities.network.VnicProfile;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.compat.Guid;
@@ -309,6 +310,24 @@ public class VnicProfileValidatorTest {
     }
 
     @Test
+    public void vnicProfileForNoPortIsolationNetwork() {
+        vnicProfileForPortIsolationNetworkTest(false, isValid());
+    }
+
+    @Test
+    public void vnicProfileForPortIsolationNetwork() {
+        vnicProfileForPortIsolationNetworkTest(true,
+                failsWith(EngineMessage.ACTION_TYPE_FAILED_PASSTHROUGH_PROFILE_NOT_SUPPORTS_PORT_ISOLATION));
+    }
+
+    private void vnicProfileForPortIsolationNetworkTest(boolean portIsolation, Matcher<ValidationResult> matcher) {
+        when(network.isPortIsolation()).thenReturn(portIsolation);
+        when(networkDao.get(any())).thenReturn(network);
+        when(vnicProfile.isPassthrough()).thenReturn(true);
+        assertThat(validator.passthroughProfileNoPortIsolation(), matcher);
+    }
+
+    @Test
     public void externalNetworkPortMirroring() {
         externalNetworkPortMirroringTest(true,
                 true,
@@ -473,4 +492,92 @@ public class VnicProfileValidatorTest {
         when(vnicProfile.getNetworkQosId()).thenReturn(qosId);
         when(vnicProfile.getNetworkFilterId()).thenReturn(networkFilterId);
     }
+
+    @Test
+    public void emptyFailoverIdSuccess() {
+        when(vnicProfile.getFailoverVnicProfileId()).thenReturn(null);
+        assertThat(validator.validFailoverId(), isValid());
+    }
+
+    @Test
+    public void failoverProfilePassthroughFail() {
+        VnicProfile failoverProfile = new VnicProfile();
+        failoverProfile.setPassthrough(true);
+
+        when(vnicProfile.getFailoverVnicProfileId()).thenReturn(OTHER_GUID);
+        when(vnicProfileDao.get(OTHER_GUID)).thenReturn(failoverProfile);
+
+        assertThat(validator.validFailoverId(),
+                failsWith(EngineMessage.ACTION_TYPE_FAILED_FAILOVER_VNIC_PROFILE_ID_IS_NOT_VALID));
+    }
+
+    @Test
+    public void failoverProfileExternalNetworkFail() {
+        Guid networkId = Guid.newGuid();
+        VnicProfile failoverProfile = new VnicProfile();
+        failoverProfile.setNetworkId(networkId);
+        Network externalNetwork = new Network();
+        externalNetwork.setProvidedBy(new ProviderNetwork());
+
+        when(vnicProfile.getFailoverVnicProfileId()).thenReturn(OTHER_GUID);
+        when(vnicProfileDao.get(OTHER_GUID)).thenReturn(failoverProfile);
+        when(networkDao.get(networkId)).thenReturn(externalNetwork);
+
+        assertThat(validator.validFailoverId(),
+                failsWith(EngineMessage.ACTION_TYPE_FAILED_FAILOVER_VNIC_PROFILE_NOT_SUPPORTED_WITH_EXTERNAL_NETWORK));
+    }
+
+    @Test
+    public void failoverProfileSuccess() {
+        testProfileWithFailover(isValid(), true, true);
+    }
+
+    @Test
+    public void profileWithFailoverNotPassthroughFail() {
+        testProfileWithFailover(failsWith(EngineMessage.ACTION_TYPE_FAILED_FAILOVER_IS_SUPPORTED_ONLY_FOR_MIGRATABLE_PASSTROUGH),
+                false,
+                true);
+    }
+
+    @Test
+    public void profileWithFailoverNotMigratableFail() {
+        testProfileWithFailover(failsWith(EngineMessage.ACTION_TYPE_FAILED_FAILOVER_IS_SUPPORTED_ONLY_FOR_MIGRATABLE_PASSTROUGH),
+                true,
+                false);
+    }
+
+    @Test
+    public void failoverIdPointingToSelfFail() {
+        when(vnicProfile.getFailoverVnicProfileId()).thenReturn(DEFAULT_GUID);
+        when(vnicProfile.getId()).thenReturn(DEFAULT_GUID);
+        assertThat(validator.validFailoverId(),
+                failsWith(EngineMessage.ACTION_TYPE_FAILED_FAILOVER_VNIC_PROFILE_ID_CANNOT_POINT_TO_SELF));
+    }
+
+    private void testProfileWithFailover(Matcher<ValidationResult> matcher, boolean passthrough, boolean migratable) {
+        when(vnicProfile.isPassthrough()).thenReturn(passthrough);
+        when(vnicProfile.isMigratable()).thenReturn(migratable);
+        when(vnicProfile.getFailoverVnicProfileId()).thenReturn(OTHER_GUID);
+        when(vnicProfileDao.get(OTHER_GUID)).thenReturn(new VnicProfile());
+        when(networkDao.get(any())).thenReturn(new Network());
+
+        assertThat(validator.validFailoverId(), matcher);
+    }
+
+    @Test
+    public void failoverDidNotChange() {
+        assertThat(validator.failoverNotChangedIfUsedByVms(), isValid());
+    }
+
+    @Test
+    public void failoverChangeNotSupported() {
+        VnicProfile updatedVnicProfile = mock(VnicProfile.class);
+        when(vnicProfile.getFailoverVnicProfileId()).thenReturn(DEFAULT_GUID);
+        when(updatedVnicProfile.getFailoverVnicProfileId()).thenReturn(OTHER_GUID);
+        when(vnicProfileDao.get(any())).thenReturn(updatedVnicProfile);
+
+        mockVmsUsingVnicProfile(Collections.singletonList(mock(VM.class)));
+        assertThat(validator.failoverNotChangedIfUsedByVms(), failsWithVnicProfileInUse());
+    }
+
 }

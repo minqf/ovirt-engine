@@ -16,11 +16,9 @@ import org.ovirt.engine.core.bll.SerialChildCommandsExecutionCallback;
 import org.ovirt.engine.core.bll.SerialChildExecutingCommand;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.job.ExecutionHandler;
-import org.ovirt.engine.core.bll.storage.utils.VdsCommandsHelper;
 import org.ovirt.engine.core.bll.tasks.interfaces.CommandCallback;
 import org.ovirt.engine.core.bll.utils.CommandsWeightsUtils;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
-import org.ovirt.engine.core.common.FeatureSupported;
 import org.ovirt.engine.core.common.action.ActionParametersBase.EndProcedure;
 import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
@@ -59,9 +57,6 @@ public class CloneImageGroupVolumesStructureCommand<T extends CloneImageGroupVol
 
     @Inject
     private ImagesHandler imagesHandler;
-    @Inject
-    private VdsCommandsHelper vdsCommandsHelper;
-
 
     public CloneImageGroupVolumesStructureCommand(T parameters, CommandContext cmdContext) {
         super(parameters, cmdContext);
@@ -193,11 +188,10 @@ public class CloneImageGroupVolumesStructureCommand<T extends CloneImageGroupVol
             Guid srcDomain,
             Guid dstDomain,
             Guid imageGroupID) {
-        Guid hostId = vdsCommandsHelper.getHostForExecution(storagePoolId,
-                vds -> FeatureSupported.isMeasureVolumeSupported(vds));
+        Guid hostId = imagesHandler.getHostForMeasurement(storagePoolId, imageGroupID);
         if (hostId != null) {
-            if (storageDomainDao.get(dstDomain).getStorageType().isBlockDomain() &&
-                    Guid.Empty.equals(sourceImage.getParentId())) {
+            if ((storageDomainDao.get(srcDomain).getStorageType().isBlockDomain() || !sourceImage.isActive()) &&
+                    storageDomainDao.get(dstDomain).getStorageType().isBlockDomain()) {
                 MeasureVolumeParameters parameters = new MeasureVolumeParameters(storagePoolId,
                         srcDomain,
                         imageGroupID,
@@ -207,6 +201,7 @@ public class CloneImageGroupVolumesStructureCommand<T extends CloneImageGroupVol
                 parameters.setParentCommand(getActionType());
                 parameters.setVdsRunningOn(hostId);
                 parameters.setCorrelationId(getCorrelationId());
+                parameters.setWithBacking(false);
                 ActionReturnValue actionReturnValue =
                         runInternalAction(ActionType.MeasureVolume, parameters,
                                 ExecutionHandler.createDefaultContextForTasks(getContext()));

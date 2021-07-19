@@ -6,7 +6,9 @@ import sys
 
 
 from contextlib import closing
+from subprocess import CalledProcessError
 from subprocess import call
+from subprocess import check_call
 from subprocess import check_output
 
 import six
@@ -33,7 +35,10 @@ def extract_disk(ova_path, offset, image_path):
     try:
         qemu_cmd = ("qemu-img convert -O qcow2 '%s' '%s'"
                     % (loop, image_path))
-        call(['su', '-p', '-c', qemu_cmd, 'vdsm'])
+        check_call(['su', '-p', '-c', qemu_cmd, 'vdsm'])
+    except CalledProcessError as exc:
+        print("qemu-img conversion failed with error: ", exc.returncode)
+        raise
     finally:
         os.chown(loop, loop_stat.st_uid, loop_stat.st_gid)
         call(['losetup', '-d', loop])
@@ -63,7 +68,7 @@ def nti(s):
             s = nts(s, "ascii", "strict")
             n = int(s.strip() or "0", 8)
         except ValueError:
-            print ('invalid header')
+            print('invalid header')
             raise
     else:
         n = 0
@@ -94,7 +99,7 @@ def extract_disks(ova_path, image_paths, image_mappings):
             # extract the next disk to the corresponding image
             name = nts(info[0:100], 'utf-8', 'surrogateescape')
             size = nti(info[124:136])
-            if name.lower().endswith('ovf'):
+            if name.lower().endswith('ovf') or name.lower().endswith('dat'):
                 jump = size
                 # ovf is typically not aligned to 512 bytes blocks
                 remainder = size % TAR_BLOCK_SIZE
@@ -111,7 +116,7 @@ def extract_disks(ova_path, image_paths, image_mappings):
 
 
 if len(sys.argv) < 4:
-    print ("Usage: extract_ova.py ova_path disks_paths image_mappings")
+    print("Usage: extract_ova.py ova_path disks_paths image_mappings")
     sys.exit(2)
 
 extract_disks(sys.argv[1], yaml.load(sys.argv[2]), yaml.load(sys.argv[3]))

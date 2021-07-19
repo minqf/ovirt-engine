@@ -55,12 +55,6 @@ public class VirtualMachineActionPanelPresenterWidget extends ActionPanelPresent
                 return getModel().getEditCommand();
             }
         });
-        addActionButton(new WebAdminButtonDefinition<Void, VM>(constants.removeVm()) {
-            @Override
-            protected UICommand resolveCommand() {
-                return getModel().getRemoveCommand();
-            }
-        });
         addMenuListItem(new WebAdminButtonDefinition<Void, VM>(constants.cloneVm()) {
             @Override
             protected UICommand resolveCommand() {
@@ -103,12 +97,20 @@ public class VirtualMachineActionPanelPresenterWidget extends ActionPanelPresent
                     }
                 });
 
-        addActionButton(new WebAdminImageButtonDefinition<Void, VM>(constants.rebootVm(), IconType.REPEAT) {
+        List<ActionButtonDefinition<Void, VM>> rebootSubActions = new LinkedList<>();
+        rebootSubActions.add(new WebAdminImageButtonDefinition<Void, VM>(constants.resetVm(), IconType.REPEAT) {
             @Override
             protected UICommand resolveCommand() {
-                return getModel().getRebootCommand();
+                return getModel().getResetCommand();
             }
         });
+        addComboActionButtonWithContexts(
+                new WebAdminImageButtonDefinition<Void, VM>(constants.rebootVm(), IconType.REPEAT, rebootSubActions) {
+                    @Override
+                    protected UICommand resolveCommand() {
+                        return getModel().getRebootCommand();
+                    }
+                });
 
         List<ActionButtonDefinition<Void, VM>> consoleOptionsSubActions = new LinkedList<>();
         consoleOptionsSubActions.add(new UiCommandButtonDefinition<Void, VM>(getSharedEventBus(),
@@ -134,6 +136,16 @@ public class VirtualMachineActionPanelPresenterWidget extends ActionPanelPresent
         });
 
         addDividerToKebab();
+
+        addMenuListItem(new WebAdminButtonDefinition<Void, VM>(constants.removeVm()) {
+            @Override
+            protected UICommand resolveCommand() {
+                return getModel().getRemoveCommand();
+            }
+        });
+
+        addDividerToKebab();
+
         addMenuListItem(new WebAdminButtonDefinition<Void, VM>(constants.changeCdVm()) {
             @Override
             protected UICommand resolveCommand() {

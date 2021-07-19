@@ -27,10 +27,11 @@ public class CopyDiskModel extends MoveOrCopyDiskModel {
     @Override
     public void init(ArrayList<DiskImage> disksImages) {
         if (disksImages.size() > 0) {
-            setIsAliasChangable(!isTemplateDisk(disksImages.get(0)));
+            setIsAliasChangeable(!isTemplateDisk(disksImages.get(0)));
         }
 
         setDiskImages(disksImages);
+        setAllowedForManagedBlockDisks(true);
 
         AsyncDataProvider.getInstance().getDiskList(new AsyncQuery<>(disks -> {
             onInitAllDisks((List) disks);
@@ -46,16 +47,20 @@ public class CopyDiskModel extends MoveOrCopyDiskModel {
         }
         setDisks(disks);
         initStorageDomains();
+        getTargetStorageDomains().setIsAvailable(getDiskImages().size() > 1);
     }
 
     @Override
     protected void initStorageDomains() {
         Disk disk = getDisks().get(0).getDisk();
-        if (disk.getDiskStorageType() != DiskStorageType.IMAGE) {
+        if (disk.getDiskStorageType() != DiskStorageType.IMAGE &&
+                disk.getDiskStorageType() != DiskStorageType.MANAGED_BLOCK_STORAGE) {
             return;
         }
 
-        AsyncDataProvider.getInstance().getStorageDomainList(new AsyncQuery<>(storageDomains -> onInitStorageDomains(storageDomains)), ((DiskImage) disk).getStoragePoolId());
+        AsyncDataProvider.getInstance().getStorageDomainList(
+                new AsyncQuery<>(this::onInitStorageDomains),
+                ((DiskImage) disk).getStoragePoolId());
     }
 
     @Override

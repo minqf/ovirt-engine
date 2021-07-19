@@ -1,5 +1,7 @@
 package org.ovirt.engine.core.bll;
 
+import static org.ovirt.engine.core.bll.validator.CpuPinningValidator.isCpuPinningValid;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -28,8 +30,7 @@ import org.ovirt.engine.core.common.action.GraphicsParameters;
 import org.ovirt.engine.core.common.action.UpdateVmTemplateParameters;
 import org.ovirt.engine.core.common.action.VmManagementParametersBase;
 import org.ovirt.engine.core.common.businessentities.ActionGroup;
-import org.ovirt.engine.core.common.businessentities.Cluster;
-import org.ovirt.engine.core.common.businessentities.DisplayType;
+import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.GraphicsDevice;
 import org.ovirt.engine.core.common.businessentities.GraphicsType;
 import org.ovirt.engine.core.common.businessentities.VM;
@@ -123,9 +124,12 @@ public class UpdateVmTemplateCommand<T extends UpdateVmTemplateParameters> exten
                 getParameters().getVmTemplateData(),
                 getCluster(),
                 getParameters().getGraphicsDevices());
-        vmHandler.autoSelectResumeBehavior(getParameters().getVmTemplateData(), getCluster());
+        vmHandler.autoSelectResumeBehavior(getParameters().getVmTemplateData());
 
         getVmDeviceUtils().setCompensationContext(getCompensationContextIfEnabledByCaller());
+        if (getVmTemplate().getBiosType() == null) {
+            getVmTemplate().setBiosType(oldTemplate.getBiosType());
+        }
     }
 
     @Override
@@ -134,8 +138,7 @@ public class UpdateVmTemplateCommand<T extends UpdateVmTemplateParameters> exten
         boolean isBlankTemplate = isBlankTemplate();
 
         if (getCluster() == null && !(isInstanceType || isBlankTemplate)) {
-            addValidationMessage(EngineMessage.ACTION_TYPE_FAILED_CLUSTER_CAN_NOT_BE_EMPTY);
-            return false;
+            return failValidation(EngineMessage.ACTION_TYPE_FAILED_CLUSTER_CAN_NOT_BE_EMPTY);
         }
 
         boolean returnValue = false;
@@ -218,6 +221,14 @@ public class UpdateVmTemplateCommand<T extends UpdateVmTemplateParameters> exten
             return failValidation(msgs);
         }
 
+        if (getVmTemplate().getClusterId() != null && getVmTemplate().getBiosType() == null) {
+            return failValidation(EngineMessage.VM_TEMPLATE_WITH_CLUSTER_WITHOUT_BIOS_TYPE);
+        }
+
+        if (getVmTemplate().getClusterId() == null && getVmTemplate().getBiosType() != null) {
+            return failValidation(EngineMessage.VM_TEMPLATE_WITHOUT_CLUSTER_WITH_BIOS_TYPE);
+        }
+
         if (!isInstanceType && !isBlankTemplate && returnValue) {
             return doClusterRelatedChecks();
         } else {
@@ -248,19 +259,14 @@ public class UpdateVmTemplateCommand<T extends UpdateVmTemplateParameters> exten
             returnValue = validate(vmHandler.isGraphicsAndDisplaySupported(getParameters().getVmTemplateData().getOsId(),
                     vmHandler.getResultingVmGraphics(getVmDeviceUtils().getGraphicsTypesOfEntity(getVmTemplateId()), getParameters().getGraphicsDevices()),
                     getParameters().getVmTemplateData().getDefaultDisplayType(),
+                    getParameters().getVmTemplateData().getBiosType(),
                     getVmTemplate().getCompatibilityVersion()));
         }
 
         if (returnValue) {
             returnValue = validate(VmValidator.validateCpuSockets(getParameters().getVmTemplateData(),
-                    getVmTemplate().getCompatibilityVersion()));
-        }
-
-        if (returnValue && getParameters().getVmTemplateData().getSingleQxlPci() &&
-                getParameters().getVmTemplateData().getDefaultDisplayType() != DisplayType.none &&
-                !validate(vmHandler.isSingleQxlDeviceLegal(getParameters().getVmTemplateData().getDefaultDisplayType(),
-                        getParameters().getVmTemplateData().getOsId()))) {
-            returnValue = false;
+                    getVmTemplate().getCompatibilityVersion(),
+                    getCluster().getArchitecture()));
         }
 
         // Check PCI and IDE limits are ok
@@ -276,7 +282,6 @@ public class UpdateVmTemplateCommand<T extends UpdateVmTemplateParameters> exten
                     diskVmElements,
                     getVmDeviceUtils().hasVirtioScsiController(getParameters().getVmTemplateData().getId()),
                     hasWatchdog(getParameters().getVmTemplateData().getId()),
-                    getVmDeviceUtils().hasMemoryBalloon(getParameters().getVmTemplateData().getId()),
                     isSoundDeviceEnabled()))) {
                 returnValue = false;
             }
@@ -293,20 +298,25 @@ public class UpdateVmTemplateCommand<T extends UpdateVmTemplateParameters> exten
             return false;
         }
 
-        if (returnValue) {
-            boolean balloonEnabled = Boolean.TRUE.equals(getParameters().isBalloonEnabled());
-            if (balloonEnabled && !osRepository.isBalloonEnabled(getParameters().getVmTemplateData().getOsId(),
-                    getVmTemplate().getCompatibilityVersion())) {
-                addValidationMessageVariable("clusterArch", getCluster().getArchitecture());
-                return failValidation(EngineMessage.BALLOON_REQUESTED_ON_NOT_SUPPORTED_ARCH);
-            }
-        }
-
         boolean soundDeviceEnabled = Boolean.TRUE.equals(getParameters().isSoundDeviceEnabled());
         if (soundDeviceEnabled && !osRepository.isSoundDeviceEnabled(getParameters().getVmTemplateData().getOsId(),
                 getVmTemplate().getCompatibilityVersion())) {
             addValidationMessageVariable("clusterArch", getCluster().getArchitecture());
             return failValidation(EngineMessage.SOUND_DEVICE_REQUESTED_ON_NOT_SUPPORTED_ARCH);
+        }
+        // check cpuPinning
+        if (!validate(isCpuPinningValid(getVmTemplate().getCpuPinning(), getVmTemplate()))) {
+            return false;
+        }
+
+        boolean tpmEnabled = Boolean.TRUE.equals(getParameters().isTpmEnabled());
+        if (tpmEnabled && !getVmDeviceUtils().isTpmDeviceSupported(getVmTemplate(), getCluster())) {
+            addValidationMessageVariable("clusterArch", getCluster().getArchitecture());
+            return failValidation(EngineMessage.TPM_DEVICE_REQUESTED_ON_NOT_SUPPORTED_PLATFORM);
+        }
+
+        if (!validate(VmValidator.isBiosTypeSupported(getVmTemplate(), getCluster(), osRepository))) {
+            return false;
         }
 
         return returnValue;
@@ -379,6 +389,7 @@ public class UpdateVmTemplateCommand<T extends UpdateVmTemplateParameters> exten
         updateGraphicsDevice();
         checkTrustedService();
         updateVmsOfInstanceType();
+        updateVmDevicesOnChipsetChange();
 
         compensationStateChanged();
         setSucceeded(true);
@@ -441,25 +452,14 @@ public class UpdateVmTemplateCommand<T extends UpdateVmTemplateParameters> exten
         // update audio device
         getVmDeviceUtils().updateSoundDevice(oldTemplate,
                 getVmTemplate(),
-                getCluster(),
                 getVmTemplate().getCompatibilityVersion(),
                 getParameters().isSoundDeviceEnabled());
 
+        getVmDeviceUtils().updateTpmDevice(getVmTemplate(), getCluster(), getParameters().isTpmEnabled());
         getVmDeviceUtils().updateConsoleDevice(getVmTemplateId(), getParameters().isConsoleEnabled());
-        if (oldTemplate.getUsbPolicy() != getVmTemplate().getUsbPolicy() || oldTemplate.getVmType() != getVmTemplate().getVmType()) {
-            Cluster newCluster = getCluster();
-            Cluster oldCluster;
-            if (oldTemplate.getClusterId().equals(newCluster.getId())) {
-                oldCluster = newCluster;
-            } else {
-                oldCluster = oldTemplate.getClusterId() != null ? clusterDao.get(oldTemplate.getClusterId()) : null;
-            }
-            getVmDeviceUtils().updateUsbSlots(oldTemplate, oldCluster, getVmTemplate(), newCluster);
-        }
+        getVmDeviceUtils().updateUsbSlots(oldTemplate, getVmTemplate(), getCluster());
         getVmDeviceUtils().updateVirtioScsiController(getVmTemplate(), getParameters().isVirtioScsiEnabled());
-        if (getParameters().isBalloonEnabled() != null) {
-            getVmDeviceUtils().updateMemoryBalloon(getVmTemplateId(), getParameters().isBalloonEnabled());
-        }
+        getVmDeviceUtils().addMemoryBalloonIfNeeded(getVmTemplateId());
         getVmDeviceUtils().updateVideoDevices(oldTemplate, getParameters().getVmTemplateData());
     }
 
@@ -624,4 +624,21 @@ public class UpdateVmTemplateCommand<T extends UpdateVmTemplateParameters> exten
         return cachedGraphics;
     }
 
+    private void updateVmDevicesOnChipsetChange() {
+        if (isChipsetChanged()) {
+            log.info("BIOS chipset type has changed for template: {} ({}), the disks and devices will be converted to new chipset.",
+                    getVmTemplate().getName(),
+                    getVmTemplate().getId());
+            getVmHandler().convertVmToNewChipset(getVmTemplateId(), getVmTemplate().getBiosType().getChipsetType(), getCompensationContextIfEnabledByCaller());
+        }
+    }
+
+    private boolean isChipsetChanged() {
+        BiosType newEffectiveBiosType = getVmTemplate().getBiosType();
+        BiosType oldEffectiveBiosType = oldTemplate.getBiosType();
+        if (newEffectiveBiosType == null || oldEffectiveBiosType == null) {
+            return false;
+        }
+        return  newEffectiveBiosType.getChipsetType() != oldEffectiveBiosType.getChipsetType();
+    }
 }

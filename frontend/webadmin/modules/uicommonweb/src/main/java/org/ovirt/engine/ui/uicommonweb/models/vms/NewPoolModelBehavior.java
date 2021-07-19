@@ -135,6 +135,12 @@ public class NewPoolModelBehavior extends PoolModelBehaviorBase {
     }
 
     @Override
+    protected void updateBiosType() {
+        super.updateBiosType();
+        super.selectBiosTypeFromTemplate();
+    }
+
+    @Override
     protected List<Cluster> filterClusters(List<Cluster> clusters) {
         return AsyncDataProvider.getInstance().filterClustersWithoutArchitecture(clusters);
     }
@@ -142,11 +148,5 @@ public class NewPoolModelBehavior extends PoolModelBehaviorBase {
     @Override
     public InstanceTypeManager getInstanceTypeManager() {
         return instanceTypeManager;
-    }
-
-    @Override
-    public void enableSinglePCI(boolean enabled) {
-        super.enableSinglePCI(enabled);
-        getModel().setSingleQxlEnabled(enabled);
     }
 }

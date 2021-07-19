@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.ovirt.engine</groupId>
   <artifactId>root</artifactId>
-  <version>4.4.0-SNAPSHOT</version>
+  <version>4.4.8.1-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>ovirt-root</name>
   <description>oVirt Engine Root Project</description>
@@ -40,18 +40,17 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
     <!-- Versions of the API model and tools: -->
-    <metamodel.version>1.3.0</metamodel.version>
-    <model.version>4.4.14</model.version>
+    <metamodel.version>1.3.4</metamodel.version>
+    <model.version>4.4.31</model.version>
 
     <ovirt-engine-extensions-api.version>1.0.0</ovirt-engine-extensions-api.version>
 
     <!-- JDK9+ now separated modules from the jdk -->
     <javax.annotation-api.version>1.3.2</javax.annotation-api.version>
     <!-- Dependencies Versions -->
-    <junit.version>5.3.1</junit.version>
+    <junit.version>5.7.1</junit.version>
     <commons-lang.version>2.6</commons-lang.version>
     <commons-compress.version>1.5</commons-compress.version>
-    <quartz.version>2.1.2</quartz.version>
     <postgres.jdbc.version>42.2.3</postgres.jdbc.version>
     <javax.transaction>1.1</javax.transaction>
     <javax.activation.version>1.1</javax.activation.version>
@@ -64,30 +63,31 @@
     <javax.interceptor.api.version>1.0.0.Final</javax.interceptor.api.version>
     <dozer.version>5.2.0</dozer.version>
     <cxf.version>2.2.7</cxf.version>
-    <sshd-core.version>2.2.0</sshd-core.version>
-    <vdsm-jsonrpc-java.version>1.5.4</vdsm-jsonrpc-java.version>
-    <slf4j.version>1.7.5</slf4j.version>
-    <gwt.version>2.8.0</gwt.version>
-    <mockito.version>2.18.3</mockito.version>
+    <sshd-core.version>2.6.0</sshd-core.version>
+    <eddsa.version>0.3.0</eddsa.version>
+    <vdsm-jsonrpc-java.version>1.6.0</vdsm-jsonrpc-java.version>
+    <slf4j.version>1.7.22</slf4j.version>
+    <gwt.version>2.9.0</gwt.version>
+    <mockito.version>3.8.0</mockito.version>
     <javassist.version>3.23.1-GA</javassist.version>
     <javax.mail.version>1.4.4</javax.mail.version>
-    <hibernate-validator.version>4.2.0.Final</hibernate-validator.version>
+    <hibernate-validator.version>6.0.18.Final</hibernate-validator.version>
     <jackson.version>1.9.13</jackson.version>
+    <jackson2.version>2.10.3</jackson2.version>
     <commons-configuration.version>1.6</commons-configuration.version>
     <commons-jxpath.version>1.3</commons-jxpath.version>
-    <jaxb-xjc.version>2.3</jaxb-xjc.version>
-    <jaxb-impl.version>2.3.1</jaxb-impl.version>
-    <jaxb-core.version>2.3.0</jaxb-core.version>
+    <commons-beanutils.version>1.9.4</commons-beanutils.version>
+    <jaxb.version>2.3.1</jaxb.version>
     <jbosssx-bare.version>2.0.4</jbosssx-bare.version>
-    <infinispan.version>8.2.8.Final</infinispan.version>
+    <infinispan.version>9.4.18.Final</infinispan.version>
     <snakeyaml.version>1.17</snakeyaml.version>
     <ws-commons-util.version>1.0.2</ws-commons-util.version>
     <aopalliance.version>1.0</aopalliance.version>
     <snmp4j.version>2.5.3</snmp4j.version>
-    <kubevirt-client.version>0.3.0</kubevirt-client.version>
+    <kubevirt-client.version>0.5.0</kubevirt-client.version>
     <resteasy.version>3.6.1.Final</resteasy.version>
     <!-- OpenStack -->
-    <openstack-client.version>3.2.8</openstack-client.version>
+    <openstack-client.version>3.2.9</openstack-client.version>
     <!-- libsass -->
     <libsass-maven-plugin.version>0.2.8-libsass_3.4.4</libsass-maven-plugin.version>
 
@@ -96,11 +96,13 @@
     <maven-resources-plugin.version>2.4.3</maven-resources-plugin.version>
     <maven-ejb-plugin.version>2.3</maven-ejb-plugin.version>
     <cdi.api.version>1.2</cdi.api.version>
+    <jakarta-el.version>3.0.3</jakarta-el.version>
+    <validation-api.version>2.0.1.Final</validation-api.version>
     <javacc.version>2.6</javacc.version>
     <hamcrest.version>1.3</hamcrest.version>
     <reflections.version>0.9.9</reflections.version>
     <checkstyle.version>8.30</checkstyle.version>
-    <exec-maven-plugin.version>1.6.0</exec-maven-plugin.version>
+    <exec-maven-plugin.version>3.0.0</exec-maven-plugin.version>
 
     <!-- Plugins configurations-->
     <ovirt.surefire.reportsDirectory>${project.build.directory}/surefire-reports</ovirt.surefire.reportsDirectory>
@@ -124,11 +126,6 @@
         <version>${kubevirt-client.version}</version>
       </dependency>
       <dependency>
-        <groupId>org.quartz-scheduler</groupId>
-        <artifactId>quartz</artifactId>
-        <version>${quartz.version}</version>
-      </dependency>
-      <dependency>
         <groupId>commons-collections</groupId>
         <artifactId>commons-collections</artifactId>
         <version>3.2.2</version>
@@ -136,7 +133,7 @@
       <dependency>
         <groupId>commons-beanutils</groupId>
         <artifactId>commons-beanutils</artifactId>
-        <version>1.9.3</version>
+        <version>${commons-beanutils.version}</version>
       </dependency>
       <dependency>
         <groupId>javax.transaction</groupId>
@@ -159,13 +156,13 @@
       <dependency>
         <groupId>javax.xml.bind</groupId>
         <artifactId>jaxb-api</artifactId>
-        <version>${jaxb-impl.version}</version>
+        <version>${jaxb.version}</version>
         <scope>provided</scope>
       </dependency>
       <dependency>
         <groupId>com.sun.xml.bind</groupId>
         <artifactId>jaxb-impl</artifactId>
-        <version>${jaxb-impl.version}</version>
+        <version>${jaxb.version}</version>
         <scope>provided</scope>
       </dependency>
       <dependency>
@@ -275,6 +272,11 @@
         <version>${sshd-core.version}</version>
       </dependency>
       <dependency>
+        <groupId>net.i2p.crypto</groupId>
+        <artifactId>eddsa</artifactId>
+        <version>${eddsa.version}</version>
+      </dependency>
+      <dependency>
         <groupId>org.javassist</groupId>
         <artifactId>javassist</artifactId>
         <version>${javassist.version}</version>
@@ -285,7 +287,7 @@
         <version>${javax.mail.version}</version>
       </dependency>
       <dependency>
-        <groupId>org.hibernate</groupId>
+        <groupId>org.hibernate.validator</groupId>
         <artifactId>hibernate-validator</artifactId>
         <version>${hibernate-validator.version}</version>
       </dependency>
@@ -302,7 +304,17 @@
       <dependency>
         <groupId>com.fasterxml.jackson.core</groupId>
         <artifactId>jackson-annotations</artifactId>
-        <version>2.9.8</version>
+        <version>${jackson2.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>${jackson2.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.jackson.datatype</groupId>
+        <artifactId>jackson-datatype-jsr310</artifactId>
+        <version>${jackson2.version}</version>
       </dependency>
       <!--GWT dependencies-->
       <dependency>
@@ -358,6 +370,18 @@
         <scope>provided</scope>
       </dependency>
       <dependency>
+        <groupId>org.glassfish</groupId>
+        <artifactId>jakarta.el</artifactId>
+        <version>${jakarta-el.version}</version>
+        <scope>provided</scope>
+      </dependency>
+      <dependency>
+        <groupId>javax.validation</groupId>
+        <artifactId>validation-api</artifactId>
+        <version>${validation-api.version}</version>
+        <scope>provided</scope>
+      </dependency>
+      <dependency>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>javacc-maven-plugin</artifactId>
         <version>${javacc.version}</version>
@@ -379,19 +403,29 @@
         <artifactId>resteasy-jaxrs</artifactId>
         <version>${resteasy.version}</version>
       </dependency>
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter-engine</artifactId>
+        <version>${junit.version}</version>
+        <scope>test</scope>
+    </dependency>
+    <dependency>
+        <groupId>org.junit.jupiter</groupId>
+        <artifactId>junit-jupiter-params</artifactId>
+        <version>${junit.version}</version>
+        <scope>test</scope>
+    </dependency>
     </dependencies>
   </dependencyManagement>
   <dependencies>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter-engine</artifactId>
-      <version>${junit.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter-params</artifactId>
-      <version>${junit.version}</version>
       <scope>test</scope>
    </dependency>
    <dependency>
@@ -415,7 +449,7 @@
     <dependency>
       <groupId>org.assertj</groupId>
       <artifactId>assertj-core</artifactId>
-      <version>2.2.0</version>
+      <version>3.13.2</version>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -723,7 +757,7 @@
             <dependency>
               <groupId>org.ovirt.engine</groupId>
               <artifactId>ovirt-findbugs-filters</artifactId>
-              <version>4.4.0-SNAPSHOT</version>
+              <version>4.4.8.1-SNAPSHOT</version>
             </dependency>
           </dependencies>
         </plugin>

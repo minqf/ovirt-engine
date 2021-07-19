@@ -1,6 +1,8 @@
 package org.ovirt.engine.core.bll.storage.disk.image;
 
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
@@ -25,9 +27,12 @@ import org.ovirt.engine.core.bll.storage.utils.VdsCommandsHelper;
 import org.ovirt.engine.core.bll.utils.ClusterUtils;
 import org.ovirt.engine.core.bll.utils.VmDeviceUtils;
 import org.ovirt.engine.core.bll.validator.storage.StorageDomainValidator;
+import org.ovirt.engine.core.common.FeatureSupported;
 import org.ovirt.engine.core.common.businessentities.Snapshot;
 import org.ovirt.engine.core.common.businessentities.StorageDomain;
 import org.ovirt.engine.core.common.businessentities.StorageDomainStatic;
+import org.ovirt.engine.core.common.businessentities.StoragePool;
+import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VmDeviceId;
 import org.ovirt.engine.core.common.businessentities.VmTemplate;
@@ -71,7 +76,11 @@ import org.ovirt.engine.core.dao.DiskVmElementDao;
 import org.ovirt.engine.core.dao.ImageDao;
 import org.ovirt.engine.core.dao.ImageStorageDomainMapDao;
 import org.ovirt.engine.core.dao.StorageDomainDao;
+import org.ovirt.engine.core.dao.StoragePoolDao;
 import org.ovirt.engine.core.dao.StorageServerConnectionDao;
+import org.ovirt.engine.core.dao.VdsDao;
+import org.ovirt.engine.core.dao.VmCheckpointDao;
+import org.ovirt.engine.core.dao.VmDao;
 import org.ovirt.engine.core.dao.VmDeviceDao;
 import org.ovirt.engine.core.utils.ovf.OvfManager;
 import org.ovirt.engine.core.utils.ovf.OvfReaderException;
@@ -137,6 +146,21 @@ public class ImagesHandler {
 
     @Inject
     private DiskProfileHelper diskProfileHelper;
+
+    @Inject
+    private VmDao vmDao;
+
+    @Inject
+    private VdsDao vdsDao;
+
+    @Inject
+    private StoragePoolDao storagePoolDao;
+
+    @Inject
+    private VmCheckpointDao vmCheckpointDao;
+
+    @Inject
+    private MetadataDiskDescriptionHandler metadataDiskDescriptionHandler;
 
     /**
      * The following method will find all images and storages where they located for provide template and will fill an
@@ -827,7 +851,7 @@ public class ImagesHandler {
         return diskDummies;
     }
 
-    protected DiskImage getVolumeInfoFromVdsm(Guid storagePoolId, Guid newStorageDomainID, Guid newImageGroupId,
+    public DiskImage getVolumeInfoFromVdsm(Guid storagePoolId, Guid newStorageDomainID, Guid newImageGroupId,
                                       Guid newImageId) {
         return (DiskImage) vdsCommandsHelper.runVdsCommandWithFailover(
                 VDSCommandType.GetVolumeInfo,
@@ -1050,7 +1074,7 @@ public class ImagesHandler {
             DiskImage newImage = DiskImage.copyOf(diskImage);
             newImage.setParentId(nextParentId);
             newImage.setId(newImageGroupID);
-            newImage.setStorageIds(List.of(targetStorageDomainID));
+            newImage.setStorageIds(Arrays.asList(targetStorageDomainID));
             nextParentId = Guid.newGuid();
             newImage.setImageId(nextParentId);
             newImage.setVmSnapshotId(null);
@@ -1059,5 +1083,43 @@ public class ImagesHandler {
         }
 
         return oldToNewChain;
+    }
+
+    public Guid getHostForMeasurement(Guid storagePoolID, Guid imageGroupID) {
+        Map<Boolean, List<VM>> vms = vmDao.getForDisk(imageGroupID, true);
+        if (vms != null && !vms.computeIfAbsent(Boolean.TRUE, b -> new ArrayList<>()).isEmpty()) {
+            Optional<VM> runningVM = vms.get(Boolean.TRUE)
+                    .stream()
+                    .filter(VM::isRunning)
+                    .findAny();
+            if (runningVM.isPresent()) {
+                Guid hostId = runningVM.get().getRunOnVds();
+                return FeatureSupported.isMeasureVolumeSupported(vdsDao.get(hostId)) ? hostId : null;
+            }
+        }
+
+        return vdsCommandsHelper.getHostForExecution(storagePoolID,
+                vds -> FeatureSupported.isMeasureVolumeSupported(vds));
+    }
+
+    public Version getSpmCompatibilityVersion(Guid storagePoolId) {
+        StoragePool storagePool = storagePoolDao.get(storagePoolId);
+        VDS vds = vdsDao.get(storagePool.getSpmVdsId());
+        return vds.getClusterCompatibilityVersion();
+    }
+
+    public String getJsonDiskDescription(Disk disk) {
+        try {
+            return metadataDiskDescriptionHandler.generateJsonDiskDescription(disk);
+        } catch (IOException e) {
+            log.error("Exception while generating json for disk. ERROR: '{}'", e.getMessage());
+            return StringUtils.EMPTY;
+        }
+    }
+
+    public boolean shouldUseDiskBitmaps(Version version, DiskImage diskImage) {
+        return FeatureSupported.isBackupModeAndBitmapsOperationsSupported(version) &&
+                vmCheckpointDao.isDiskIncludedInCheckpoint(diskImage.getId()) &&
+                diskImage.isQcowFormat();
     }
 }

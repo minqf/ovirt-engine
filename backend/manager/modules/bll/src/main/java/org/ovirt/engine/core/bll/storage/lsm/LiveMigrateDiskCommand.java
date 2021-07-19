@@ -21,6 +21,7 @@ import org.ovirt.engine.core.bll.job.ExecutionContext;
 import org.ovirt.engine.core.bll.job.ExecutionHandler;
 import org.ovirt.engine.core.bll.storage.disk.MoveOrCopyDiskCommand;
 import org.ovirt.engine.core.bll.storage.disk.image.ImagesHandler;
+import org.ovirt.engine.core.bll.storage.utils.VdsCommandsHelper;
 import org.ovirt.engine.core.bll.tasks.CommandHelper;
 import org.ovirt.engine.core.bll.tasks.interfaces.CommandCallback;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
@@ -116,6 +117,8 @@ public class LiveMigrateDiskCommand<T extends LiveMigrateDiskParameters> extends
     private BaseDiskDao baseDiskDao;
     @Inject
     private StorageDomainStaticDao storageDomainStaticDao;
+    @Inject
+    private VdsCommandsHelper vdsCommandsHelper;
     @Inject
     @Typed(SerialChildCommandsExecutionCallback.class)
     private Instance<SerialChildCommandsExecutionCallback> callbackProvider;
@@ -374,6 +377,15 @@ public class LiveMigrateDiskCommand<T extends LiveMigrateDiskParameters> extends
             this.endSuccessfully();
             return;
         }
+
+        // If live migration of the disk was finished without errors but live merge
+        // failed we will consider this operation as successful.
+        if (getParameters().getLiveDiskMigrateStage() == LiveDiskMigrateStage.LIVE_MIGRATE_DISK_EXEC_COMPLETED) {
+            auditLog(this, AuditLogType.USER_MOVED_DISK_FINISHED_WITH_LEFTOVERS);
+            this.endSuccessfully();
+            return;
+        }
+
         super.endWithFailure();
         handleDestDisk();
 
@@ -481,6 +493,12 @@ public class LiveMigrateDiskCommand<T extends LiveMigrateDiskParameters> extends
                             getParameters().getImageGroupID(),
                             image.getImageId()));
             DiskImage imageFromIRS = (DiskImage) ret.getReturnValue();
+
+            // If an image is RAW/sparse and copied to a block SD it will become COW,
+            // use the information fetched from the storage to ensure it's the format change
+            // is persisted and visible in the engine.
+            image.setVolumeFormat(imageFromIRS.getVolumeFormat());
+
             setQcowCompatForSnapshot(image, imageFromIRS);
             DiskImageDynamic diskImageDynamic = diskImageDynamicDao.get(image.getImageId());
 
@@ -493,6 +511,7 @@ public class LiveMigrateDiskCommand<T extends LiveMigrateDiskParameters> extends
     }
 
     private void syncImageData() {
+        Guid vdsId = vdsCommandsHelper.getHostForExecution(getParameters().getStoragePoolId());
         CopyImageGroupVolumesDataCommandParameters parameters =
                 new CopyImageGroupVolumesDataCommandParameters(getParameters().getStoragePoolId(),
                         getParameters().getSourceStorageDomainId(),
@@ -501,8 +520,17 @@ public class LiveMigrateDiskCommand<T extends LiveMigrateDiskParameters> extends
                         getActionType(),
                         getParameters());
 
+        parameters.setVdsRunningOn(vdsId);
+        parameters.setVdsId(vdsId);
         parameters.setJobWeight(Job.MAX_WEIGHT);
         parameters.setEndProcedure(EndProcedure.COMMAND_MANAGED);
+
+        // This would prevent prepare/teardown of the copy_data command as it is not needed
+        // for images used by a running VM
+        if (vdsId.equals(getVm().getRunOnVds())) {
+            parameters.setLive(true);
+        }
+
         runInternalAction(ActionType.CopyImageGroupVolumesData, parameters, createStepsContext(StepEnum.SYNC_IMAGE_DATA));
     }
 

@@ -3,7 +3,6 @@ package org.ovirt.engine.core.common.action;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.List;
 import java.util.Map;
 
 import javax.validation.constraints.Pattern;
@@ -36,6 +35,11 @@ public class ActionParametersBase implements Serializable, HasCorrelationId {
      */
     private boolean compensationEnabled;
 
+    /**
+     * Indicates if the command is set with END_COMMAND annotation.
+     */
+    private boolean compensationPhaseEndCommand;
+
     private ActionType parentCommand;
 
     /**
@@ -49,11 +53,13 @@ public class ActionParametersBase implements Serializable, HasCorrelationId {
 
     private EntityInfo entityInfo;
 
-    private List<ActionParametersBase> imagesParameters;
+    // no interface here - concrete types are recommended for GWT serialization
+    private ArrayList<ActionParametersBase> imagesParameters;
 
     private boolean taskGroupSuccess;
 
-    private List<Guid> vdsmTaskIds;
+    // no interface here - concrete types are recommended for GWT serialization
+    private ArrayList<Guid> vdsmTaskIds;
 
     private Guid vdsRunningOn;
 
@@ -94,6 +100,7 @@ public class ActionParametersBase implements Serializable, HasCorrelationId {
         setParentCommand(ActionType.Unknown);
         executionReason = CommandExecutionReason.REGULAR_FLOW;
         compensationEnabled = false;
+        compensationPhaseEndCommand = false;
         parentCommand = ActionType.Unknown;
         commandType = ActionType.Unknown;
         imagesParameters = new ArrayList<>();
@@ -172,6 +179,14 @@ public class ActionParametersBase implements Serializable, HasCorrelationId {
         this.compensationEnabled = compensationEnabled;
     }
 
+    public boolean isCompensationPhaseEndCommand() {
+        return compensationPhaseEndCommand;
+    }
+
+    public void setCompensationPhaseEndCommand(boolean compensationPhaseEndCommand) {
+        this.compensationPhaseEndCommand = compensationPhaseEndCommand;
+    }
+
     public ActionType getParentCommand() {
         return parentCommand;
     }
@@ -204,11 +219,11 @@ public class ActionParametersBase implements Serializable, HasCorrelationId {
         multipleAction = value;
     }
 
-    public List<ActionParametersBase> getImagesParameters() {
+    public ArrayList<ActionParametersBase> getImagesParameters() {
         return imagesParameters;
     }
 
-    public void setImagesParameters(List<ActionParametersBase> value) {
+    public void setImagesParameters(ArrayList<ActionParametersBase> value) {
         imagesParameters = value;
     }
 
@@ -239,11 +254,11 @@ public class ActionParametersBase implements Serializable, HasCorrelationId {
         entityInfo = value;
     }
 
-    public List<Guid> getVdsmTaskIds() {
+    public ArrayList<Guid> getVdsmTaskIds() {
         return vdsmTaskIds;
     }
 
-    public void setVdsmTaskIds(List<Guid> value) {
+    public void setVdsmTaskIds(ArrayList<Guid> value) {
         vdsmTaskIds = value;
     }
 

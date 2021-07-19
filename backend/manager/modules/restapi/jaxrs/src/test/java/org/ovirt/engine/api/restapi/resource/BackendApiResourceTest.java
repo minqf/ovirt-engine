@@ -60,6 +60,7 @@ public class BackendApiResourceTest {
     protected static final String BASE_PATH = "/ovirt-engine/api";
     protected static final String BUNDLE_PATH = "org/ovirt/engine/api/restapi/logging/Messages";
     protected static final String SESSION_ID = Guid.newGuid().toString();
+    protected static final String INSTANCE_ID = Guid.newGuid().toString();
     private static final String USER_FILTER_HEADER = "filter";
 
     protected static final int MAJOR = 11;
@@ -132,7 +133,8 @@ public class BackendApiResourceTest {
         "affinitylabels",
         "clusterlevels",
         "imagetransfers",
-        "externalvmimports"
+        "externalvmimports",
+        "externaltemplateimports"
     };
 
     private static final String[] relationshipsGlusterOnly = {
@@ -204,7 +206,8 @@ public class BackendApiResourceTest {
         BASE_PATH + "/affinitylabels",
         BASE_PATH + "/clusterlevels",
         BASE_PATH + "/imagetransfers",
-        BASE_PATH + "/externalvmimports"
+        BASE_PATH + "/externalvmimports",
+        BASE_PATH + "/externaltemplateimports"
     };
 
     private static final String[] hrefsGlusterOnly = {
@@ -300,6 +303,7 @@ public class BackendApiResourceTest {
         current.setApplicationMode(appMode);
         resource.setUriInfo(setUpUriInfo());
         setUpGetSystemVersionExpectations();
+        setUpGetInstanceIdExpectations();
         setUpGetUserBySessionExpectations();
         setUpGetSystemStatisticsExpectations();
     }
@@ -435,6 +439,14 @@ public class BackendApiResourceTest {
         when(backend.runQuery(eq(QueryType.GetProductVersion), getProductVersionParams())).thenReturn(productVersionQueryResult);
     }
 
+    protected void setUpGetInstanceIdExpectations() {
+        QueryReturnValue instancIdQueryResult = new QueryReturnValue();
+        instancIdQueryResult.setSucceeded(true);
+        instancIdQueryResult.setReturnValue(INSTANCE_ID);
+        when(backend.runQuery(eq(QueryType.GetConfigurationValue), getInstanceIdParams()))
+                .thenReturn(instancIdQueryResult);
+    }
+
     protected void setUpGetUserBySessionExpectations() {
         QueryReturnValue returnValue = new QueryReturnValue();
         returnValue.setSucceeded(true);
@@ -466,6 +478,12 @@ public class BackendApiResourceTest {
         return eqParams(GetConfigurationValueParameters.class,
                 new String[] { "SessionId", "ConfigValue" },
                 new Object[] { SESSION_ID, ConfigValues.ProductRPMVersion });
+    }
+
+    protected QueryParametersBase getInstanceIdParams() {
+        return eqParams(GetConfigurationValueParameters.class,
+                new String[] { "SessionId", "ConfigValue" },
+                new Object[] { SESSION_ID, ConfigValues.InstanceId });
     }
 
     protected QueryParametersBase queryParams() {

@@ -7,7 +7,9 @@ import org.ovirt.engine.core.common.businessentities.ConnectionMethod;
 import org.ovirt.engine.core.common.businessentities.ExternalLocationInfo;
 import org.ovirt.engine.core.common.businessentities.HttpLocationInfo;
 import org.ovirt.engine.core.common.businessentities.LocationInfo;
+import org.ovirt.engine.core.common.businessentities.ManagedBlockStorageLocationInfo;
 import org.ovirt.engine.core.common.businessentities.VdsmImageLocationInfo;
+import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 
 public class LocationInfoHelper {
     private LocationInfoHelper() {
@@ -33,12 +35,37 @@ public class LocationInfoHelper {
             infoMap.put("sd_id", info.getStorageDomainId().toString());
             infoMap.put("img_id", info.getImageGroupId().toString());
             infoMap.put("vol_id", info.getImageId().toString());
+            infoMap.put("prepared", info.isPrepared());
             if (info.getGeneration() != null) {
                 infoMap.put("generation", info.getGeneration());
             }
             return infoMap;
         }
 
+        if (locationInfo instanceof ManagedBlockStorageLocationInfo) {
+            ManagedBlockStorageLocationInfo info = (ManagedBlockStorageLocationInfo) locationInfo;
+            Map<String, Object> infoMap = new HashMap<>();
+            infoMap.put("lease", info.getLease());
+            infoMap.put("url", info.getUrl());
+            infoMap.put("generation", info.getGeneration());
+            infoMap.put("format", volumeFormatToString(info.getFormat()));
+            infoMap.put("is_zero", info.isZeroed());
+            infoMap.put("endpoint_type", "external");
+
+            return infoMap;
+        }
+
         throw new RuntimeException("Unsupported location info");
+    }
+
+    private static String volumeFormatToString(VolumeFormat format) {
+        switch (format) {
+        case COW:
+            return "cow";
+        case RAW:
+            return "raw";
+        default:
+            throw new RuntimeException("Invalid format");
+        }
     }
 }

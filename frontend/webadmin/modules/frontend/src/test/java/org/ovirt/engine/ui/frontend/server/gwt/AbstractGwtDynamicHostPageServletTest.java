@@ -6,6 +6,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -27,8 +28,6 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 
-import org.codehaus.jackson.map.ObjectMapper;
-import org.codehaus.jackson.node.ObjectNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -36,6 +35,7 @@ import org.mockito.ArgumentMatcher;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import org.ovirt.engine.core.branding.BrandingManager;
+import org.ovirt.engine.core.common.businessentities.UserProfileProperty;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.interfaces.BackendLocal;
@@ -44,6 +44,10 @@ import org.ovirt.engine.core.common.queries.QueryParametersBase;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
 import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.core.compat.Guid;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 
 public abstract class AbstractGwtDynamicHostPageServletTest<T extends GwtDynamicHostPageServlet> {
 
@@ -127,6 +131,13 @@ public abstract class AbstractGwtDynamicHostPageServletTest<T extends GwtDynamic
     @Test
     public void testDoGet_WithUserInfoObject() throws IOException, ServletException, NoSuchAlgorithmException {
         doReturn(mockDigest).when(testServlet).getMd5Digest(any());
+
+        QueryReturnValue returnValue = new QueryReturnValue();
+        returnValue.setSucceeded(true);
+        returnValue.setReturnValue(mockUser);
+        when(mockBackend.runQuery(eq(QueryType.GetDbUserByUserId),
+                any())).thenReturn(returnValue);
+
         testServlet.doGet(mockRequest, mockResponse);
         verify(mockRequest).setAttribute(eq(GwtDynamicHostPageServlet.MD5Attributes.ATTR_SELECTOR_SCRIPT.getKey()),
                 any());
@@ -192,11 +203,25 @@ public abstract class AbstractGwtDynamicHostPageServletTest<T extends GwtDynamic
 
     @Test
     public void testGetUserInfoObject() {
-        ObjectNode result = testServlet.getUserInfoObject(mockUser, "mockSsoToken"); //$NON-NLS-1$ //$NON-NLS-2$
+        UserProfileProperty webAdminUserOptions = UserProfileProperty.builder()
+                .withTypeJson()
+                .withName("propName") //$NON-NLS-1$
+                .withContent("{}") //$NON-NLS-1$
+                .build();
+        ObjectNode result = testServlet.getUserInfoObject(mockUser, "mockSsoToken", webAdminUserOptions); //$NON-NLS-1$
         assertNotNull(result.get("id")); //$NON-NLS-1$
         assertEquals("admin", result.get("userName").asText()); //$NON-NLS-1$ //$NON-NLS-2$
         assertEquals("internal", result.get("domain").asText()); //$NON-NLS-1$ //$NON-NLS-2$
         assertEquals("mockSsoToken", result.get("ssoToken").asText()); //$NON-NLS-1$ //$NON-NLS-2$
+        assertEquals(new TextNode("{}"), result.get("userOptions")); //$NON-NLS-1$ //$NON-NLS-2$
+        assertEquals(Guid.Empty.toString(), result.get("userOptionsId").asText()); //$NON-NLS-1$
+    }
+
+    @Test
+    public void testGetUserInfoObjectWithoutWebAdminSettings() {
+        ObjectNode result = testServlet.getUserInfoObject(mockUser, "mockSsoToken", null); //$NON-NLS-1$
+        assertNull( result.get("userOptions")); //$NON-NLS-1$
+        assertNull(result.get("userOptionsId")); //$NON-NLS-1$
     }
 
     @Test

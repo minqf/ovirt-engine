@@ -12,11 +12,13 @@ import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.ClusterDao;
 import org.ovirt.engine.core.dao.ClusterFeatureDao;
+import org.ovirt.engine.core.dao.LabelDao;
 import org.ovirt.engine.core.dao.StoragePoolDao;
 import org.ovirt.engine.core.dao.SupportedHostFeatureDao;
 import org.ovirt.engine.core.dao.VdsDao;
 import org.ovirt.engine.core.dao.VmDao;
 import org.ovirt.engine.core.dao.gluster.GlusterVolumeDao;
+import org.ovirt.engine.core.dao.network.NetworkDao;
 
 public abstract class ClusterCommandBase<T extends ClusterParametersBase> extends CommandBase<T> {
 
@@ -38,6 +40,10 @@ public abstract class ClusterCommandBase<T extends ClusterParametersBase> extend
     private ClusterFeatureDao clusterFeatureDao;
     @Inject
     private SupportedHostFeatureDao hostFeatureDao;
+    @Inject
+    private LabelDao labelDao;
+    @Inject
+    private NetworkDao networkDao;
 
     private Cluster cluster;
 
@@ -64,7 +70,9 @@ public abstract class ClusterCommandBase<T extends ClusterParametersBase> extend
                 vmDao,
                 glusterVolumeDao,
                 clusterFeatureDao,
-                hostFeatureDao);
+                hostFeatureDao,
+                labelDao,
+                networkDao);
     }
 
     @Override

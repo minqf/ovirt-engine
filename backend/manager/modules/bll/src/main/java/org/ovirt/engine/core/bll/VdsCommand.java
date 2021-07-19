@@ -9,7 +9,6 @@ import javax.inject.Inject;
 import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.pm.PmHealthCheckManager;
-import org.ovirt.engine.core.bll.provider.NetworkProviderValidator;
 import org.ovirt.engine.core.bll.utils.GlusterUtil;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
 import org.ovirt.engine.core.bll.validator.FenceValidator;
@@ -17,7 +16,6 @@ import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.VdsActionParameters;
 import org.ovirt.engine.core.common.businessentities.NonOperationalReason;
-import org.ovirt.engine.core.common.businessentities.Provider;
 import org.ovirt.engine.core.common.businessentities.VDSStatus;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VdsStatic;
@@ -38,7 +36,6 @@ import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogableImpl;
 import org.ovirt.engine.core.dao.VdsSpmIdMapDao;
 import org.ovirt.engine.core.dao.VdsStaticDao;
 import org.ovirt.engine.core.dao.gluster.GlusterDBUtils;
-import org.ovirt.engine.core.dao.provider.ProviderDao;
 import org.ovirt.engine.core.utils.EngineLocalConfig;
 import org.ovirt.engine.core.utils.ThreadUtils;
 import org.ovirt.engine.core.utils.lock.EngineLock;
@@ -67,8 +64,6 @@ public abstract class VdsCommand<T extends VdsActionParameters> extends CommandB
     protected GlusterUtil glusterUtil;
     @Inject
     protected GlusterDBUtils glusterDBUtils;
-    @Inject
-    private ProviderDao providerDao;
     @Inject
     private AlertDirector alertDirector;
     @Inject
@@ -106,11 +101,15 @@ public abstract class VdsCommand<T extends VdsActionParameters> extends CommandB
     }
 
     protected void runSleepOnReboot() {
-        runSleepOnReboot(VDSStatus.NonResponsive);
+        runSleepOnReboot(false, VDSStatus.NonResponsive);
     }
 
-    protected void runSleepOnReboot(final VDSStatus status) {
-        ThreadPoolUtil.execute(() -> sleepOnReboot(status));
+    protected void runSleepOnReboot(boolean synchronous, final VDSStatus status) {
+        if (synchronous) {
+            sleepOnReboot(status);
+        } else {
+            ThreadPoolUtil.execute(() -> sleepOnReboot(status));
+        }
     }
 
     private void sleepOnReboot(final VDSStatus status) {
@@ -303,21 +302,5 @@ public abstract class VdsCommand<T extends VdsActionParameters> extends CommandB
             "Please refer to %1$s/engine.log and log logs under %1$s/host-deploy/ for further details.",
             EngineLocalConfig.getInstance().getLogDir()
         );
-    }
-
-    protected boolean validateNetworkProviderConfiguration(Guid providerId) {
-        if (providerId == null) {
-            return true;
-        } else {
-            Provider provider = providerDao.get(providerId);
-            NetworkProviderValidator validator = new NetworkProviderValidator(provider);
-
-            if (!(validate(validator.providerIsSet()) &&
-                    validate(validator.providerTypeIsNetwork()))) {
-                return false;
-            }
-
-            return true;
-        }
     }
 }

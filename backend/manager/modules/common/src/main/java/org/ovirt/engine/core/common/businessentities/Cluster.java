@@ -153,6 +153,8 @@ public class Cluster implements Queryable, BusinessEntity<Guid>, HasStoragePool,
 
     private boolean vncEncryptionEnabled;
 
+    private FipsMode fipsMode;
+
     /**
      * How max sum of bandwidths of both outgoing and incoming migrations on one host are limited
      */
@@ -182,6 +184,7 @@ public class Cluster implements Queryable, BusinessEntity<Guid>, HasStoragePool,
         additionalRngSources = new HashSet<>();
         fencingPolicy = new FencingPolicy();
         addtionalFeaturesSupported = new HashSet<>();
+        enableKsm = true;
         ksmMergeAcrossNumaNodes = true;
         migrationBandwidthLimitType = MigrationBandwidthLimitType.DEFAULT;
         requiredSwitchTypeForCluster = SwitchType.LEGACY;
@@ -192,6 +195,8 @@ public class Cluster implements Queryable, BusinessEntity<Guid>, HasStoragePool,
         vncEncryptionEnabled = true;
         hostNamesOutOfSync = "";
         managed = true;
+        enableBallooning = true;
+        fipsMode = FipsMode.UNDEFINED;
     }
 
     @Override
@@ -723,6 +728,14 @@ public class Cluster implements Queryable, BusinessEntity<Guid>, HasStoragePool,
         this.managed = managed;
     }
 
+    public FipsMode getFipsMode() {
+        return fipsMode;
+    }
+
+    public void setFipsMode(FipsMode fipsMode) {
+        this.fipsMode = fipsMode;
+    }
+
     @Override
     public int hashCode() {
         return Objects.hash(
@@ -776,7 +789,8 @@ public class Cluster implements Queryable, BusinessEntity<Guid>, HasStoragePool,
                 logMaxMemoryUsedThresholdType,
                 vncEncryptionEnabled,
                 hostNamesOutOfSync,
-                managed
+                managed,
+                fipsMode
         );
     }
 
@@ -843,7 +857,8 @@ public class Cluster implements Queryable, BusinessEntity<Guid>, HasStoragePool,
                 && logMaxMemoryUsedThresholdType == other.logMaxMemoryUsedThresholdType
                 && vncEncryptionEnabled == other.vncEncryptionEnabled
                 && Objects.equals(hostNamesOutOfSync, other.hostNamesOutOfSync)
-                && managed == other.managed;
+                && managed == other.managed
+                && fipsMode == other.fipsMode;
     }
 
     @Override

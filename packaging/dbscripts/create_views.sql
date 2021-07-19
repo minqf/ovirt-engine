@@ -62,6 +62,7 @@ SELECT images.image_guid AS image_guid,
     images.size AS size,
     images.it_guid AS it_guid,
     snap.description AS description,
+    snap.creation_date AS snapshot_creation_date,
     images.ParentId AS ParentId,
     images.lastModified AS lastModified,
     snap.app_list AS app_list,
@@ -87,6 +88,7 @@ SELECT images.image_guid AS image_guid,
     base_disks.sgio AS sgio,
     base_disks.disk_content_type AS disk_content_type,
     base_disks.backup AS backup,
+    base_disks.backup_mode AS backup_mode,
     image_storage_domain_map.quota_id AS quota_id,
     quota.quota_name AS quota_name,
     storage_pool.quota_enforcement_type,
@@ -94,7 +96,9 @@ SELECT images.image_guid AS image_guid,
     disk_profiles.name AS disk_profile_name,
     disk_image_dynamic.actual_size AS actual_size,
     disk_image_dynamic.read_rate AS read_rate,
+    disk_image_dynamic.read_ops AS read_ops,
     disk_image_dynamic.write_rate AS write_rate,
+    disk_image_dynamic.write_ops AS write_ops,
     disk_image_dynamic.read_latency_seconds AS read_latency_seconds,
     disk_image_dynamic.write_latency_seconds AS write_latency_seconds,
     disk_image_dynamic.flush_latency_seconds AS flush_latency_seconds,
@@ -129,6 +133,7 @@ LEFT JOIN storage_pool
     ON storage_pool.id = storage_pool_iso_map.storage_pool_id
 LEFT JOIN image_transfers
     ON images.image_group_id = image_transfers.disk_id
+    AND image_transfers.phase NOT IN (9, 10)
 LEFT JOIN entity_step_progress
     ON images.image_group_id = entity_step_progress.entity_id
 WHERE images.image_guid != '00000000-0000-0000-0000-000000000000';
@@ -188,10 +193,12 @@ SELECT storage_for_image_view.storage_id AS storage_id,
     images_storage_domain_view.creation_date AS creation_date,
     disk_image_dynamic.actual_size AS actual_size,
     disk_image_dynamic.read_rate AS read_rate,
+    disk_image_dynamic.read_ops AS read_ops,
     disk_image_dynamic.read_latency_seconds AS read_latency_seconds,
     disk_image_dynamic.write_latency_seconds AS write_latency_seconds,
     disk_image_dynamic.flush_latency_seconds AS flush_latency_seconds,
     disk_image_dynamic.write_rate AS write_rate,
+    disk_image_dynamic.write_ops AS write_ops,
     images_storage_domain_view.size AS size,
     images_storage_domain_view.it_guid AS it_guid,
     images_storage_domain_view.description AS description,
@@ -211,6 +218,7 @@ SELECT storage_for_image_view.storage_id AS storage_id,
     images_storage_domain_view.sgio AS sgio,
     images_storage_domain_view.disk_content_type AS disk_content_type,
     images_storage_domain_view.backup AS backup,
+    images_storage_domain_view.backup_mode AS backup_mode,
     images_storage_domain_view.entity_type AS entity_type,
     images_storage_domain_view.number_of_vms AS number_of_vms,
     images_storage_domain_view.vm_names AS vm_names,
@@ -252,7 +260,8 @@ SELECT storage_impl.*,
     bd.disk_storage_type,
     bd.cinder_volume_type,
     bd.disk_content_type,
-    bd.backup
+    bd.backup,
+    bd.backup_mode
 FROM (
     SELECT storage_for_image_view.storage_id AS storage_id,
         -- Storage fields
@@ -264,7 +273,9 @@ FROM (
         creation_date,
         actual_size,
         read_rate,
+        read_ops,
         write_rate,
+        write_ops,
         read_latency_seconds,
         write_latency_seconds,
         flush_latency_seconds,
@@ -321,7 +332,9 @@ FROM (
         creation_date,
         actual_size,
         read_rate,
+        read_ops,
         write_rate,
+        write_ops,
         read_latency_seconds,
         write_latency_seconds,
         flush_latency_seconds,
@@ -367,7 +380,9 @@ FROM (
         NULL AS creation_date,
         NULL AS actual_size,
         NULL AS read_rate,
+        NULL AS read_ops,
         NULL AS write_rate,
+        NULL AS write_ops,
         NULL AS read_latency_seconds,
         NULL AS write_latency_seconds,
         NULL AS flush_latency_seconds,
@@ -436,7 +451,8 @@ SELECT storage_impl.*,
     bd.disk_storage_type,
     bd.cinder_volume_type,
     bd.disk_content_type,
-    bd.backup
+    bd.backup,
+    bd.backup_mode
 FROM (
     SELECT storage_for_image_view.storage_id AS storage_id,
         -- Storage fields
@@ -448,7 +464,9 @@ FROM (
         creation_date,
         actual_size,
         read_rate,
+        read_ops,
         write_rate,
+        write_ops,
         read_latency_seconds,
         write_latency_seconds,
         flush_latency_seconds,
@@ -505,7 +523,9 @@ FROM (
         creation_date,
         actual_size,
         read_rate,
+        read_ops,
         write_rate,
+        write_ops,
         read_latency_seconds,
         write_latency_seconds,
         flush_latency_seconds,
@@ -551,7 +571,9 @@ FROM (
         NULL AS creation_date,
         NULL AS actual_size,
         NULL AS read_rate,
+        NULL AS read_ops,
         NULL AS write_rate,
+        NULL AS write_ops,
         NULL AS read_latency_seconds,
         NULL AS write_latency_seconds,
         NULL AS flush_latency_seconds,
@@ -817,6 +839,7 @@ SELECT storage_domain_static.id AS id,
     storage_domain_dynamic.confirmed_available_disk_size AS confirmed_available_disk_size,
     storage_domain_dynamic.vdo_savings AS vdo_savings,
     storage_domain_dynamic.used_disk_size AS used_disk_size,
+    storage_domain_dynamic.available_disk_size + storage_domain_dynamic.used_disk_size as total_disk_size,
     storage_domains_image_sizes.commited_disk_size,
     storage_domains_image_sizes.actual_images_size,
     COALESCE(storage_domain_shared_status.status, 0) AS storage_domain_shared_status,
@@ -894,7 +917,6 @@ SELECT vm_templates.vm_guid AS vmt_guid,
     vm_templates.free_text_comment AS free_text_comment,
     vm_templates.cluster_id AS cluster_id,
     vm_templates.num_of_monitors AS num_of_monitors,
-    vm_templates.single_qxl_pci AS single_qxl_pci,
     vm_templates.allow_console_reconnect AS allow_console_reconnect,
     vm_templates.template_status AS status,
     vm_templates.usb_policy AS usb_policy,
@@ -902,6 +924,7 @@ SELECT vm_templates.vm_guid AS vmt_guid,
     cluster.name AS cluster_name,
     cluster.compatibility_version AS cluster_compatibility_version,
     cluster.trusted_service AS trusted_service,
+    cluster.bios_type AS cluster_bios_type,
     vm_templates.vm_type AS vm_type,
     vm_templates.nice_level AS nice_level,
     vm_templates.cpu_shares AS cpu_shares,
@@ -946,7 +969,6 @@ SELECT vm_templates.vm_guid AS vmt_guid,
     vm_templates.is_spice_file_transfer_enabled AS is_spice_file_transfer_enabled,
     vm_templates.is_spice_copy_paste_enabled AS is_spice_copy_paste_enabled,
     vm_templates.cpu_profile_id AS cpu_profile_id,
-    vm_templates.numatune_mode AS numatune_mode,
     vm_templates.is_auto_converge AS is_auto_converge,
     vm_templates.is_migrate_compressed AS is_migrate_compressed,
     vm_templates.is_migrate_encrypted AS is_migrate_encrypted,
@@ -962,8 +984,11 @@ SELECT vm_templates.vm_guid AS vmt_guid,
     vm_templates.resume_behavior AS resume_behavior,
     vm_templates.custom_compatibility_version as custom_compatibility_version,
     vm_templates.multi_queues_enabled AS multi_queues_enabled,
+    vm_templates.virtio_scsi_multi_queues_enabled AS virtio_scsi_multi_queues_enabled,
     vm_templates.use_tsc_frequency AS use_tsc_frequency,
-    vm_templates.is_template_sealed AS is_template_sealed
+    vm_templates.is_template_sealed AS is_template_sealed,
+    vm_templates.cpu_pinning AS cpu_pinning,
+    vm_templates.balloon_enabled AS balloon_enabled
 FROM vm_static AS vm_templates
 LEFT JOIN cluster
     ON vm_templates.cluster_id = cluster.cluster_id
@@ -1006,7 +1031,6 @@ SELECT vm_templates.vm_guid AS vmt_guid,
     vm_templates.free_text_comment,
     vm_templates.cluster_id,
     vm_templates.num_of_monitors,
-    vm_templates.single_qxl_pci,
     vm_templates.allow_console_reconnect,
     vm_templates.template_status AS status,
     vm_templates.usb_policy,
@@ -1047,7 +1071,6 @@ SELECT vm_templates.vm_guid AS vmt_guid,
     vm_templates.is_spice_copy_paste_enabled AS is_spice_copy_paste_enabled,
     vm_templates.cpu_profile_id AS cpu_profile_id,
     vm_templates.host_cpu_flags AS host_cpu_flags,
-    vm_templates.numatune_mode AS numatune_mode,
     vm_templates.is_auto_converge AS is_auto_converge,
     vm_templates.is_migrate_compressed AS is_migrate_compressed,
     vm_templates.is_migrate_encrypted AS is_migrate_encrypted,
@@ -1089,7 +1112,6 @@ SELECT vm_templates_1.vm_guid AS vmt_guid,
     vm_templates_1.free_text_comment,
     vm_templates_1.cluster_id,
     vm_templates_1.num_of_monitors,
-    vm_templates_1.single_qxl_pci,
     vm_templates_1.allow_console_reconnect,
     vm_templates_1.template_status AS status,
     vm_templates_1.usb_policy,
@@ -1130,7 +1152,6 @@ SELECT vm_templates_1.vm_guid AS vmt_guid,
     vm_templates_1.is_spice_copy_paste_enabled AS is_spice_copy_paste_enabled,
     vm_templates_1.cpu_profile_id AS cpu_profile_id,
     vm_templates_1.host_cpu_flags AS host_cpu_flags,
-    vm_templates_1.numatune_mode AS numatune_mode,
     vm_templates_1.is_auto_converge AS is_auto_converge,
     vm_templates_1.is_migrate_compressed AS is_migrate_compressed,
     vm_templates_1.is_migrate_encrypted AS is_migrate_encrypted,
@@ -1260,6 +1281,12 @@ FROM tags_user_group_map
 INNER JOIN tags
     ON tags_user_group_map.tag_id = tags.tag_id;
 
+CREATE OR REPLACE VIEW vm_static_view AS
+
+SELECT vm_static.*,
+    fn_get_dedicated_hosts_ids_by_vm_id(vm_static.vm_guid) AS dedicated_vm_for_vds
+FROM vm_static;
+
 CREATE OR REPLACE VIEW vms AS
 
 SELECT vm_static.vm_name AS vm_name,
@@ -1312,7 +1339,6 @@ SELECT vm_static.vm_name AS vm_name,
     vm_pool_map_view.vm_pool_id AS vm_pool_id,
     vm_static.vm_guid AS vm_guid,
     vm_static.num_of_monitors AS num_of_monitors,
-    vm_static.single_qxl_pci AS single_qxl_pci,
     vm_static.allow_console_reconnect AS allow_console_reconnect,
     vm_static.is_initialized AS is_initialized,
     vm_static.num_of_sockets AS num_of_sockets,
@@ -1388,7 +1414,7 @@ SELECT vm_static.vm_name AS vm_name,
     vm_dynamic.guest_cpu_count AS guest_cpu_count,
     vm_snapshots.next_run_config_exists AS next_run_config_exists,
     vm_snapshots.is_previewing_snapshot AS is_previewing_snapshot,
-    vm_static.numatune_mode AS numatune_mode,
+    vm_next_run_snapshot.changed_fields AS changed_fields,
     vm_static.is_spice_file_transfer_enabled AS is_spice_file_transfer_enabled,
     vm_static.is_spice_copy_paste_enabled AS is_spice_copy_paste_enabled,
     vm_static.cpu_profile_id AS cpu_profile_id,
@@ -1426,8 +1452,10 @@ SELECT vm_static.vm_name AS vm_name,
     vm_dynamic.guest_containers AS guest_containers,
     image_details.has_illegal_images,
     vm_static.multi_queues_enabled AS multi_queues_enabled,
+    vm_static.virtio_scsi_multi_queues_enabled AS virtio_scsi_multi_queues_enabled,
     vm_static.use_tsc_frequency AS use_tsc_frequency,
-    vm_static.namespace AS namespace
+    vm_static.namespace AS namespace,
+    vm_static.balloon_enabled AS balloon_enabled
 FROM vm_static
 INNER JOIN vm_dynamic
     ON vm_static.vm_guid = vm_dynamic.vm_guid
@@ -1461,6 +1489,14 @@ LEFT JOIN (
     ) vm_snapshots
     ON vm_static.vm_guid = vm_snapshots.vm_id
 LEFT JOIN (
+    SELECT
+        vm_id,
+        changed_fields
+    FROM snapshots
+    WHERE snapshot_type = 'NEXT_RUN'
+    ) vm_next_run_snapshot
+    ON vm_static.vm_guid = vm_next_run_snapshot.vm_id
+LEFT JOIN (
   SELECT vm_id, COUNT(CASE imagestatus WHEN 4 THEN 1 END) > 0 AS has_illegal_images
   FROM disk_vm_element
     JOIN images
@@ -1482,6 +1518,8 @@ SELECT vm_dynamic.*,
     vm_static.num_of_sockets,
     vm_static.cpu_per_socket,
     vm_static.threads_per_cpu,
+    vm_static.priority,
+    vm_static.lease_sd_id,
     vm_static.fn_get_num_of_vcpus AS num_of_cpus -- use of function as an attribute
 FROM vm_dynamic
 INNER JOIN vm_static
@@ -1527,6 +1565,7 @@ SELECT DISTINCT vms.vm_name,
     vms.console_cur_user_name,
     vms.runtime_name,
     vms.console_user_id,
+    vms.guest_agent_nics_hash,
     vms.guest_os,
     vms.run_on_vds,
     vms.migrating_to_vds,
@@ -1535,7 +1574,6 @@ SELECT DISTINCT vms.vm_name,
     vms.vm_pool_id,
     vms.vm_guid,
     vms.num_of_monitors,
-    vms.single_qxl_pci,
     vms.allow_console_reconnect,
     vms.is_initialized,
     vms.num_of_sockets,
@@ -1564,6 +1602,8 @@ SELECT DISTINCT vms.vm_name,
     tags_vm_map_view.tag_name,
     tags_vm_map_view.tag_id,
     vms.default_display_type,
+    vms.iso_path,
+    vms.origin,
     vms.priority,
     vms.cluster_compatibility_version,
     vms.initrd_url,
@@ -1571,15 +1611,27 @@ SELECT DISTINCT vms.vm_name,
     vms.kernel_params,
     vms.pause_status,
     vms.exit_status,
+    vms.migration_support,
+    vms.predefined_properties,
+    vms.userdefined_properties,
     vms.exit_message,
     vms.min_allocated_mem,
+    vms.hash,
+    vms.cpu_pinning,
+    vms.db_generation,
+    vms.host_cpu_flags,
     image_storage_domain_map.storage_domain_id AS storage_id,
     vms.quota_id AS quota_id,
     vms.quota_name AS quota_name,
+    vms.quota_enforcement_type,
     vms.tunnel_migration AS tunnel_migration,
     vms.vnc_keyboard_layout AS vnc_keyboard_layout,
     vms.is_run_and_pause AS is_run_and_pause,
     vms.created_by_user_id AS created_by_user_id,
+    vms.last_watchdog_event,
+    vms.last_watchdog_action,
+    vms.is_run_once,
+    vms.volatile_run,
     vms.vm_fqdn,
     vms.cpu_name AS cpu_name,
     vms.emulated_machine AS emulated_machine,
@@ -1588,6 +1640,8 @@ SELECT DISTINCT vms.vm_name,
     vms.cluster_bios_type AS cluster_bios_type,
     vms.custom_cpu_name AS custom_cpu_name,
     vms.vm_pool_spice_proxy AS vm_pool_spice_proxy,
+    vms.trusted_service,
+    vms.transparent_hugepages,
     vms.cluster_spice_proxy AS cluster_spice_proxy,
     vms.instance_type_id AS instance_type_id,
     vms.image_type_id AS image_type_id,
@@ -1605,7 +1659,7 @@ SELECT DISTINCT vms.vm_name,
     vms.guest_cpu_count AS guest_cpu_count,
     vms.next_run_config_exists,
     vms.is_previewing_snapshot,
-    vms.numatune_mode,
+    vms.changed_fields,
     vms.is_spice_file_transfer_enabled,
     vms.is_spice_copy_paste_enabled,
     vms.cpu_profile_id,
@@ -1624,6 +1678,7 @@ SELECT DISTINCT vms.vm_name,
     vms.small_icon_id AS small_icon_id,
     vms.large_icon_id AS large_icon_id,
     vms.migration_policy_id as migration_policy_id,
+    vms.provider_id,
     vms.console_disconnect_action,
     vms.resume_behavior AS resume_behavior,
     vms.guest_timezone_offset AS guest_timezone_offset,
@@ -1638,8 +1693,10 @@ SELECT DISTINCT vms.vm_name,
     vms.guest_containers as guest_containers,
     vms.has_illegal_images,
     vms.multi_queues_enabled,
+    vms.virtio_scsi_multi_queues_enabled,
     vms.use_tsc_frequency,
-    vms.namespace
+    vms.namespace,
+    vms.balloon_enabled
 FROM vms
 LEFT JOIN tags_vm_map_view
     ON vms.vm_guid = tags_vm_map_view.vm_id
@@ -1748,7 +1805,6 @@ SELECT cluster.cluster_id AS cluster_id,
     vds_dynamic.cpu_sockets AS cpu_sockets,
     vds_spm_id_map.vds_spm_id AS vds_spm_id,
     vds_static.otp_validity AS otp_validity,
-    vds_static.openstack_network_provider_id AS openstack_network_provider_id,
     CASE
         WHEN storage_pool.spm_vds_id = vds_static.vds_id
             THEN CASE
@@ -1771,6 +1827,7 @@ SELECT cluster.cluster_id AS cluster_id,
     vds_dynamic.librbd1_version AS librbd1_version,
     vds_dynamic.glusterfs_cli_version AS glusterfs_cli_version,
     vds_dynamic.openvswitch_version AS openvswitch_version,
+    vds_dynamic.nmstate_version AS nmstate_version,
     vds_dynamic.kernel_version AS kernel_version,
     vds_dynamic.iscsi_initiator_name AS iscsi_initiator_name,
     vds_dynamic.transparent_hugepages_state AS transparent_hugepages_state,
@@ -1830,13 +1887,17 @@ SELECT cluster.cluster_id AS cluster_id,
     vds_static.vgpu_placement AS vgpu_placement,
     vds_dynamic.connector_info AS connector_info,
     vds_dynamic.backup_enabled AS backup_enabled,
+    vds_dynamic.cold_backup_enabled AS cold_backup_enabled,
+    vds_dynamic.clear_bitmaps_enabled AS clear_bitmaps_enabled,
     vds_dynamic.supported_domain_versions AS supported_domain_versions,
     vds_dynamic.supported_block_size AS supported_block_size,
     cluster.smt_disabled AS cluster_smt_disabled,
     vds_dynamic.tsc_frequency AS tsc_frequency,
     vds_dynamic.tsc_scaling AS tsc_scaling,
     vds_dynamic.fips_enabled AS fips_enabled,
-    vds_dynamic.boot_uuid AS boot_uuid
+    vds_dynamic.boot_uuid AS boot_uuid,
+    vds_dynamic.cd_change_pdiv AS cd_change_pdiv,
+    vds_static.ssh_public_key AS ssh_public_key
 FROM cluster
 INNER JOIN vds_static
     ON cluster.cluster_id = vds_static.cluster_id
@@ -1857,6 +1918,7 @@ SELECT cluster.cluster_id,
     cluster.name AS cluster_name,
     cluster.description AS cluster_description,
     cluster.architecture AS architecture,
+    cluster.enable_balloon,
     vds_static.vds_id,
     vds_static.vds_name,
     vds_static.vds_unique_id,
@@ -1873,6 +1935,7 @@ SELECT cluster.cluster_id,
     vds_static.pm_enabled,
     vds_static.pm_proxy_preferences AS pm_proxy_preferences,
     vds_static.pm_detect_kdump AS pm_detect_kdump,
+    vds_static.vds_spm_priority,
     vds_dynamic.hooks,
     vds_dynamic.status,
     vds_dynamic.external_status,
@@ -1945,6 +2008,8 @@ SELECT cluster.cluster_id,
     vds_dynamic.supported_cluster_levels,
     vds_dynamic.supported_engines,
     cluster.compatibility_version AS cluster_compatibility_version,
+    cluster.virt_service AS cluster_virt_service,
+    cluster.gluster_service AS cluster_gluster_service,
     vds_dynamic.host_os,
     vds_dynamic.kvm_version,
     vds_dynamic.libvirt_version,
@@ -1953,12 +2018,17 @@ SELECT cluster.cluster_id,
     vds_dynamic.librbd1_version,
     vds_dynamic.glusterfs_cli_version,
     vds_dynamic.openvswitch_version,
+    vds_dynamic.nmstate_version,
     vds_dynamic.kernel_version,
     vds_dynamic.iscsi_initiator_name,
     vds_dynamic.transparent_hugepages_state,
     vds_statistics.anonymous_hugepages,
     vds_statistics.hugepages AS hugepages,
     vds_dynamic.non_operational_reason,
+    vds_static.recoverable,
+    vds_static.sshkeyfingerprint,
+    vds_static.host_provider_id,
+    vds_dynamic.hw_manufacturer,
     storage_pool_iso_map.storage_id,
     vds_static.ssh_port,
     vds_static.ssh_username,
@@ -1974,24 +2044,34 @@ SELECT cluster.cluster_id,
     vds_dynamic.selinux_enforce_mode AS selinux_enforce_mode,
     vds_dynamic.auto_numa_balancing AS auto_numa_balancing,
     vds_dynamic.is_numa_supported AS is_numa_supported,
+    vds_dynamic.hbas,
+    vds_dynamic.supported_emulated_machines,
     vds_dynamic.supported_rng_sources AS supported_rng_sources,
     vds_dynamic.online_cpus AS online_cpus,
     vds_dynamic.maintenance_reason AS maintenance_reason,
     vds_dynamic.is_update_available AS is_update_available,
     vds_dynamic.is_hostdev_enabled AS is_hostdev_enabled,
+    vds_static.kernel_cmdline,
+    vds_static.last_stored_kernel_cmdline,
     cluster.fencing_enabled AS fencing_enabled,
     vds_dynamic.in_fence_flow AS in_fence_flow,
+    vds_static.reinstall_required,
+    vds_dynamic.kernel_features,
     vds_dynamic.vnc_encryption_enabled AS vnc_encryption_enabled,
     vds_static.vgpu_placement AS vgpu_placement,
     vds_dynamic.connector_info AS connector_info,
     vds_dynamic.backup_enabled AS backup_enabled,
+    vds_dynamic.cold_backup_enabled AS cold_backup_enabled,
+    vds_dynamic.clear_bitmaps_enabled AS clear_bitmaps_enabled,
     vds_dynamic.supported_domain_versions AS supported_domain_versions,
     vds_dynamic.supported_block_size AS supported_block_size,
     cluster.smt_disabled AS cluster_smt_disabled,
     vds_dynamic.tsc_frequency AS tsc_frequency,
     vds_dynamic.tsc_scaling AS tsc_scaling,
     vds_dynamic.fips_enabled AS fips_enabled,
-    vds_dynamic.boot_uuid AS boot_uuid
+    vds_dynamic.boot_uuid AS boot_uuid,
+    vds_dynamic.cd_change_pdiv AS cd_change_pdiv,
+    vds_static.ssh_public_key AS ssh_public_key
 FROM cluster
 INNER JOIN vds_static
     ON cluster.cluster_id = vds_static.cluster_id
@@ -2031,8 +2111,7 @@ SELECT 'user' AS user_group,
     0 AS vm_admin,
     users_1.last_admin_check_status AS last_admin_check_status,
     users_1.external_id AS external_id,
-    users_1.namespace AS namespace,
-    users_1.options AS options
+    users_1.namespace AS namespace
 FROM users AS users_1
 
 UNION
@@ -2049,8 +2128,7 @@ SELECT 'group' AS user_group,
     1 AS vm_admin,
     NULL AS last_admin_check_status,
     ad_groups.external_id AS external_id,
-    ad_groups.namespace AS namespace,
-    '{}' AS options
+    ad_groups.namespace AS namespace
 FROM ad_groups;
 
 -- create the new vdc_users_with_tags view with no use of the tag_permission_map
@@ -2071,8 +2149,9 @@ SELECT users_1.user_group AS user_group,
     tags_user_map_view_1.tag_name AS tag_name,
     tags_user_map_view_1.tag_id AS tag_id,
     users_1.last_admin_check_status AS last_admin_check_status,
-    pools.vm_pool_name AS vm_pool_name,
-    users_1.options AS options
+    users_1.external_id AS external_id,
+    users_1.namespace AS namespace,
+    pools.vm_pool_name AS vm_pool_name
 FROM vdc_users AS users_1
 LEFT JOIN users_and_groups_to_vm_pool_map_view AS pools
     ON users_1.user_id = pools.user_id
@@ -2103,8 +2182,9 @@ SELECT users_2.user_group AS user_group,
     tags_user_group_map_view.tag_name AS tag_name,
     tags_user_group_map_view.tag_id AS tag_id,
     users_2.last_admin_check_status AS last_admin_check_status,
-    pools1.vm_pool_name AS vm_pool_name,
-    users_2.options AS options
+    users_2.external_id AS external_id,
+    users_2.namespace AS namespace,
+    pools1.vm_pool_name AS vm_pool_name
 FROM vdc_users AS users_2
 LEFT JOIN users_and_groups_to_vm_pool_map_view AS pools1
     ON users_2.user_id = pools1.user_id
@@ -2294,6 +2374,7 @@ SELECT vm_interface_statistics.rx_rate,
     vm_interface.type,
     vm_interface.speed,
     vm_interface.mac_addr,
+    vm_interface.synced,
     network.name AS network_name,
     vm_interface.name,
     vm_interface.vnic_profile_id,
@@ -2309,7 +2390,8 @@ SELECT vm_interface_statistics.rx_rate,
     vm_static.cluster_id AS cluster_id,
     vm_static.entity_type AS vm_entity_type,
     vnic_profiles.name AS vnic_profile_name,
-    qos.name AS qos_name
+    qos.name AS qos_name,
+    failover_vnic_profile.name AS failover_vnic_profile_name
 FROM vm_interface_statistics
 INNER JOIN vm_interface
     ON vm_interface_statistics.id = vm_interface.id
@@ -2324,6 +2406,8 @@ LEFT JOIN (
             ON network.id = vnic_profiles.network_id
         ) LEFT JOIN qos
         ON vnic_profiles.network_qos_id = qos.id
+        LEFT JOIN vnic_profiles as failover_vnic_profile
+        ON vnic_profiles.failover_vnic_profile_id = failover_vnic_profile.id
     )
     ON vnic_profiles.id = vm_interface.vnic_profile_id
 WHERE entity_type = 'VM'
@@ -2343,6 +2427,7 @@ SELECT vm_interface_statistics.rx_rate,
     vm_interface.type,
     vm_interface.speed,
     vm_interface.mac_addr,
+    vm_interface.synced,
     network.name AS network_name,
     vm_interface.name,
     vm_interface.vnic_profile_id,
@@ -2358,7 +2443,8 @@ SELECT vm_interface_statistics.rx_rate,
     vm_templates.cluster_id AS cluster_id,
     vm_templates.entity_type AS vm_entity_type,
     vnic_profiles.name AS vnic_profile_name,
-    qos.name AS qos_name
+    qos.name AS qos_name,
+    failover_vnic_profile.name AS failover_vnic_profile_name
 FROM vm_interface_statistics
 RIGHT JOIN vm_interface
     ON vm_interface_statistics.id = vm_interface.id
@@ -2373,6 +2459,8 @@ LEFT JOIN (
             ON network.id = vnic_profiles.network_id
         ) LEFT JOIN qos
         ON vnic_profiles.network_qos_id = qos.id
+        LEFT JOIN vnic_profiles as failover_vnic_profile
+        ON vnic_profiles.failover_vnic_profile_id = failover_vnic_profile.id
     )
     ON vnic_profiles.id = vm_interface.vnic_profile_id
 WHERE vm_templates.entity_type = 'TEMPLATE';
@@ -2521,7 +2609,9 @@ SELECT vm_images_view.storage_id,
     vm_images_view.creation_date,
     vm_images_view.actual_size,
     vm_images_view.read_rate,
+    vm_images_view.read_ops,
     vm_images_view.write_rate,
+    vm_images_view.write_ops,
     vm_images_view.size,
     vm_images_view.it_guid,
     vm_images_view.description,
@@ -2734,6 +2824,7 @@ SELECT network.id AS id,
     network.qos_id AS qos_id,
     network.dns_resolver_configuration_id,
     network.label AS label,
+    network.port_isolation AS port_isolation,
     storage_pool.name AS storage_pool_name,
     storage_pool.compatibility_version AS compatibility_version,
     providers.name AS provider_name,
@@ -2758,12 +2849,14 @@ SELECT vnic_profiles.id AS id,
     vnic_profiles.custom_properties AS custom_properties,
     vnic_profiles.description AS description,
     vnic_profiles.network_filter_id AS network_filter_id,
+    vnic_profiles.failover_vnic_profile_id as failover_vnic_profile_id,
     network_filter.filter_name AS network_filter_name,
     network.name AS network_name,
     qos.name AS network_qos_name,
     storage_pool.name AS data_center_name,
     storage_pool.compatibility_version AS compatibility_version,
-    storage_pool.id AS data_center_id
+    storage_pool.id AS data_center_id,
+    failover_vnic_profiles.name AS failover_vnic_profile_name
 
 FROM vnic_profiles
 INNER JOIN network
@@ -2773,7 +2866,9 @@ LEFT JOIN qos
 INNER JOIN storage_pool
     ON network.storage_pool_id = storage_pool.id
 LEFT JOIN network_filter
-    ON vnic_profiles.network_filter_id = network_filter.filter_id;
+    ON vnic_profiles.network_filter_id = network_filter.filter_id
+LEFT JOIN vnic_profiles AS failover_vnic_profiles
+    ON vnic_profiles.failover_vnic_profile_id = failover_vnic_profiles.id;
 
 ----------------------------------------------
 -- Query Permissions
@@ -3797,7 +3892,9 @@ SELECT vm_vds_numa_node_map.vm_numa_node_id AS assigned_vm_numa_node_id,
     vm_numa_node.cpu_user AS vm_numa_node_cpu_user,
     vm_numa_node.cpu_idle AS vm_numa_node_cpu_idle,
     vm_numa_node.usage_cpu_percent AS vm_numa_node_usage_cpu_percent,
-    vm_numa_node.distance AS vm_numa_node_distance
+    vm_numa_node.distance AS vm_numa_node_distance,
+    vm_numa_node.hugepages AS vm_numa_node_hugepages,
+    vm_numa_node.numa_tune_mode AS vm_numa_node_numa_tune_mode
 FROM vm_vds_numa_node_map
 LEFT JOIN numa_node AS vm_numa_node
     ON vm_vds_numa_node_map.vm_numa_node_id = vm_numa_node.numa_node_id;
@@ -3817,6 +3914,8 @@ SELECT vm_numa_node.numa_node_id AS vm_numa_node_id,
     vm_numa_node.cpu_idle AS vm_numa_node_cpu_idle,
     vm_numa_node.usage_cpu_percent AS vm_numa_node_usage_cpu_percent,
     vm_numa_node.distance AS vm_numa_node_distance,
+    vm_numa_node.hugepages AS vm_numa_node_hugepages,
+    vm_numa_node.numa_tune_mode AS vm_numa_node_numa_tune_mode,
     vm_static.cluster_id
 FROM numa_node AS vm_numa_node
 LEFT JOIN vm_static
@@ -3975,3 +4074,13 @@ CREATE OR REPLACE VIEW iso_disks_as_repo_images AS
 
    WHERE bd.disk_content_type=4;
 
+
+CREATE OR REPLACE VIEW vm_interfaces_plugged_on_vm_not_down_view AS
+    SELECT vm_interface.*
+    FROM vm_interface
+    INNER JOIN vm_dynamic
+        ON vm_interface.vm_guid = vm_dynamic.vm_guid
+    INNER JOIN vm_device
+        ON vm_interface.id = vm_device.device_id
+    WHERE vm_dynamic.status <> 0
+        AND vm_device.is_plugged = true;

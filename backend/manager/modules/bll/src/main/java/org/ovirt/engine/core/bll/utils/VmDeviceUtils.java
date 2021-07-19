@@ -25,7 +25,10 @@ import org.ovirt.engine.core.bll.network.VmInterfaceManager;
 import org.ovirt.engine.core.bll.network.macpool.MacPoolPerCluster;
 import org.ovirt.engine.core.bll.network.macpool.ReadMacPool;
 import org.ovirt.engine.core.bll.validator.VirtIoRngValidator;
+import org.ovirt.engine.core.common.FeatureSupported;
+import org.ovirt.engine.core.common.action.VmExternalDataKind;
 import org.ovirt.engine.core.common.action.VmManagementParametersBase;
+import org.ovirt.engine.core.common.businessentities.ArchitectureType;
 import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.ChipsetType;
 import org.ovirt.engine.core.common.businessentities.Cluster;
@@ -52,7 +55,6 @@ import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.osinfo.OsRepository;
-import org.ovirt.engine.core.common.utils.BiosTypeUtils;
 import org.ovirt.engine.core.common.utils.CompatibilityVersionUtils;
 import org.ovirt.engine.core.common.utils.VmDeviceCommonUtils;
 import org.ovirt.engine.core.common.utils.VmDeviceType;
@@ -60,11 +62,15 @@ import org.ovirt.engine.core.common.utils.VmDeviceUpdate;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.Version;
 import org.ovirt.engine.core.dao.ClusterDao;
+import org.ovirt.engine.core.dao.VmDao;
 import org.ovirt.engine.core.dao.VmDeviceDao;
 import org.ovirt.engine.core.dao.VmStaticDao;
 import org.ovirt.engine.core.dao.VmTemplateDao;
 import org.ovirt.engine.core.utils.MemoizingSupplier;
+import org.ovirt.engine.core.vdsbroker.monitoring.VmDevicesMonitoring;
 import org.ovirt.engine.core.vdsbroker.vdsbroker.VdsProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Dependent
 public class VmDeviceUtils {
@@ -76,8 +82,10 @@ public class VmDeviceUtils {
     private static final int COMPANION_USB_CONTROLLERS = 3;
     private static final int VNC_MIN_MONITORS = 1;
     private static final int SINGLE_QXL_MONITORS = 1;
+    private static final Logger log = LoggerFactory.getLogger(VmDeviceUtils.class);
 
     private final VmStaticDao vmStaticDao;
+    private final VmDao vmDao;
     private final VmDeviceDao vmDeviceDao;
     private final ClusterDao clusterDao;
     private final VmTemplateDao vmTemplateDao;
@@ -91,7 +99,11 @@ public class VmDeviceUtils {
     private CompensationContext compensationContext;
 
     @Inject
+    private VmDevicesMonitoring vmDevicesMonitoring;
+
+    @Inject
     VmDeviceUtils(VmStaticDao vmStaticDao,
+                  VmDao vmDao,
                   VmDeviceDao vmDeviceDao,
                   ClusterDao clusterDao,
                   VmTemplateDao vmTemplateDao,
@@ -101,6 +113,7 @@ public class VmDeviceUtils {
                   VideoDeviceSettings videoDeviceSettings,
                   OsRepository osRepository) {
         this.vmStaticDao = vmStaticDao;
+        this.vmDao = vmDao;
         this.vmDeviceDao = vmDeviceDao;
         this.clusterDao = clusterDao;
         this.vmTemplateDao = vmTemplateDao;
@@ -147,10 +160,11 @@ public class VmDeviceUtils {
      * Determine the bus interface (IDE, SCSI, SATA etc.) to be used for CD device in the given VM.
      */
     public String getCdInterface(VM vm) {
+        ChipsetType chipset = vm.getBiosType() == null ? null : vm.getBiosType().getChipsetType();
         return osRepository.getCdInterface(
                 vm.getOs(),
                 vm.getCompatibilityVersion(),
-                vm.getEffectiveBiosType().getChipsetType());
+                chipset);
     }
 
     /**
@@ -447,17 +461,21 @@ public class VmDeviceUtils {
 
     /**
      * Update sound device in the new VM, if its state should be different from the old VM. Recreate the device in any
-     * case, if OS has been changed.
+     * case, if OS or chipset has been changed.
      *
      * @param compatibilityVersion  cluster compatibility version
      * @param isSoundDeviceEnabled  true/false to enable/disable device respectively, null to leave it untouched
      */
-    public void updateSoundDevice(VmBase oldVmBase, VmBase newVmBase, Cluster cluster, Version compatibilityVersion,
+    public void updateSoundDevice(VmBase oldVmBase, VmBase newVmBase, Version compatibilityVersion,
                                   Boolean isSoundDeviceEnabled) {
+
+        ChipsetType oldChipset = oldVmBase.getBiosType() == null ? null : oldVmBase.getBiosType().getChipsetType();
+        ChipsetType newChipset = newVmBase.getBiosType() == null ? null : newVmBase.getBiosType().getChipsetType();
+
+        boolean chipsetChanged = oldChipset != newChipset;
         boolean osChanged = oldVmBase.getOsId() != newVmBase.getOsId();
-        BiosType biosType = BiosTypeUtils.getEffective(newVmBase, cluster);
         updateSoundDevice(newVmBase.getId(), newVmBase.getOsId(), compatibilityVersion,
-                biosType.getChipsetType(), isSoundDeviceEnabled, osChanged);
+                newChipset, isSoundDeviceEnabled, osChanged || chipsetChanged);
     }
 
     /**
@@ -506,8 +524,8 @@ public class VmDeviceUtils {
      */
     public VmDevice addSoundDevice(VmBase vmBase, Supplier<Cluster> clusterSupplier) {
         Version compatibilityVersion = CompatibilityVersionUtils.getEffective(vmBase, clusterSupplier);
-        BiosType biosType = BiosTypeUtils.getEffective(vmBase, clusterSupplier);
-        return addSoundDevice(vmBase.getId(), vmBase.getOsId(), compatibilityVersion, biosType.getChipsetType());
+        ChipsetType chipsetType = vmBase.getBiosType() == null ? null : vmBase.getBiosType().getChipsetType();
+        return addSoundDevice(vmBase.getId(), vmBase.getOsId(), compatibilityVersion, chipsetType);
     }
 
     /**
@@ -557,10 +575,9 @@ public class VmDeviceUtils {
         boolean displayTypeChanged = oldVmBase.getDefaultDisplayType() != newVmBase.getDefaultDisplayType();
         boolean numOfMonitorsChanged = newVmBase.getDefaultDisplayType() == DisplayType.qxl &&
                 oldVmBase.getNumOfMonitors() != newVmBase.getNumOfMonitors();
-        boolean singleQxlChanged = oldVmBase.getSingleQxlPci() != newVmBase.getSingleQxlPci();
         boolean guestOsChanged = oldVmBase.getOsId() != newVmBase.getOsId();
 
-        if (displayTypeChanged || numOfMonitorsChanged || singleQxlChanged || guestOsChanged) {
+        if (displayTypeChanged || numOfMonitorsChanged || guestOsChanged) {
             removeVideoDevices(oldVmBase.getId());
             addVideoDevices(newVmBase, getNeededNumberOfVideoDevices(newVmBase));
         } else {
@@ -570,7 +587,7 @@ public class VmDeviceUtils {
     }
 
     private int getNeededNumberOfVideoDevices(VmBase vmBase) {
-        int maxMonitorsSpice = vmBase.getSingleQxlPci() ? SINGLE_QXL_MONITORS : vmBase.getNumOfMonitors();
+        int maxMonitorsSpice = VmDeviceCommonUtils.isSingleQxlPci(vmBase) ? SINGLE_QXL_MONITORS : vmBase.getNumOfMonitors();
         int maxMonitorsVnc = Math.max(VNC_MIN_MONITORS, vmBase.getNumOfMonitors());
 
         return Math.min(maxMonitorsSpice, maxMonitorsVnc);
@@ -605,7 +622,7 @@ public class VmDeviceUtils {
      * @return a map of device parameters
      */
     private Map<String, Object> getVideoDeviceSpecParams(VmBase vmBase) {
-        return videoDeviceSettings.getVideoDeviceSpecParams(vmBase);
+        return videoDeviceSettings.getVideoDeviceSpecParams(vmBase, VmDeviceCommonUtils.isSingleQxlPci(vmBase));
     }
 
     /**
@@ -620,6 +637,92 @@ public class VmDeviceUtils {
      */
     public void removeVideoDevices(Guid vmId) {
         removeVmDevices(getVideoDevices(vmId));
+    }
+
+    /*
+     * TPM device
+     */
+
+    /**
+     * Enable/disable Tpm device in the VM.
+     *
+     * @param newVm new configuration
+     * @param newVmCluster new cluster
+     * @param tpmEnabled whether to enable or disable the device; if null then remove the device
+              if it cannot be supported and leave it unchanged otherwise
+     */
+    public void updateTpmDevice(VmBase newVm, Cluster newVmCluster, Boolean tpmEnabled) {
+        final Guid vmId = newVm.getId();
+        if (!isTpmDeviceSupported(newVm, newVmCluster)) {
+            tpmEnabled = false;
+        }
+        if (tpmEnabled == null) {
+            return;
+        }
+
+        if (tpmEnabled) {
+            if (!hasTpmDevice(vmId)) {
+                addTpmDevice(vmId);
+            }
+        } else {
+            removeTpmDevices(vmId);
+        }
+    }
+
+    /**
+     * Add new TPM device to the VM.
+     */
+    public VmDevice addTpmDevice(Guid vmId) {
+        return addManagedDevice(
+                new VmDeviceId(Guid.newGuid(), vmId),
+                VmDeviceGeneralType.TPM,
+                VmDeviceType.TPM,
+                Collections.emptyMap(),
+                true,
+                true);
+    }
+
+    /**
+     * Get list of all TPM devices in the VM.
+     */
+    public List<VmDevice> getTpmDevices(Guid vmId) {
+        return vmDeviceDao.getVmDeviceByVmIdAndType(vmId, VmDeviceGeneralType.TPM);
+    }
+
+    /**
+     * Remove all TPM devices from the VM.
+     */
+    public void removeTpmDevices(Guid vmId) {
+        removeVmDevices(getTpmDevices(vmId));
+    }
+
+    /**
+     * Check if the VM has a TPM device.
+     */
+    public boolean hasTpmDevice(Guid vmId) {
+        return !getTpmDevices(vmId).isEmpty();
+    }
+
+    /**
+     * Check if a TPM device is supported for the given VM in the given cluster.
+     */
+    public boolean isTpmDeviceSupported(VmBase vm, Cluster vmCluster) {
+        if (!osRepository.isTpmAllowed(vm.getOsId())) {
+            return false;
+        }
+
+        final Version version = CompatibilityVersionUtils.getEffective(vm, vmCluster);
+        boolean isOvmf = vm.getBiosType() == null ? false : vm.getBiosType().isOvmf();
+
+        return vmCluster == null || FeatureSupported.isTpmDeviceSupported(version, vmCluster.getArchitecture())
+                && (vmCluster.getArchitecture().getFamily() != ArchitectureType.x86 || isOvmf);
+    }
+
+    /**
+     * Check if a TPM device should be enabled for the given VM in the given cluster.
+     */
+    public boolean isTpmDeviceEnabled(VmBase vm, Cluster vmCluster) {
+        return isTpmDeviceSupported(vm, vmCluster) && hasTpmDevice(vm.getId());
     }
 
     /*
@@ -678,8 +781,8 @@ public class VmDeviceUtils {
      * Add given number of sets of USB controllers suitable for SPICE USB redirection to the VM.
      * For Q35 we ignore numberOfControllers and always create only one.
      */
-    public void addSpiceUsbControllers(Guid vmId, BiosType effectiveBiosType, int numberOfControllers) {
-        if (effectiveBiosType.getChipsetType() == ChipsetType.Q35) {
+    public void addSpiceUsbControllers(Guid vmId, ChipsetType chipset, int numberOfControllers) {
+        if (chipset == ChipsetType.Q35) {
             addManagedDevice(
                     new VmDeviceId(Guid.newGuid(), vmId),
                     VmDeviceGeneralType.CONTROLLER,
@@ -758,17 +861,18 @@ public class VmDeviceUtils {
     /**
      * Update USB slots and controllers in the new VM, if USB policy of the new VM differs from one of the old VM.
      * @param oldVm old configuration, may not be null, won't be modified
-     * @param oldVmCluster old cluster
      * @param newVm new configuration, may not be null, only devices if this entity will be modified
      * @param newVmCluster new cluster
      */
-    public void updateUsbSlots(VmBase oldVm, Cluster oldVmCluster, VmBase newVm, Cluster newVmCluster) {
+    public void updateUsbSlots(VmBase oldVm, VmBase newVm, Cluster newVmCluster) {
         final UsbPolicy oldUsbPolicy = oldVm.getUsbPolicy();
         final UsbPolicy newUsbPolicy = newVm.getUsbPolicy();
         final int oldNumberOfSlots = getUsbSlots(oldVm.getId()).size();
 
-        final BiosType effectiveBiosType = BiosTypeUtils.getEffective(newVm, newVmCluster);
         final int newNumberOfUsbSlots = Config.<Integer> getValue(ConfigValues.NumberOfUSBSlots);
+
+        ChipsetType oldChipset = oldVm.getBiosType() == null ? null : oldVm.getBiosType().getChipsetType();
+        ChipsetType newChipset = newVm.getBiosType() == null ? null : newVm.getBiosType().getChipsetType();
 
         if (UsbPolicy.DISABLED == newUsbPolicy && newVm.getVmType() == VmType.HighPerformance) {
             disableAnyUsb(oldVm, newVm);
@@ -776,17 +880,15 @@ public class VmDeviceUtils {
         }
         if (UsbPolicy.DISABLED == oldUsbPolicy && UsbPolicy.ENABLED_NATIVE == newUsbPolicy) {
             disableNormalUsb(newVm.getId());
-            enableSpiceUsb(newVm.getId(), effectiveBiosType, newNumberOfUsbSlots);
+            enableSpiceUsb(newVm.getId(), newChipset, newNumberOfUsbSlots);
             return;
         }
         if (UsbPolicy.ENABLED_NATIVE == oldUsbPolicy && UsbPolicy.ENABLED_NATIVE == newUsbPolicy) {
-            BiosType oldBiosType = BiosTypeUtils.getEffective(oldVm, oldVmCluster);
-            BiosType newBiosType = BiosTypeUtils.getEffective(newVm, newVmCluster);
-            if (!oldBiosType.getChipsetType().equals(newBiosType.getChipsetType())) {
+            if (oldChipset != newChipset) {
                 disableSpiceUsb(newVm.getId());
-                enableSpiceUsb(newVm.getId(), effectiveBiosType, newNumberOfUsbSlots);
+                enableSpiceUsb(newVm.getId(), newChipset, newNumberOfUsbSlots);
             } else {
-                updateSpiceUsb(newVm.getId(), effectiveBiosType, oldNumberOfSlots, newNumberOfUsbSlots);
+                updateSpiceUsb(newVm.getId(), newChipset, oldNumberOfSlots, newNumberOfUsbSlots);
             }
             return;
         }
@@ -805,11 +907,8 @@ public class VmDeviceUtils {
     }
 
     private void disableAnyUsb(VmBase oldVm, VmBase newVm) {
-        final List<VmDevice> usbControllers;
-
         if (UsbPolicy.DISABLED == oldVm.getUsbPolicy() && VmType.HighPerformance == oldVm.getVmType()
-                && (usbControllers = getUsbControllers(newVm.getId())) != null && usbControllers.size() == 1
-                && UsbControllerModel.NONE.libvirtName.equals(getUsbControllerModelName(usbControllers.get(0)))) {
+                && isUsbControllerDisabled(newVm.getId())) {
             return;
         }
 
@@ -823,8 +922,18 @@ public class VmDeviceUtils {
             break;
         }
 
+        addDisableUsbControllers(newVm.getId());
+    }
+
+    public boolean isUsbControllerDisabled(Guid vmId) {
+        final List<VmDevice> usbControllers = getUsbControllers(vmId);
+        return usbControllers != null && usbControllers.size() == 1
+                && UsbControllerModel.NONE.libvirtName.equals(getUsbControllerModelName(usbControllers.get(0)));
+    }
+
+    public void addDisableUsbControllers(Guid vmId) {
         addManagedDevice(
-                new VmDeviceId(Guid.newGuid(), newVm.getId()),
+                new VmDeviceId(Guid.newGuid(), vmId),
                 VmDeviceGeneralType.CONTROLLER,
                 VmDeviceType.USB,
                 createUsbControllerSpecParams(UsbControllerModel.NONE.libvirtName, 0),
@@ -836,14 +945,14 @@ public class VmDeviceUtils {
         removeUsbControllers(vmId);
     }
 
-    private void enableSpiceUsb(Guid vmId, BiosType effectiveBiosType, int newNumberOfUsbSlots) {
+    private void enableSpiceUsb(Guid vmId, ChipsetType chipset, int newNumberOfUsbSlots) {
         if (newNumberOfUsbSlots > 0) {
-            addSpiceUsbControllers(vmId, effectiveBiosType, getNeededNumberOfUsbControllers(newNumberOfUsbSlots));
+            addSpiceUsbControllers(vmId, chipset, getNeededNumberOfUsbControllers(newNumberOfUsbSlots));
             addUsbSlots(vmId, newNumberOfUsbSlots);
         }
     }
 
-    private void updateSpiceUsb(Guid vmId, BiosType effectiveBiosType, int oldNumberOfSlots, int newNumberOfUsbSlots) {
+    private void updateSpiceUsb(Guid vmId, ChipsetType chipset, int oldNumberOfSlots, int newNumberOfUsbSlots) {
         if (oldNumberOfSlots > newNumberOfUsbSlots) {
             // Remove slots and controllers
             removeUsbSlots(vmId, oldNumberOfSlots - newNumberOfUsbSlots);
@@ -857,7 +966,7 @@ public class VmDeviceUtils {
             if (oldNumberOfSlots == 0) {
                 // there may be remaining of unmanaged controllers from previous versions
                 removeUsbControllers(vmId);
-                addSpiceUsbControllers(vmId, effectiveBiosType, getNeededNumberOfUsbControllers(newNumberOfUsbSlots));
+                addSpiceUsbControllers(vmId, chipset, getNeededNumberOfUsbControllers(newNumberOfUsbSlots));
             }
             addUsbSlots(vmId, newNumberOfUsbSlots - oldNumberOfSlots);
             return;
@@ -960,8 +1069,8 @@ public class VmDeviceUtils {
         MemoizingSupplier<Cluster> clusterSupplier =
                 new MemoizingSupplier<>(() -> getCluster(vmBase.getClusterId()));
         Version version = CompatibilityVersionUtils.getEffective(vmBase, clusterSupplier);
-        BiosType biosType = BiosTypeUtils.getEffective(vmBase, clusterSupplier);
-        return osRepository.getOsUsbControllerModel(vmBase.getOsId(), version, biosType.getChipsetType());
+        ChipsetType chipset = vmBase.getBiosType() == null ? null : vmBase.getBiosType().getChipsetType();
+        return osRepository.getOsUsbControllerModel(vmBase.getOsId(), version, chipset);
     }
 
     private String getUsbControllerModelName(VmDevice usbControllerDevice) {
@@ -1051,21 +1160,11 @@ public class VmDeviceUtils {
      */
 
     /**
-     * Enable/disable memory balloon device in the VM.
-     *
-     * @param isBalloonEnabled    true/false to enable/disable device respectively, null to leave it untouched
+     * Enable memory balloon device in the VM.
      */
-    public void updateMemoryBalloon(Guid vmId, Boolean isBalloonEnabled) {
-        if (isBalloonEnabled == null) {
-            return; //we don't want to update the device
-        }
-
-        if (isBalloonEnabled) {
-            if (!hasMemoryBalloon(vmId)) {
-                addMemoryBalloon(vmId);
-            }
-        } else {
-            removeMemoryBalloons(vmId);
+    public void addMemoryBalloonIfNeeded(Guid vmId) {
+        if (!hasMemoryBalloon(vmId)) {
+            addMemoryBalloon(vmId);
         }
     }
 
@@ -1091,13 +1190,6 @@ public class VmDeviceUtils {
      */
     public List<VmDevice> getMemoryBalloons(Guid vmId) {
         return vmDeviceDao.getVmDeviceByVmIdAndType(vmId, VmDeviceGeneralType.BALLOON);
-    }
-
-    /**
-     * Remove all memory balloon devices from the VM.
-     */
-    public void removeMemoryBalloons(Guid vmId) {
-        removeVmDevices(getMemoryBalloons(vmId), 1);
     }
 
     /**
@@ -1310,6 +1402,24 @@ public class VmDeviceUtils {
     }
 
     /**
+     * Remove all devices addresses in the list.
+     */
+    public void removeVmDevicesAddress(Guid vmId) {
+        List<VmDevice> devices = vmDeviceDao.getVmDeviceByVmId(vmId);
+        for (VmDevice device : devices) {
+            CompensationUtils.<VmDeviceId, VmDevice>updateEntity(device, dev -> {
+                device.setAddress("");
+            }, vmDeviceDao, compensationContext);
+        }
+    }
+
+    public void resetVmDevicesHash(Guid vmId) {
+        VmDevicesMonitoring.Change change = vmDevicesMonitoring.createChange(System.nanoTime());
+        change.updateVm(vmId, VmDevicesMonitoring.EMPTY_HASH);
+        change.flush();
+    }
+
+    /**
      * Remove the given number of devices starting from the end of the list.
      */
     public void removeVmDevices(List<VmDevice> devices, int numberOfDevicesToRemove) {
@@ -1357,10 +1467,11 @@ public class VmDeviceUtils {
 
         updateCdPath(oldVmBase, newVmBase);
         updateVideoDevices(oldVmBase, newVmBase);
-        updateUsbSlots(oldVmBase, oldVmCluster, newVmBase, newVmCluster);
-        updateMemoryBalloon(newVmBase.getId(), params.isBalloonEnabled());
-        updateSoundDevice(oldVmBase, newVmBase, newVmCluster, oldVm.getCompatibilityVersion(),
+        updateUsbSlots(oldVmBase, newVmBase, newVmCluster);
+        addMemoryBalloonIfNeeded(newVmBase.getId());
+        updateSoundDevice(oldVmBase, newVmBase, oldVm.getCompatibilityVersion(),
                 params.isSoundDeviceEnabled());
+        updateTpmDevice(newVmBase, newVmCluster, params.isTpmEnabled());
         updateSmartcardDevice(oldVm, newVmBase);
         updateConsoleDevice(newVmBase.getId(), params.isConsoleEnabled());
         updateVirtioScsiController(newVmBase, params.isVirtioScsiEnabled());
@@ -1376,7 +1487,6 @@ public class VmDeviceUtils {
         params.setSoundDeviceEnabled(containsDeviceWithType(devices, VmDeviceGeneralType.SOUND));
         params.setConsoleEnabled(containsDeviceWithType(devices, VmDeviceGeneralType.CONSOLE));
         params.setVirtioScsiEnabled(containsDeviceWithType(devices, VmDeviceGeneralType.CONTROLLER, VmDeviceType.VIRTIOSCSI));
-        params.setBalloonEnabled(containsDeviceWithType(devices, VmDeviceGeneralType.BALLOON));
 
         updateVmGraphicDevicesInParameters(params, devices);
         updateWatchdogInParameters(params, devices);
@@ -1435,7 +1545,7 @@ public class VmDeviceUtils {
     public void updateVmDevicesOnRun(VM vm) {
         if (vm != null) {
             Cluster cluster = getCluster(vm.getClusterId());
-            updateUsbSlots(vm.getStaticData(), cluster, vm.getStaticData(), cluster);
+            updateUsbSlots(vm.getStaticData(), vm.getStaticData(), cluster);
             removeLeftOverDevices(vm.getStaticData());
             updateRngDevice(vm);
         }
@@ -1462,6 +1572,45 @@ public class VmDeviceUtils {
         vmDeviceDao.update(rngDeviceToUpdate.get());
     }
 
+    public void convertVmDevicesToNewChipset(Guid vmId, ChipsetType newChipsetType, boolean useCompensation) {
+        removeUnmanagedDevices(vmId, useCompensation);
+        convertVmDevicesToNewChipsetInternal(vmId, newChipsetType, useCompensation);
+        resetVmDevicesHash(vmId);
+    }
+
+    private void convertVmDevicesToNewChipsetInternal(Guid vmId, ChipsetType chipset, boolean useCompensation) {
+        log.info("Converting all devices for VM with id {} to new chipset {}", vmId, chipset);
+        List<VmDevice> devices = vmDeviceDao.getVmDeviceByVmId(vmId);
+        for (VmDevice device : devices) {
+            if (useCompensation) {
+                CompensationUtils.<VmDeviceId, VmDevice> updateEntity(device, dev -> {
+                    convertVmDeviceToNewChipsetInternal(dev, chipset);
+                }, vmDeviceDao, compensationContext);
+            } else {
+                convertVmDeviceToNewChipsetInternal(device, chipset);
+            }
+        }
+
+        if (!useCompensation) {
+            vmDeviceDao.updateAllInBatch(devices);
+        }
+    }
+
+    private void convertVmDeviceToNewChipsetInternal(VmDevice device, ChipsetType newChipsetType) {
+        device.setAddress("");
+        // note that a chipset change is handled for sound and usb in updateSoundDevice and updateUsbSlots methods
+    }
+
+    private void removeUnmanagedDevices(Guid vmId, boolean useCompensation) {
+        log.info("Removing all unmanaged devices for VM with id: {}", vmId);
+        if (useCompensation) {
+            List<VmDevice> devices = vmDeviceDao.getUnmanagedDevicesByVmId(vmId);
+            CompensationUtils.<VmDeviceId, VmDevice> removeEntities(devices, vmDeviceDao, compensationContext);
+        } else {
+            vmDeviceDao.removeAllUnmanagedDevicesByVmId(vmId);
+        }
+    }
+
     /**
      * Copy devices from the given VmDevice list to the destination VM/VmBase.
      */
@@ -1472,9 +1621,9 @@ public class VmDeviceUtils {
                               List<VmDevice> srcDevices,
                               Map<Guid, Guid> srcDeviceIdToDstDeviceIdMapping,
                               boolean isSoundEnabled,
+                              Boolean isTpmEnabled,
                               Boolean isConsoleEnabled,
                               Boolean isVirtioScsiEnabled,
-                              boolean isBalloonEnabled,
                               Set<GraphicsType> graphicsToSkip,
                               boolean copySnapshotDevices,
                               boolean copyHostDevices,
@@ -1487,6 +1636,7 @@ public class VmDeviceUtils {
         boolean dstIsVm = !(dstVmBase instanceof VmTemplate);
         boolean hasCd = hasCdDevice(dstVmBase.getId());
         boolean hasSound = false;
+        boolean hasTpm = false;
         boolean hasConsole = false;
         boolean hasVirtioScsi = false;
         boolean hasBalloon = false;
@@ -1494,7 +1644,6 @@ public class VmDeviceUtils {
 
         final Cluster srcCluster = getCluster(srcVmBase.getClusterId());
         final Cluster dstCluster = getCluster(dstVmBase.getClusterId(), srcCluster);
-        ChipsetType dstChipsetType = BiosTypeUtils.getEffective(dstVmBase, dstCluster).getChipsetType();
 
         for (VmDevice device : srcDevices) {
             if (device.getSnapshotId() != null && !copySnapshotDevices) {
@@ -1516,14 +1665,6 @@ public class VmDeviceUtils {
                             // check here is source VM had CD (VM from snapshot)
                             String srcCdPath = (String) device.getSpecParams().get(VdsProperties.Path);
                             specParams.putAll(getCdDeviceSpecParams(srcCdPath, dstCdPath));
-                            if (dstChipsetType == ChipsetType.Q35 && !device.getAddress().contains("bus=0")) {
-                                device.setAddress("");
-                            }
-                            if (dstChipsetType == ChipsetType.I440FX
-                                    && !device.getAddress().contains("unit=0")
-                                    && !device.getAddress().contains("unit=1")) {
-                                device.setAddress("");
-                            }
                         } else { // CD already exists
                             continue;
                         }
@@ -1541,26 +1682,10 @@ public class VmDeviceUtils {
                         specParams = device.getSpecParams();
                     } else if (VmDeviceType.PCI.getName().equals(device.getDevice())) {
                         specParams = device.getSpecParams();
-                        if (ChipsetType.I440FX.equals(dstChipsetType)) {
-                            String model = (String) specParams.get(VdsProperties.Model);
-                            if (model != null && model.startsWith("pcie-")) {
-                                continue;
-                            }
-                        }
                     } else if (VmDeviceType.VIRTIOSCSI.getName().equals(device.getDevice())) {
                         hasVirtioScsi = true;
                         if (Boolean.FALSE.equals(isVirtioScsiEnabled)) {
                             continue;
-                        }
-                    } else if (VmDeviceType.IDE.getName().equals(device.getDevice())) {
-                        if (ChipsetType.Q35.equals(dstChipsetType)) {
-                            device.setDevice(VmDeviceType.SATA.getName());
-                            device.setAddress("");
-                        }
-                    } else if (VmDeviceType.SATA.getName().equals(device.getDevice())) {
-                        if (ChipsetType.I440FX.equals(dstChipsetType)) {
-                            device.setDevice(VmDeviceType.IDE.getName());
-                            device.setAddress("");
                         }
                     }
                     break;
@@ -1575,9 +1700,6 @@ public class VmDeviceUtils {
                     break;
 
                 case BALLOON:
-                    if (!isBalloonEnabled) {
-                        continue;
-                    }
                     hasBalloon = true;
                     specParams.putAll(getMemoryBalloonSpecParams());
                     break;
@@ -1620,6 +1742,13 @@ public class VmDeviceUtils {
                     hasSound = true;
                     break;
 
+                case TPM:
+                    if (Boolean.FALSE.equals(isTpmEnabled)) {
+                        continue;
+                    }
+                    hasTpm = true;
+                    break;
+
                 case GRAPHICS:
                     GraphicsType type = GraphicsType.fromVmDeviceType(VmDeviceType.getByName(device.getDevice()));
                     // don't add device from the template if it should be skipped (i.e. it's overridden in params)
@@ -1649,10 +1778,18 @@ public class VmDeviceUtils {
             addCdDevice(dstId, dstCdPath);
         }
 
-        updateUsbSlots(srcVmBase, srcCluster, dstVmBase, dstCluster);
+        updateUsbSlots(srcVmBase, dstVmBase, dstCluster);
 
-        if (isSoundEnabled && !hasSound) {
-            addSoundDevice(dstVmBase, () -> dstCluster);
+        if (isSoundEnabled) {
+            if (hasSound) {
+                updateSoundDevice(srcVmBase, dstVmBase, CompatibilityVersionUtils.getEffective(dstVmBase,  dstCluster), isSoundEnabled);
+            } else {
+                addSoundDevice(dstVmBase, () -> dstCluster);
+            }
+        }
+
+        if (Boolean.TRUE.equals(isTpmEnabled) && !hasTpm) {
+            addTpmDevice(dstId);
         }
 
         if (Boolean.TRUE.equals(isConsoleEnabled) && !hasConsole) {
@@ -1663,7 +1800,7 @@ public class VmDeviceUtils {
             addVirtioScsiController(dstVmBase, getVmCompatibilityVersion(dstVmBase));
         }
 
-        if (isBalloonEnabled && !hasBalloon) {
+        if (!hasBalloon) {
             addMemoryBalloon(dstId);
         }
 
@@ -1679,9 +1816,9 @@ public class VmDeviceUtils {
                                      Guid dstId,
                                      Map<Guid, Guid> srcDeviceIdToDstDeviceIdMapping,
                                      boolean isSoundEnabled,
+                                     Boolean isTpmEnabled,
                                      Boolean isConsoleEnabled,
                                      Boolean isVirtioScsiEnabled,
-                                     boolean isBalloonEnabled,
                                      Set<GraphicsType> graphicsToSkip,
                                      boolean copySnapshotDevices,
                                      Version versionToUpdateRndDeviceWith) {
@@ -1691,8 +1828,8 @@ public class VmDeviceUtils {
         List<VmDevice> srcDevices = vmDeviceDao.getVmDeviceByVmId(srcId);
 
         copyVmDevices(srcId, dstId, srcVmBase, dstVmBase, srcDevices, srcDeviceIdToDstDeviceIdMapping,
-                isSoundEnabled, isConsoleEnabled, isVirtioScsiEnabled, isBalloonEnabled, graphicsToSkip,
-                copySnapshotDevices, canCopyHostDevices(srcVmBase, dstVmBase),
+                isSoundEnabled, isTpmEnabled, isConsoleEnabled, isVirtioScsiEnabled,
+                graphicsToSkip, copySnapshotDevices, canCopyHostDevices(srcVmBase, dstVmBase),
                 versionToUpdateRndDeviceWith);
     }
 
@@ -1893,7 +2030,10 @@ public class VmDeviceUtils {
                     break;
 
                 case HOSTDEV:
-                    // it is currently unsafe to import host devices, due to possibility of invalid dedicatedVmForVds
+                    if (isPinngedToSingleValidHost(vmBase)) {
+                        vmDevice.setPlugged(true);
+                        break;
+                    }
                     continue;
 
             }
@@ -1912,6 +2052,17 @@ public class VmDeviceUtils {
                 .filter(device -> !VmDeviceCommonUtils.isMemory(device) || withMemory)
                 .collect(Collectors.toList());
         vmDeviceToAdd.addAll(unmanagedDevicesToAdd);
+    }
+
+    /**
+     * Checks if the VM has one dedicated host when having host device attached to it.
+     *
+     * @param vmBase The VM we check.
+     * @return true, if the VM has the dedicated host in the cluster, and only pinned to that host.
+     */
+    private boolean isPinngedToSingleValidHost(VmBase vmBase) {
+        return vmBase.getDedicatedVmForVdsList().size() == 1
+                && vmHandler.validateDedicatedVdsExistOnSameCluster(vmBase).isValid();
     }
 
     /**
@@ -2122,5 +2273,34 @@ public class VmDeviceUtils {
 
     public boolean containsDeviceWithType(List<VmDevice> devices, VmDeviceGeneralType type) {
         return containsDeviceWithType(devices, type, null);
+    }
+
+    public void copyVmExternalData(Guid sourceVmId, Guid targetVmId) {
+        if (hasTpmDevice(targetVmId)) {
+            vmDao.copyTpmData(sourceVmId, targetVmId);
+        }
+        if (getVmBase(targetVmId).getBiosType() == BiosType.Q35_SECURE_BOOT) {
+            vmDao.copyNvramData(sourceVmId, targetVmId);
+        }
+    }
+
+    public void updateVmExternalData(VM vm) {
+        Map<VmExternalDataKind, String> vmExternalData = vm.getVmExternalData();
+        if (vmExternalData == null) {
+            return;
+        }
+        Guid vmId = vm.getId();
+        String tpmData = vmExternalData.get(VmExternalDataKind.TPM);
+        if (tpmData == null) {
+            vmDao.deleteTpmData(vmId);
+        } else {
+            vmDao.updateTpmData(vmId, tpmData, "");
+        }
+        String nvramData = vmExternalData.get(VmExternalDataKind.NVRAM);
+        if (nvramData == null) {
+            vmDao.deleteNvramData(vmId);
+        } else {
+            vmDao.updateNvramData(vmId, nvramData, "");
+        }
     }
 }

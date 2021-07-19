@@ -1,6 +1,7 @@
 package org.ovirt.engine.core.bll.storage.disk;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -158,7 +159,6 @@ public class MoveOrCopyDiskCommand<T extends MoveOrCopyImageGroupParameters> ext
     @Override
     protected boolean validate() {
         return super.validate()
-                && diskContainsPreExtendSnapshots()
                 && isImageExist()
                 && checkOperationIsCorrect()
                 && checkOperationAllowedOnDiskContentType()
@@ -333,10 +333,6 @@ public class MoveOrCopyDiskCommand<T extends MoveOrCopyImageGroupParameters> ext
         return validate(diskValidator.isDiskPluggedToAnyNonDownVm(false));
     }
 
-    private boolean diskContainsPreExtendSnapshots() {
-        return validate(createDiskImagesValidator(getImage()).childDiskWasExtended(getStorageDomain()));
-    }
-
     /**
      * Cache method to retrieve all the VMs with the device info related to the image
      */
@@ -387,7 +383,7 @@ public class MoveOrCopyDiskCommand<T extends MoveOrCopyImageGroupParameters> ext
             getReturnValue().setFault(vdcRetValue.getFault());
         } else {
             setSucceeded(true);
-            if (isCopyOperation() && !isTemplate()) {
+            if (isCopyOperation() && !isTemplate() && !isManagedBlockCopy()) {
                 imagesHandler.addDiskImageWithNoVmDevice(getImage());
             }
         }
@@ -505,7 +501,8 @@ public class MoveOrCopyDiskCommand<T extends MoveOrCopyImageGroupParameters> ext
     private MoveOrCopyImageGroupParameters prepareChildParameters() {
         MoveOrCopyImageGroupParameters parameters = new MoveOrCopyImageGroupParameters(getParameters());
         if (parameters.getOperation() == ImageOperation.Copy) {
-            parameters.setUseCopyCollapse(getParameters().getUseCopyCollapse());
+            // If we didn't get here from a parent command, assume we want to collapse the chain
+            parameters.setUseCopyCollapse(getParentParameters() == null ? true : getParameters().getUseCopyCollapse());
             parameters.setAddImageDomainMapping(isTemplate() ? true : getParameters().getAddImageDomainMapping());
             parameters.setShouldLockImageOnRevert(false);
             parameters.setDestImages(getParameters().getDestImages());
@@ -528,11 +525,13 @@ public class MoveOrCopyDiskCommand<T extends MoveOrCopyImageGroupParameters> ext
 
         parameters.setVolumeFormat(getDiskImage().getVolumeFormat());
         parameters.setVolumeType(getDiskImage().getVolumeType());
+        parameters.setDiskAlias(getDiskAlias());
         if (isTemplate()) {
             parameters.setCopyVolumeType(CopyVolumeType.SharedVol);
         } else {
             parameters.setCopyVolumeType(CopyVolumeType.LeafVol);
         }
+        parameters.setStoragePoolId(getStoragePoolId());
         parameters.setParentCommand(getActionType());
         parameters.setParentParameters(getParameters());
         parameters.setDiskProfileId(getImage().getDiskProfileId());
@@ -562,13 +561,13 @@ public class MoveOrCopyDiskCommand<T extends MoveOrCopyImageGroupParameters> ext
         image.setVmSnapshotId(null);
         image.setParentId(Guid.Empty);
         image.setImageTemplateId(Guid.Empty);
-
+        image.setDiskDescription(getDiskImage().getDiskDescription());
         parameters.setDestinationImageId(newImageId);
         parameters.setDestImageGroupId(newId);
 
         // we call copy directly via UI/REST
         if (getParameters().getParentCommand() == ActionType.Unknown) {
-            parameters.setDestImages(List.of(image));
+            parameters.setDestImages(Arrays.asList(image));
         }
     }
 
@@ -624,6 +623,10 @@ public class MoveOrCopyDiskCommand<T extends MoveOrCopyImageGroupParameters> ext
     }
 
     protected boolean setAndValidateDiskProfiles() {
+        if (isManagedBlockCopy()) {
+            return true;
+        }
+
         getImage().setDiskProfileId(getParameters().getDiskProfileId());
         return validate(diskProfileHelper.setAndValidateDiskProfiles(Collections.singletonMap(getImage(),
                 getParameters().getStorageDomainId()), getCurrentUser()));
@@ -720,6 +723,10 @@ public class MoveOrCopyDiskCommand<T extends MoveOrCopyImageGroupParameters> ext
 
     private boolean isCopyOperation() {
         return ImageOperation.Copy == getParameters().getOperation();
+    }
+
+    private boolean isManagedBlockCopy() {
+        return storageDomainDao.get(getParameters().getStorageDomainId()).getStorageType() == StorageType.MANAGED_BLOCK_STORAGE;
     }
 
     protected QuotaValidator createQuotaValidator(Guid quotaId) {

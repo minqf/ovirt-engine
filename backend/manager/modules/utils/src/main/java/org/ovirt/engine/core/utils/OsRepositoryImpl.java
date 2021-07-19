@@ -12,6 +12,7 @@ import java.util.prefs.BackingStoreException;
 import java.util.prefs.Preferences;
 
 import org.apache.commons.lang.StringUtils;
+import org.ovirt.engine.core.common.FeatureSupported;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
 import org.ovirt.engine.core.common.businessentities.ChipsetType;
 import org.ovirt.engine.core.common.businessentities.ConsoleTargetType;
@@ -270,6 +271,21 @@ public enum OsRepositoryImpl implements OsRepository {
     }
 
     @Override
+    public boolean requiresLegacyVirtio(int osId, ChipsetType chipset) {
+        return ChipsetType.Q35 == chipset &&
+                getBoolean(getValueByVersion(idToUnameLookup.get(osId),
+                "devices.legacyVirtio",
+                null), false);
+    }
+
+    @Override
+    public boolean requiresOvirtGuestAgentChannel(int osId) {
+        return getBoolean(getValueByVersion(idToUnameLookup.get(osId),
+                        "devices.ovirtGuestAgentChannel",
+                        null), true);
+    }
+
+    @Override
     public List<String> getNetworkDevices(int osId, Version version) {
         String devices =
                 getValueByVersion(idToUnameLookup.get(osId), "devices.network", version);
@@ -366,7 +382,10 @@ public enum OsRepositoryImpl implements OsRepository {
                 GraphicsType graphics = GraphicsType.fromString(pair.getFirst());
                 DisplayType display = DisplayType.valueOf(pair.getSecond());
 
-                graphicsAndDisplays.add(new Pair<>(graphics, display));
+                if (display != DisplayType.bochs ||
+                        (version != null && !version.isNotValid() && FeatureSupported.isBochsDisplayEnabled(version))) {
+                    graphicsAndDisplays.add(new Pair<>(graphics, display));
+                }
             }
         }
 
@@ -424,26 +443,8 @@ public enum OsRepositoryImpl implements OsRepository {
     }
 
     @Override
-    public Map<Integer, Map<Version, Boolean>> getBalloonSupportMap() {
-        Map<Integer, Map<Version, Boolean>> balloonSupportMap = new HashMap<>();
-        Set<Version> versionsWithNull = new HashSet<>(Version.ALL);
-        versionsWithNull.add(null);
-
-        Set<Integer> osIds = new HashSet<>(getOsIds());
-        for (Integer osId : osIds) {
-            balloonSupportMap.put(osId, new HashMap<>());
-
-            for (Version ver : versionsWithNull) {
-                balloonSupportMap.get(osId).put(ver, isBalloonEnabled(osId, ver));
-            }
-        }
-
-        return balloonSupportMap;
-    }
-
-    @Override
-    public boolean isBalloonEnabled(int osId, Version version) {
-        return getBoolean(getValueByVersion(idToUnameLookup.get(osId), "devices.balloon.enabled", version), false);
+    public int getVgamemMultiplier(int osId) {
+        return getInt(getValueByVersion(idToUnameLookup.get(osId), "devices.display.vgamemMultiplier", null), 1);
     }
 
     @Override
@@ -598,6 +599,34 @@ public enum OsRepositoryImpl implements OsRepository {
                         .toLowerCase().split(",")));
     }
 
+    @Override
+    public boolean isTpmAllowed(int osId) {
+        return getBoolean(getValueByVersion(idToUnameLookup.get(osId), "devices.tpmAllowed", null), false);
+    }
+
+    @Override
+    public boolean isQ35Supported(int osId) {
+        String supported = getValueByVersion(idToUnameLookup.get(osId), "q35Support", null);
+        // possible values: "false", "insecure", "true"
+        return !supported.equalsIgnoreCase("false");
+    }
+
+    @Override
+    public boolean isSecureBootSupported(int osId) {
+        String supported = getValueByVersion(idToUnameLookup.get(osId), "q35Support", null);
+        // possible values: "false", "insecure", "true"
+        return supported.equalsIgnoreCase("true");
+    }
+
+    @Override
+    public Map<Integer, Boolean> getTpmAllowedMap() {
+        Map<Integer, Boolean> tpmAllowedMap = new HashMap<>();
+        for (Integer osId : getOsIds()) {
+            tpmAllowedMap.put(osId, isTpmAllowed(osId));
+        }
+        return tpmAllowedMap;
+    }
+
     private boolean getBoolean(String value, boolean defaultValue) {
         return value == null ? defaultValue : Boolean.parseBoolean(value);
     }
@@ -701,11 +730,6 @@ public enum OsRepositoryImpl implements OsRepository {
      */
     private String versionedValuePath(Version version) {
         return version == null ? "value" : "value." + version.toString();
-    }
-
-    @Override
-    public boolean isSingleQxlDeviceEnabled(int osId) {
-        return isLinux(osId);
     }
 
     public Map<String, Integer> getBackwardCompatibleNamesToIds() {

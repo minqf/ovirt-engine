@@ -43,8 +43,10 @@ public class AddVnicProfileCommand<T extends AddVnicProfileParameters> extends V
                 && validate(validator.portMirroringNotSetIfExternalNetwork())
                 && validator.validateCustomProperties(getReturnValue().getValidationMessages())
                 && validate(validator.passthroughProfileContainsSupportedProperties())
+                && validate(validator.passthroughProfileNoPortIsolation())
                 && validate(validator.validUseDefaultNetworkFilterFlag(useDefaultNetworkFilterId))
-                && validate(validator.validNetworkFilterId());
+                && validate(validator.validNetworkFilterId())
+                && validate(validator.validFailoverId());
     }
 
     @Override

@@ -351,6 +351,7 @@ public abstract class ImportVmTemplateCommandBase<T extends ImportVmTemplatePara
         checkTrustedService();
         incrementDbGeneration();
         logOnExecuteEndMethod.run();
+        setActionReturnValue(getVmTemplate());
         setSucceeded(true);
     }
 
@@ -381,11 +382,12 @@ public abstract class ImportVmTemplateCommandBase<T extends ImportVmTemplatePara
         // if "run on host" field points to a non existent vds (in the current cluster) -> remove field and continue
         if(!vmHandler.validateDedicatedVdsExistOnSameCluster(getVmTemplate()).isValid()) {
             getVmTemplate().setDedicatedVmForVdsList(Collections.emptyList());
+            getVmTemplate().setCpuPinning(null);
         }
 
         getVmTemplate().setStatus(VmTemplateStatus.Locked);
         getVmTemplate().setQuotaId(getParameters().getQuotaId());
-        vmHandler.autoSelectResumeBehavior(getVmTemplate(), getCluster());
+        vmHandler.autoSelectResumeBehavior(getVmTemplate());
         vmTemplateDao.save(getVmTemplate());
         getCompensationContext().snapshotNewEntity(getVmTemplate());
         addDisksToDb();

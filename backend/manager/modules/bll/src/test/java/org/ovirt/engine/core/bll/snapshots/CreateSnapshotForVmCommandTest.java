@@ -3,6 +3,7 @@ package org.ovirt.engine.core.bll.snapshots;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -39,6 +40,8 @@ import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VmStatic;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.errors.EngineMessage;
+import org.ovirt.engine.core.common.osinfo.OsRepository;
+import org.ovirt.engine.core.common.utils.SimpleDependencyInjector;
 import org.ovirt.engine.core.compat.Guid;
 
 /** A test case for the {@link CreateAllSnapshotsFromVmCommand} class. */
@@ -108,6 +111,8 @@ public class CreateSnapshotForVmCommandTest extends BaseCommandTest {
         doReturn(Guid.newGuid()).when(cmd).getStorageDomainIdForVmMemory(any());
         doReturn(getEmptyDiskList()).when(cmd).getDisksListForChecks();
         doReturn(getEmptyDiskList()).when(cmd).getDiskImagesForVm();
+        OsRepository osRepositoryMock = mock(OsRepository.class);
+        SimpleDependencyInjector.getInstance().bind(OsRepository.class, osRepositoryMock);
     }
 
     @Test
@@ -179,11 +184,63 @@ public class CreateSnapshotForVmCommandTest extends BaseCommandTest {
     }
 
     @Test
-    public void testVmUsesMdevTypeHook() {
+    public void testSaveMemoryScsiPassthroughFailure() {
+        cmd.getParameters().setSaveMemory(true);
+        doReturn(new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_HAS_ATTACHED_SCSI_HOST_DEVICES))
+                .when(vmValidator)
+                .vmNotHavingScsiPassthroughDevices();
+        doReturn(getEmptyDiskList()).when(cmd).getDisksList();
+        ValidateTestUtils.runAndAssertValidateFailure
+                (cmd, EngineMessage.ACTION_TYPE_FAILED_VM_HAS_ATTACHED_SCSI_HOST_DEVICES);
+    }
+
+    @Test
+    public void testNoMemoryScsiPassthroughSuccess() {
+        cmd.getParameters().setSaveMemory(false);
+        doReturn(new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_HAS_ATTACHED_SCSI_HOST_DEVICES))
+                .when(vmValidator)
+                .vmNotHavingScsiPassthroughDevices();
+        doReturn(getEmptyDiskList()).when(cmd).getDisksList();
+        ValidateTestUtils.runAndAssertValidateSuccess(cmd);
+    }
+
+    @Test
+    public void testSaveMemoryNvdimmFailure() {
+        cmd.getParameters().setSaveMemory(true);
+        doReturn(new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_HAS_ATTACHED_NVDIMM_DEVICES))
+                .when(vmValidator)
+                .vmNotHavingNvdimmDevices();
+        doReturn(getEmptyDiskList()).when(cmd).getDisksList();
+        ValidateTestUtils.runAndAssertValidateFailure
+                (cmd, EngineMessage.ACTION_TYPE_FAILED_VM_HAS_ATTACHED_NVDIMM_DEVICES);
+    }
+
+    @Test
+    public void testNoMemoryNvdimSuccess() {
+        cmd.getParameters().setSaveMemory(false);
+        doReturn(new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_HAS_ATTACHED_NVDIMM_DEVICES))
+                .when(vmValidator)
+                .vmNotHavingNvdimmDevices();
+        doReturn(getEmptyDiskList()).when(cmd).getDisksList();
+        ValidateTestUtils.runAndAssertValidateSuccess(cmd);
+    }
+
+    @Test
+    public void testVmUsesMdevTypeHookFailure() {
+        cmd.getParameters().setSaveMemory(true);
         doReturn(new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_USES_MDEV_TYPE_HOOK)).when(vmValidator)
                 .vmNotUsingMdevTypeHook();
         doReturn(getEmptyDiskList()).when(cmd).getDisksList();
         ValidateTestUtils.runAndAssertValidateFailure(cmd, EngineMessage.ACTION_TYPE_FAILED_VM_USES_MDEV_TYPE_HOOK);
+    }
+
+    @Test
+    public void testVmUsesMdevTypeHookSucceess() {
+        cmd.getParameters().setSaveMemory(false);
+        doReturn(new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_USES_MDEV_TYPE_HOOK)).when(vmValidator)
+                .vmNotUsingMdevTypeHook();
+        doReturn(getEmptyDiskList()).when(cmd).getDisksList();
+        ValidateTestUtils.runAndAssertValidateSuccess(cmd);
     }
 
     @Test
@@ -292,7 +349,6 @@ public class CreateSnapshotForVmCommandTest extends BaseCommandTest {
     public void testAllDomainsHaveSpaceForAllDisksFailure() {
         doReturn(Collections.emptyList()).when(cmd).getDisksList();
         cmd.getParameters().setSaveMemory(true);
-        doReturn(Guid.newGuid()).when(cmd).getStorageDomainIdForVmMemory(eq(Collections.emptyList()));
         doReturn(new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_DISK_SPACE_LOW_ON_STORAGE_DOMAIN)).when(multipleStorageDomainsValidator)
                 .allDomainsHaveSpaceForAllDisks(eq(Collections.emptyList()), any());
         ValidateTestUtils.runAndAssertValidateFailure(cmd, EngineMessage.ACTION_TYPE_FAILED_DISK_SPACE_LOW_ON_STORAGE_DOMAIN);
@@ -303,7 +359,6 @@ public class CreateSnapshotForVmCommandTest extends BaseCommandTest {
     public void testAllDomainsHaveSpaceForAllDisksSuccess() {
         doReturn(Collections.emptyList()).when(cmd).getDisksList();
         cmd.getParameters().setSaveMemory(true);
-        doReturn(Guid.newGuid()).when(cmd).getStorageDomainIdForVmMemory(eq(Collections.emptyList()));
         ValidateTestUtils.runAndAssertValidateSuccess(cmd);
         verify(multipleStorageDomainsValidator).allDomainsHaveSpaceForAllDisks(eq(Collections.emptyList()), any());
     }

@@ -36,7 +36,6 @@ public class VmStaticDaoImpl extends VmBaseDao<VmStatic> implements VmStaticDao 
                 .addValue("vm_name", vm.getName())
                 .addValue("vmt_guid", vm.getVmtGuid())
                 .addValue("is_initialized", vm.isInitialized())
-                .addValue("cpu_pinning", vm.getCpuPinning())
                 .addValue("host_cpu_flags", vm.isUseHostCpuFlags())
                 .addValue("instance_type_id", vm.getInstanceTypeId())
                 .addValue("image_type_id", vm.getImageTypeId())
@@ -107,15 +106,6 @@ public class VmStaticDaoImpl extends VmBaseDao<VmStatic> implements VmStaticDao 
     }
 
     @Override
-    public List<String> getAllNamesPinnedToHost(Guid host) {
-        RowMapper<String> mapper = (rs, rowNum) -> rs.getString("vm_name");
-
-        return getCallsHandler().executeReadList("GetNamesOfVmStaticDedicatedToVds", mapper,
-                getCustomMapSqlParameterSource()
-                        .addValue("vds_id", host));
-    }
-
-    @Override
     public void incrementDbGenerationForAllInStoragePool(Guid storagePoolId) {
         getCallsHandler().executeModification("IncrementDbGenerationForAllInStoragePool", getCustomMapSqlParameterSource()
                 .addValue("storage_pool_id", storagePoolId));
@@ -166,9 +156,9 @@ public class VmStaticDaoImpl extends VmBaseDao<VmStatic> implements VmStaticDao 
     }
 
     @Override
-    public List<VmStatic> getAllRunningWithLeaseOnStorageDomain(Guid storageDomainId) {
-        return getCallsHandler().executeReadList("GetActiveVmsWithLeaseOnStorageDomain",
-                getRowMapper(),
+    public List<String> getAllRunningNamesWithLeaseOnStorageDomain(Guid storageDomainId) {
+        return getCallsHandler().executeReadList("GetActiveVmNamesWithLeaseOnStorageDomain",
+                SingleColumnRowMapper.newInstance(String.class),
                 getCustomMapSqlParameterSource().addValue("storage_domain_id", storageDomainId));
     }
 
@@ -233,7 +223,6 @@ public class VmStaticDaoImpl extends VmBaseDao<VmStatic> implements VmStaticDao 
             entity.setName(rs.getString("vm_name"));
             entity.setVmtGuid(getGuidDefaultEmpty(rs, "vmt_guid"));
             entity.setInitialized(rs.getBoolean("is_initialized"));
-            entity.setCpuPinning(rs.getString("cpu_pinning"));
             entity.setUseHostCpuFlags(rs.getBoolean("host_cpu_flags"));
             entity.setInstanceTypeId(Guid.createGuidFromString(rs.getString("instance_type_id")));
             entity.setImageTypeId(Guid.createGuidFromString(rs.getString("image_type_id")));

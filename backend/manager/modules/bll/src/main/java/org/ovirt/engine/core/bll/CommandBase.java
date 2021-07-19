@@ -7,7 +7,6 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
@@ -171,7 +170,7 @@ public abstract class CommandBase<T extends ActionParametersBase>
 
     @Named
     @Inject
-    private Predicate<Guid> isSystemSuperUserPredicate;
+    private Predicate<DbUser> isSystemSuperUserPredicate;
 
     /** Indicates whether the acquired locks should be released after the execute method or not */
     private boolean releaseLocksAtEndOfExecute = true;
@@ -330,6 +329,7 @@ public abstract class CommandBase<T extends ActionParametersBase>
             return NoOpCompensationContext.getInstance();
         }
 
+        setCompensationPhaseEndCommand();
         return createDefaultCompensationContext();
     }
 
@@ -349,6 +349,11 @@ public abstract class CommandBase<T extends ActionParametersBase>
      */
     protected boolean isCompensationEnabledByCaller() {
         return getParameters().isCompensationEnabled();
+    }
+
+    private void setCompensationPhaseEndCommand() {
+        getParameters().setCompensationPhaseEndCommand(
+                getCommandCompensationPhase() == CommandCompensationPhase.END_COMMAND);
     }
 
     /**
@@ -520,8 +525,8 @@ public abstract class CommandBase<T extends ActionParametersBase>
             } catch (TransactionRolledbackLocalException e) {
                 log.info("endAction: Transaction was aborted in {}", this.getClass().getName());
             } finally {
-                endStepsAndJobIfNeeded();
                 freeLockEndAction();
+                endStepsAndJobIfNeeded();
                 // NOTE: this update persists updates made during the endSuccessfully()/endWithFailure() execution.
                 // The update is done intentionally after the freeLock() call, change with care.
                 updateCommandIfNeeded();
@@ -601,7 +606,7 @@ public abstract class CommandBase<T extends ActionParametersBase>
     public void handleChildCommands() {
         if (getCallback() != null) {
             List<Guid> childCommands = commandCoordinatorUtil.getChildCommandIds(getCommandId());
-            List<ActionParametersBase> parameters = new LinkedList<>();
+            ArrayList<ActionParametersBase> parameters = new ArrayList<>();
             for (Guid id : childCommands) {
                 CommandBase<?> command = commandCoordinatorUtil.retrieveCommand(id);
                 if (command.getParameters().getEndProcedure() == EndProcedure.PARENT_MANAGED
@@ -1158,7 +1163,7 @@ public abstract class CommandBase<T extends ActionParametersBase>
     }
 
     public boolean isSystemSuperUser() {
-        return isSystemSuperUserPredicate.test(getCurrentUser().getId());
+        return isSystemSuperUserPredicate.test(getCurrentUser());
     }
 
     private boolean executeWithoutTransaction() {

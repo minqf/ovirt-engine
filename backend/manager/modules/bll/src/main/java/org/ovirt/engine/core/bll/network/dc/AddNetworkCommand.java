@@ -123,6 +123,8 @@ public class AddNetworkCommand<T extends AddNetworkStoragePoolParameters> extend
         AddNetworkValidator validator = getNetworkValidator();
         return validate(hasStoragePoolValidator.storagePoolExists())
                 && validate(validator.stpForVmNetworkOnly())
+                && validate(validator.portIsolationForVmNetworkOnly())
+                && validate(validator.portIsolationNoExternalNetwork())
                 && validate(validator.networkPrefixValid())
                 && validate(validator.networkNameNotUsed())
                 && validate(validator.networkNameNotUsedAsVdsmName())

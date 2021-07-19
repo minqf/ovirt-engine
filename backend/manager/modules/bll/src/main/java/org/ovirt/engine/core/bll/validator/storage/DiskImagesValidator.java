@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -15,7 +14,6 @@ import java.util.stream.Collectors;
 import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.bll.ValidationResult;
 import org.ovirt.engine.core.common.businessentities.Snapshot;
-import org.ovirt.engine.core.common.businessentities.StorageDomain;
 import org.ovirt.engine.core.common.businessentities.StorageFormatType;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VmDevice;
@@ -75,8 +73,8 @@ public class DiskImagesValidator {
         return diskImagesNotInStatus(ImageStatus.LOCKED, EngineMessage.ACTION_TYPE_FAILED_DISKS_LOCKED);
     }
 
-    protected DiskImage getExistingDisk(Guid id) {
-        return getDiskImageDao().get(id);
+    protected Disk getExistingDisk(Guid id) {
+        return getDiskDao().get(id);
     }
 
     /**
@@ -88,7 +86,7 @@ public class DiskImagesValidator {
 
         List<String> existingDisksAliases = new ArrayList<>();
         for (DiskImage diskImage : diskImages) {
-            DiskImage existingDisk = getExistingDisk(diskImage.getId());
+            Disk existingDisk = getExistingDisk(diskImage.getId());
             if (existingDisk != null) {
                 existingDisksAliases.add(diskImage.getDiskAlias().isEmpty() ? existingDisk.getDiskAlias() : diskImage.getDiskAlias());
             }
@@ -287,47 +285,12 @@ public class DiskImagesValidator {
         return ValidationResult.VALID;
     }
 
-    /***
-     * Block the move/copy of a disk that has snapshots created before it's extension
-     * on block pre-V4 domains.
-     * @see <a href="https://bugzilla.redhat.com/1523614">https://bugzilla.redhat.com/1523614</a>
-     * @see <a href="https://bugzilla.redhat.com/1523614">https://bugzilla.redhat.com/1554028</a>
-     */
-    public ValidationResult childDiskWasExtended(StorageDomain storageDomain) {
-        if (StorageFormatType.V4.compareTo(storageDomain.getStorageFormat()) > 0 &&
-                storageDomain.getStorageType().isBlockDomain()) {
-            DiskImage diskImage = diskImages.iterator().next();
-            List<DiskImage> diskImages = getDiskImageDao().getAllSnapshotsForImageGroup(diskImage.getId());
-
-            Guid imageTemplateId = diskImage.getImageTemplateId();
-            if (!Guid.isNullOrEmpty(imageTemplateId)) {
-                DiskImage templateDiskImage = getDiskImageDao().get(imageTemplateId);
-                if (templateDiskImage.getSize() < diskImage.getSize()) {
-                    return new ValidationResult(EngineMessage.CANNOT_MOVE_DISK_TEMPLATE);
-                }
-            }
-
-            boolean badSnapshotPresent = diskImages.stream().anyMatch(d -> d.getSize() < diskImage.getSize());
-
-            if (badSnapshotPresent) {
-                return new ValidationResult(EngineMessage.CANNOT_MOVE_DISK_SNAPSHOTS,
-                        ReplacementUtils.createSetVariableString("Snapshots",
-                                diskImages.stream()
-                                        .filter(d -> !d.getActive())
-                                        .map(DiskImage::getDescription)
-                                        .collect(Collectors.joining(", "))));
-            }
-        }
-
-        return ValidationResult.VALID;
-    }
-
-    public ValidationResult snapshotAlreadyExists(Map<Guid, Guid> diskToImageIds) {
+    public ValidationResult snapshotAlreadyExists(Map<Guid, DiskImage> diskImagesMap) {
         Set<Guid> diskIds = diskImages.stream()
                 .flatMap(diskImage -> getDiskImageDao().getAllSnapshotsForImageGroup(diskImage.getId()).stream())
                 .map(DiskImage::getImageId)
                 .collect(Collectors.toSet());
-        Set<Guid> providedImageIds = new HashSet(diskToImageIds.values());
+        Set<Guid> providedImageIds = diskImagesMap.values().stream().map(DiskImage::getImageId).collect(Collectors.toSet());
         Set<Guid> existingGuids = providedImageIds.stream().filter(diskIds::contains).collect(Collectors.toSet());
         if (!existingGuids.isEmpty()) {
             return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_SNAPSHOT_IMAGE_ALREADY_EXISTS,
@@ -376,5 +339,9 @@ public class DiskImagesValidator {
 
     protected StorageDomainStaticDao getStorageDomainStaticDao() {
         return Injector.get(StorageDomainStaticDao.class);
+    }
+
+    protected DiskDao getDiskDao() {
+        return Injector.get(DiskDao.class);
     }
 }

@@ -29,7 +29,6 @@ import org.ovirt.engine.core.bll.utils.RngDeviceUtils;
 import org.ovirt.engine.core.bll.utils.VersionSupport;
 import org.ovirt.engine.core.bll.validator.ClusterValidator;
 import org.ovirt.engine.core.common.AuditLogType;
-import org.ovirt.engine.core.common.FeatureSupported;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
@@ -41,7 +40,10 @@ import org.ovirt.engine.core.common.action.VdsActionParameters;
 import org.ovirt.engine.core.common.action.VmManagementParametersBase;
 import org.ovirt.engine.core.common.businessentities.ActionGroup;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
+import org.ovirt.engine.core.common.businessentities.BiosType;
+import org.ovirt.engine.core.common.businessentities.ChipsetType;
 import org.ovirt.engine.core.common.businessentities.Cluster;
+import org.ovirt.engine.core.common.businessentities.DisplayType;
 import org.ovirt.engine.core.common.businessentities.OriginType;
 import org.ovirt.engine.core.common.businessentities.ServerCpu;
 import org.ovirt.engine.core.common.businessentities.SupportedAdditionalClusterFeature;
@@ -60,8 +62,11 @@ import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.locks.LockingGroup;
+import org.ovirt.engine.core.common.osinfo.OsRepository;
 import org.ovirt.engine.core.common.qualifiers.MomPolicyUpdate;
+import org.ovirt.engine.core.common.utils.ClusterEmulatedMachines;
 import org.ovirt.engine.core.common.utils.CompatibilityVersionUtils;
+import org.ovirt.engine.core.common.utils.EmulatedMachineCommonUtils;
 import org.ovirt.engine.core.common.utils.Pair;
 import org.ovirt.engine.core.common.validation.group.UpdateEntity;
 import org.ovirt.engine.core.compat.Guid;
@@ -117,6 +122,8 @@ public class UpdateClusterCommand<T extends ClusterOperationParameters> extends
     private VmHandler vmHandler;
     @Inject
     private VmInitDao vmInitDao;
+    @Inject
+    private OsRepository osRepository;
 
     private List<VDS> allHostsForCluster;
 
@@ -140,6 +147,7 @@ public class UpdateClusterCommand<T extends ClusterOperationParameters> extends
         }
 
         if (oldCluster == null || isCpuNameChanged() || isVersionChanged()) {
+            log.info("Updating cluster CPU flags and verb according to the configuration of the " + getCluster().getCpuName() + " cpu");
             clusterCpuFlagsManager.updateCpuFlags(getCluster());
         } else {
             getCluster().setCpuFlags(oldCluster.getCpuFlags());
@@ -163,9 +171,23 @@ public class UpdateClusterCommand<T extends ClusterOperationParameters> extends
 
     private boolean shouldUpdateVmsAndTemplates() {
         return isVersionChanged()
-                || isBiosTypeChanged()
                 || isCpuNameChanged()
-                || !Objects.equals(oldCluster.getArchitecture(), getCluster().getArchitecture());
+                || oldCluster.getArchitecture() != getArchitecture()
+                || getParameters().isChangeVmsChipsetToQ35();
+    }
+
+    private boolean shouldUpdateVmBase(VmBase vmBase) {
+        return isVersionChanged()
+                || isCpuNameChanged()
+                || oldCluster.getArchitecture() != getArchitecture()
+                || shouldUpdateVmsChipset(vmBase);
+    }
+
+    private boolean shouldUpdateVmsChipset(VmBase vmBase) {
+        return getParameters().isChangeVmsChipsetToQ35()
+                        && !vmBase.isHostedEngine()
+                        && vmBase.getBiosType() != null
+                        && vmBase.getBiosType().getChipsetType() == ChipsetType.I440FX;
     }
 
     private boolean isVersionChanged() {
@@ -174,16 +196,6 @@ public class UpdateClusterCommand<T extends ClusterOperationParameters> extends
 
     private boolean isCpuNameChanged() {
         return !Objects.equals(oldCluster.getCpuName(), getCluster().getCpuName());
-    }
-
-    private boolean isBiosTypeChanged() {
-        try {
-            return FeatureSupported.isBiosTypeSupported(getCluster().getCompatibilityVersion())
-                    && oldCluster.getBiosType() != getCluster().getBiosType();
-        } catch (IllegalArgumentException e) {
-            // Thrown by FeatureSupported. Ignore here, because validate() will fail in this case.
-            return false;
-        }
     }
 
     private void setVmInitToVms() {
@@ -223,6 +235,11 @@ public class UpdateClusterCommand<T extends ClusterOperationParameters> extends
     }
 
     private void reDetectDefaultsForDeprecatedCPUs() {
+        // if the CPU has set Auto detect, do not change it
+        if (StringUtils.isEmpty(getCluster().getCpuName())) {
+            return;
+        }
+
         boolean oldCpuExists = cpuFlagsManagerHandler.checkIfCpusExist(oldCluster.getCpuName(),
                 getParameters().getCluster().getCompatibilityVersion());
         boolean newCpuExists = cpuFlagsManagerHandler.checkIfCpusExist(getParameters().getCluster().getCpuName(),
@@ -316,10 +333,16 @@ public class UpdateClusterCommand<T extends ClusterOperationParameters> extends
             reDetectDefaultsForDeprecatedCPUs();
 
         } else if (oldCluster.getArchitecture() != getCluster().getArchitecture()) {
-            // if architecture was changed, emulated machines must be updated when adding new host.
-            // At this point the cluster is empty and have changed CPU name
+            // if architecture was changed, emulated machines must be updated when adding a new host.
+            // At this point the cluster is empty and have a changed CPU name
+            // Also, along with the emulation machines, the Bios Type may need to be updated as well.
             getParameters().getCluster().setDetectEmulatedMachine(true);
             getParameters().getCluster().setEmulatedMachine(null);
+        }
+
+        if (getCluster().getArchitecture() != ArchitectureType.undefined &&
+                getCluster().getBiosType() == null) {
+            setDefaultBiosType();
         }
 
         if (getParameters().isForceResetEmulatedMachine()) {
@@ -449,11 +472,8 @@ public class UpdateClusterCommand<T extends ClusterOperationParameters> extends
         }
 
         allHostsForCluster.stream()
-                .filter(vds -> !Objects.equals(vds.getOpenstackNetworkProviderId(),
-                        getCluster().getDefaultNetworkProviderId()))
                 .forEach(vds -> {
                     VdsStatic vdsStatic = vds.getStaticData();
-                    vdsStatic.setOpenstackNetworkProviderId(getCluster().getDefaultNetworkProviderId());
                     vdsStatic.setReinstallRequired(true);
                     vdsStaticDao.update(vdsStatic);
                 });
@@ -476,6 +496,9 @@ public class UpdateClusterCommand<T extends ClusterOperationParameters> extends
 
     private void updateVms(List<Pair<String, String>> failedUpgradeEntities) {
         for (VmStatic vm : vmsLockedForUpdate) {
+            if (!shouldUpdateVmBase(vm)) {
+                continue;
+            }
             ActionReturnValue result = runInternalAction(
                     ActionType.UpdateVm,
                     createUpdateVmParameters(vm),
@@ -519,8 +542,24 @@ public class UpdateClusterCommand<T extends ClusterOperationParameters> extends
                     getCluster()
             );
         }
+        if (originalVmStatic.getDefaultDisplayType() == DisplayType.bochs && !isBochsDisplaySupported(originalVmStatic)) {
+            updateParams.getVmStaticData().setDefaultDisplayType(DisplayType.vga);
+        }
 
+        if (getParameters().isChangeVmsChipsetToQ35() && updateParams.getVmStaticData().getBiosType() == BiosType.I440FX_SEA_BIOS) {
+            updateParams.getVmStaticData().setBiosType(BiosType.Q35_SEA_BIOS);
+        }
         return updateParams;
+    }
+
+    private boolean isBochsDisplaySupported(VmStatic originalVmStatic) {
+        if (originalVmStatic.getBiosType() == null || !originalVmStatic.getBiosType().isOvmf()) {
+            return false;
+        }
+        Version effectiveCompatibilityVersion = CompatibilityVersionUtils.getEffective(originalVmStatic, getCluster());
+        return osRepository.getGraphicsAndDisplays(originalVmStatic.getOsId(), effectiveCompatibilityVersion).stream()
+                .map(Pair::getSecond)
+                .anyMatch(dt -> dt == DisplayType.bochs);
     }
 
     /**
@@ -546,6 +585,9 @@ public class UpdateClusterCommand<T extends ClusterOperationParameters> extends
 
     private void updateTemplates(List<Pair<String, String>> failedUpgradeEntities) {
         for (VmTemplate template : templatesLockedForUpdate) {
+            if (!shouldUpdateVmBase(template)) {
+                continue;
+            }
             new CompatibilityVersionUpdater().updateTemplateCompatibilityVersion(template,
                     CompatibilityVersionUtils.getEffective(getVmTemplate(), this::getCluster),
                     getCluster());
@@ -558,6 +600,10 @@ public class UpdateClusterCommand<T extends ClusterOperationParameters> extends
 
             updateRngDeviceIfNecessary(template.getId(), template.getCustomCompatibilityVersion(), parameters);
             updateResumeBehavior(template);
+
+            if (getParameters().isChangeVmsChipsetToQ35() && parameters.getVmTemplateData().getBiosType() == BiosType.I440FX_SEA_BIOS) {
+                parameters.getVmTemplateData().setBiosType(BiosType.Q35_SEA_BIOS);
+            }
 
             final ActionReturnValue result = runInternalAction(
                     ActionType.UpdateVmTemplate,
@@ -596,15 +642,16 @@ public class UpdateClusterCommand<T extends ClusterOperationParameters> extends
     }
 
     private void updateResumeBehavior(VmBase vmBase) {
-        vmHandler.autoSelectResumeBehavior(vmBase, getCluster());
+        vmHandler.autoSelectResumeBehavior(vmBase);
     }
 
     private String getEmulatedMachineOfHostInCluster(VDS vds) {
-        Set<String> emulatedMachinesLookup =
-                new HashSet<>(Arrays.asList(vds.getSupportedEmulatedMachines().split(",")));
-        return Config.<List<String>>getValue(ConfigValues.ClusterEmulatedMachines,
-                        getParameters().getCluster().getCompatibilityVersion().getValue())
-                .stream().filter(emulatedMachinesLookup::contains).findFirst().orElse(null);
+        Set<String> supported = new HashSet<>(Arrays.asList(vds.getSupportedEmulatedMachines().split(",")));
+        Version version = getParameters().getCluster().getCompatibilityVersion();
+        List<String> available = Config.getValue(ConfigValues.ClusterEmulatedMachines, version.getValue());
+        return ClusterEmulatedMachines.build(
+                EmulatedMachineCommonUtils.getSupportedByChipset(ChipsetType.I440FX, supported, available),
+                EmulatedMachineCommonUtils.getSupportedByChipset(ChipsetType.Q35, supported, available));
     }
 
     private void addOrUpdateAddtionalClusterFeatures() {
@@ -661,6 +708,7 @@ public class UpdateClusterCommand<T extends ClusterOperationParameters> extends
                 && validate(clusterValidator.newClusterVersionSupported())
                 && validate(clusterValidator.decreaseClusterWithHosts())
                 && validate(clusterValidator.decreaseClusterBeneathDc(getClusterValidator(oldCluster)))
+                && validate(clusterValidator.decreaseClusterWithPortIsolation())
                 && validate(clusterValidator.canChangeStoragePool())
                 && validateCpuUpdatable(clusterValidator)
                 && validate(clusterValidator.vmInPrev())
@@ -671,6 +719,7 @@ public class UpdateClusterCommand<T extends ClusterOperationParameters> extends
                 && validate(clusterValidator.updateSupportedFeatures())
                 && hasSuspendedVms()
                 && validate(clusterValidator.addMoreThanOneHost())
+                && validate(clusterValidator.atLeastOneHostSupportingClusterVersion())
                 && validate(clusterValidator.defaultClusterOnLocalfs())
                 && validate(clusterValidator.oneServiceEnabled())
                 && validate(clusterValidator.mixedClusterServicesSupportedForNewCluster())
@@ -678,10 +727,11 @@ public class UpdateClusterCommand<T extends ClusterOperationParameters> extends
                 && validate(clusterValidator.disableGluster())
                 && validate(clusterValidator.setTrustedAttestation())
                 && validate(clusterValidator.migrationOnError(getArchitecture()))
-                && validate(clusterValidator.invalidBiosType())
                 && validate(clusterValidator.nonDefaultBiosType())
+                && validate(clusterValidator.implicitAffinityGroup())
                 && validateClusterPolicy(oldCluster)
-                && validateConfiguration();
+                && validateConfiguration()
+                && validate(clusterValidator.updateFipsIsLegal());
     }
 
     private void addValidationVarAndMessage(String varName, Object varValue, EngineMessage message) {
@@ -692,6 +742,7 @@ public class UpdateClusterCommand<T extends ClusterOperationParameters> extends
     private boolean validateCpuUpdatable(ClusterValidator clusterValidator) {
         boolean cpusExist = checkIfCpusExist();
         return validate(clusterValidator.cpuNotFound(cpusExist))
+                && validate(clusterValidator.canAutoDetectCpu())
                 && validate(clusterValidator.updateCpuIllegal(cpusExist, checkIfCpusSameManufacture(oldCluster)))
                 && validate(clusterValidator.architectureIsLegal(isArchitectureUpdatable()))
                 && validate(clusterValidator.cpuUpdatable());
@@ -742,11 +793,11 @@ public class UpdateClusterCommand<T extends ClusterOperationParameters> extends
     private boolean canUpdateCompatibilityVersionOrCpu() {
         allHostsForCluster = vdsDao.getAllForCluster(oldCluster.getId());
         List<VDS> upVdss = allHostsForCluster.stream()
-                .filter(v -> v.getStatus() == VDSStatus.Up)
+                .filter(v -> v.getStatus().isEligibleForClusterCpuConfigurationChange())
                 .collect(Collectors.toList());
         boolean valid = true;
         List<String> lowerVersionHosts = new ArrayList<>();
-        List<String> lowCpuHosts = new ArrayList<>();
+        List<String> hostsWithMissingFlags = new ArrayList<>();
         List<String> incompatibleEmulatedMachineHosts = new ArrayList<>();
         for (VDS vds : upVdss) {
             if (!VersionSupport.checkClusterVersionSupported(
@@ -757,7 +808,7 @@ public class UpdateClusterCommand<T extends ClusterOperationParameters> extends
             }
             if (getCluster().supportsVirtService() && !missingServerCpuFlags(vds).isEmpty()) {
                 valid = false;
-                lowCpuHosts.add(vds.getName());
+                hostsWithMissingFlags.add(vds.getName());
             }
             if (!isSupportedEmulatedMachinesMatchClusterLevel(vds)) {
                 valid = false;
@@ -769,10 +820,10 @@ public class UpdateClusterCommand<T extends ClusterOperationParameters> extends
                     String.join(", ", lowerVersionHosts),
                     EngineMessage.CLUSTER_CANNOT_UPDATE_COMPATIBILITY_VERSION_WITH_LOWER_HOSTS);
         }
-        if (!lowCpuHosts.isEmpty()) {
+        if (!hostsWithMissingFlags.isEmpty()) {
             addValidationVarAndMessage("host",
-                    String.join(", ", lowCpuHosts),
-                    EngineMessage.CLUSTER_CANNOT_UPDATE_CPU_WITH_LOWER_HOSTS);
+                    String.join(", ", hostsWithMissingFlags),
+                    EngineMessage.CLUSTER_CANNOT_UPDATE_CPU_WITH_HOSTS_MISSING_FLAGS);
         }
         if (!incompatibleEmulatedMachineHosts.isEmpty()) {
             addValidationVarAndMessage("host",

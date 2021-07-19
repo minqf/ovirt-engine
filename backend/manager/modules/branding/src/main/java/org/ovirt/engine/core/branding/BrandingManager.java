@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.ResourceBundle;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -15,15 +16,27 @@ import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.node.ObjectNode;
 import org.ovirt.engine.core.utils.EngineLocalConfig;
 import org.ovirt.engine.core.utils.servlet.LocaleFilter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * This class manages the available branding themes and changeable localized messages.
  */
 public class BrandingManager {
     /**
+     * The logger.
+     */
+    private static final Logger log = LoggerFactory.getLogger(BrandingManager.class);
+
+    /**
      * The prefix of the keys in the properties.
      */
     public static final String WELCOME = "welcome";
+
+    /**
+     * The prefix of the keys in the properties.
+     */
+    public static final String WELCOME_PREAMBLE = "welcome_preamble";
 
     /**
      * The default branding path.
@@ -55,8 +68,6 @@ public class BrandingManager {
      */
     private static final Pattern TEMPLATE_PATTERN = Pattern.compile("\\{(\\D[\\w|\\.]*)\\}"); //$NON-NLS-1$
 
-    private static final String DOCS_TEMPLATE_PATTERN = "\\{\\{\\{docs\\}\\}\\}";
-
     /**
      * Only load branding themes for the current branding version. This allows for multiple version of a particular
      * branding theme to exist on the file system without interfering with each other. There is no backwards
@@ -73,6 +84,11 @@ public class BrandingManager {
      * The root path of the branding themes.
      */
     private final File brandingRootPath;
+
+    /**
+     * The Grafana access url to be linked in welcome page
+     */
+    private String grafanaAccessUrl;
 
     /**
      * Instance of the holder pattern, instance doesn't get initialized until needed. This removes
@@ -107,6 +123,7 @@ public class BrandingManager {
     BrandingManager(final File etcDir) {
         brandingRootPath = new File(etcDir, BRANDING_PATH);
         objectMapper = new ObjectMapper();
+        grafanaAccessUrl = null;
     }
 
     /**
@@ -203,12 +220,35 @@ public class BrandingManager {
                 // We can potentially override existing values here
                 // but this is fine as the themes are sorted in order
                 // And later messages should override earlier ones.
+                String value = messagesBundle.getString(key);
+                value = replaceValueForGrafanaKeys(key, value);
                 keyValues.put(key.replaceFirst(BRAND_PREFIX + "\\." //$NON-NLS-1$
                         + prefix + "\\.", "") //$NON-NLS-1$
                         .replaceFirst(COMMON_PREFIX + "\\.", ""), //$NON-NLS-1$
-                        messagesBundle.getString(key));
+                        value);
             }
         }
+    }
+
+    /**
+     * Replace the Grafana link messages with required values, based on the Grafana engine config file as follows:
+     * If Grafana is not installed, hide the messages.
+     * If Grafana is installed and engine conf file is valid, display the Grafana url read from the file
+     * @param key message bundle key
+     * @param value message bundle value
+     * @return String the replaced or original value
+     */
+    private String replaceValueForGrafanaKeys(String key, String value) {
+        // if Grafana is not installed/found, hide the messages.
+        if (key.endsWith("portal_monitoring") && grafanaAccessUrl == null) {
+            value = "";
+        }
+        // if Grafana is installed and no customized value is set in properties file for portal_monitoring_url
+        // then use the engine conf url value
+        if (key.endsWith("portal_monitoring_url") && value.isEmpty() && grafanaAccessUrl != null) {
+            value = grafanaAccessUrl;
+        }
+        return value;
     }
 
     /**
@@ -251,12 +291,42 @@ public class BrandingManager {
      * @return An HTML string to be placed in the welcome page.
      */
     public String getWelcomeSections(final Locale locale) {
-        Map<String, String> messageMap = getMessageMap(WELCOME, locale);
+        getEngineGrafanaAccessUrl();
+        return getSection(
+            WELCOME,
+            locale,
+            BrandingTheme::getWelcomePageSectionTemplate,
+            BrandingTheme::shouldReplaceWelcomePageSectionTemplate);
+    }
+
+    /**
+     * Look up the welcome preamble section of the top branding theme. The message keys are translated in the language of
+     * the passed in {@code Locale}
+     * @param locale The {@code Locale} to use to look up the appropriate messages.
+     * @return An HTML string to be placed in the welcome page.
+     */
+    public String getWelcomePreambleSection(final Locale locale) {
+        return getSection(
+            WELCOME_PREAMBLE,
+            locale,
+            BrandingTheme::getWelcomePreambleTemplate,
+            theme -> true);
+    }
+
+    protected String getSection(
+        String prefix,
+        final Locale locale,
+        Function<BrandingTheme, String> getTemplate,
+        Function<BrandingTheme, Boolean> shouldReplaceTemplate
+    ) {
+        Map<String, String> messageMap = getMessageMap(prefix, locale);
         List<BrandingTheme> brandingThemes = getBrandingThemes();
+
         StringBuilder templateBuilder = new StringBuilder();
         for (BrandingTheme theme: brandingThemes) {
-            String template = theme.getWelcomePageSectionTemplate();
+            String template = getTemplate.apply(theme);
             String replacedTemplate = template;
+
             Matcher keyMatcher = TEMPLATE_PATTERN.matcher(template);
             while (keyMatcher.find()) {
                 String key = keyMatcher.group(1);
@@ -268,8 +338,9 @@ public class BrandingManager {
                 }
             }
             replacedTemplate = replacedTemplate.replaceAll(USER_LOCALE_HOLDER, locale.toString());
-            if (theme.shouldReplaceWelcomePageSectionTemplate()) {
-                //Clear the template builder as the theme wants to replace instead of append to the template.
+
+            // Clear the template builder as the theme wants to replace instead of append to the template.
+            if (shouldReplaceTemplate.apply(theme)) {
                 templateBuilder = new StringBuilder();
             }
             templateBuilder.append(replacedTemplate);
@@ -306,5 +377,30 @@ public class BrandingManager {
 
         // couldn't find it in any brand
         return null;
+    }
+
+    /**
+     * Read the Engine Grafana Access Url on engine start from the Grafana access conf file
+     */
+    private void getEngineGrafanaAccessUrl() {
+        // Ignore if URL is already set
+        if (grafanaAccessUrl != null) {
+            return;
+        }
+
+        try {
+            String grafanaFqdnVal = EngineLocalConfig.getInstance().getEngineGrafanaFqdn();
+            String grafanabaseUrlVal = EngineLocalConfig.getInstance().getEngineGrafanaBaseUrl();
+
+            if (grafanaFqdnVal.isEmpty() || grafanabaseUrlVal.isEmpty()) {
+                log.warn("Unable to load properties values for Grafana access engine conf file (not all properties have a value)"); //$NON-NLS-1$
+                return;
+            }
+            grafanaAccessUrl = grafanabaseUrlVal;
+
+        } catch (Exception e) {
+            // Unable to load Grafana access conf file, leave grafanaAccessUrl empty.
+            log.debug("Unable to load Grafana access engine conf file"); //$NON-NLS-1$
+        }
     }
 }

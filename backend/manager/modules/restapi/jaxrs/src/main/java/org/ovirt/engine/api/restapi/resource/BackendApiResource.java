@@ -41,6 +41,7 @@ import org.ovirt.engine.api.resource.DataCentersResource;
 import org.ovirt.engine.api.resource.DiskProfilesResource;
 import org.ovirt.engine.api.resource.DisksResource;
 import org.ovirt.engine.api.resource.EventsResource;
+import org.ovirt.engine.api.resource.ExternalTemplateImportsResource;
 import org.ovirt.engine.api.resource.ExternalVmImportsResource;
 import org.ovirt.engine.api.resource.HostsResource;
 import org.ovirt.engine.api.resource.IconsResource;
@@ -342,11 +343,13 @@ public class BackendApiResource
 
     private Api addSystemVersion(Api api) {
         String productVersion = getConfigurationValueDefault(ConfigValues.ProductRPMVersion);
+        String instanceId = getConfigurationValueDefault(ConfigValues.InstanceId);
         if (productVersion != null) {
             BrandingManager obrand = BrandingManager.getInstance();
             ProductInfo productInfo = new ProductInfo();
             productInfo.setName(obrand.getMessage("obrand.backend.product"));
             productInfo.setVendor(obrand.getMessage("obrand.backend.vendor"));
+            productInfo.setInstanceId(instanceId);
             Version version = getVersion();
             version.setFullVersion(productVersion);
             productInfo.setVersion(version);
@@ -510,6 +513,11 @@ public class BackendApiResource
     @Override
     public ExternalVmImportsResource getExternalVmImportsResource() {
         return inject(new BackendExternalVmImportsResource());
+    }
+
+    @Override
+    public ExternalTemplateImportsResource getExternalTemplateImportsResource() {
+        return inject(new BackendExternalTemplateImportsResource());
     }
 
     @Override

@@ -1,5 +1,6 @@
 package org.ovirt.engine.core.bll.hostedengine;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -10,14 +11,12 @@ import javax.inject.Inject;
 
 import org.ovirt.engine.core.bll.VmHandler;
 import org.ovirt.engine.core.common.businessentities.HaMaintenanceMode;
+import org.ovirt.engine.core.common.businessentities.OriginType;
 import org.ovirt.engine.core.common.businessentities.StorageDomain;
 import org.ovirt.engine.core.common.businessentities.StorageDomainStatic;
 import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VM;
-import org.ovirt.engine.core.common.businessentities.VmStatic;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
-import org.ovirt.engine.core.common.config.Config;
-import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.interfaces.VDSBrokerFrontend;
 import org.ovirt.engine.core.common.vdscommands.SetHaMaintenanceModeVDSCommandParameters;
 import org.ovirt.engine.core.common.vdscommands.VDSCommandType;
@@ -25,7 +24,6 @@ import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.StorageDomainDao;
 import org.ovirt.engine.core.dao.VdsSpmIdMapDao;
 import org.ovirt.engine.core.dao.VmDao;
-import org.ovirt.engine.core.dao.VmStaticDao;
 
 public class HostedEngineHelper {
     private VM hostedEngineVm;
@@ -33,9 +31,6 @@ public class HostedEngineHelper {
 
     @Inject
     private VmDao vmDao;
-
-    @Inject
-    private VmStaticDao vmStaticDao;
 
     @Inject
     private VdsSpmIdMapDao vdsSpmIdMapDao;
@@ -51,14 +46,18 @@ public class HostedEngineHelper {
 
     @PostConstruct
     private void init() {
-        List<VmStatic> byName = vmStaticDao.getAllByName(Config.getValue(ConfigValues.HostedEngineVmName));
-        if (byName != null && !byName.isEmpty()) {
-            VmStatic vmStatic = byName.get(0);
-            hostedEngineVm = vmDao.get(vmStatic.getId());
-            vmHandler.updateDisksFromDb(hostedEngineVm);
-        }
+        List<OriginType> hostedEngineOriginTypes = Arrays.asList(
+                OriginType.HOSTED_ENGINE,
+                OriginType.MANAGED_HOSTED_ENGINE);
+        List<VM> hostedEngineVms = vmDao.getVmsByOrigins(hostedEngineOriginTypes);
+        hostedEngineVms.stream().findFirst().ifPresent(this::setHostedEngineVm);
 
         initHostedEngineStorageDomain();
+    }
+
+    private void setHostedEngineVm(VM hostedEngineVm) {
+        vmHandler.updateDisksFromDb(hostedEngineVm);
+        this.hostedEngineVm = hostedEngineVm;
     }
 
     public boolean isVmManaged() {
@@ -103,6 +102,10 @@ public class HostedEngineHelper {
         return hostedEngineVm.getStoragePoolId();
     }
 
+    public Guid getClusterId() {
+        return hostedEngineVm.getClusterId();
+    }
+
     /**
      * @return The Guid of Storage Domain of the engine VM
      */
@@ -132,19 +135,17 @@ public class HostedEngineHelper {
      * @param vdses Guids of VDSes to be excluded from the candidates list.
      * @return True if there are any hosts for HE VM, False otherwise
      */
-    public static boolean haveHostsAvailableforHE(Collection<VDS> clusterVdses,  final Iterable<Guid> vdses) {
+    public static boolean haveHostsAvailableForHE(Collection<VDS> clusterVdses, final Iterable<Guid> vdses) {
         // It is really hard to query Iterable
         // especially when you have old commons-collections
         // So let's convert it to the set.
         Set<Guid> vdsIds = new HashSet<>();
         vdses.forEach(vdsIds::add);
-        return  clusterVdses.stream()
+        return clusterVdses.stream()
                 .filter(v -> !vdsIds.contains(v.getId())) // Remove other hosts in batch
                 .filter(VDS::getHighlyAvailableIsConfigured) // Remove non HE hosts
                 .filter(VDS::getHighlyAvailableIsActive) // Remove non-active HE hosts
                 .filter(v -> !v.getHighlyAvailableLocalMaintenance()) // Remove HE hosts under maintenance
-                .filter(v -> v.getHighlyAvailableScore() > 0) // Remove HE hosts not suitable for the engine VM
-                .findAny()
-                .isPresent();
+                .anyMatch(v -> v.getHighlyAvailableScore() > 0);
     }
 }

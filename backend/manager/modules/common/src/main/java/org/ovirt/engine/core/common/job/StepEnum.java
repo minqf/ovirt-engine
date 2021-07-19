@@ -38,6 +38,8 @@ public enum StepEnum {
     COPY_VOLUME,
     AMEND_VOLUME,
     REMOVE_DEVICE_FROM_DOMAIN,
+    UPDATE_OVF,
+    DEACTIVATE_STORAGE_DOMAIN,
 
     /**
      * Maps VDSM tasks type to {@code StepEnum} so it can be resolvable as readable description
@@ -55,9 +57,11 @@ public enum StepEnum {
     SYNC_IMAGE_DATA(AsyncTaskType.syncImageData),
     DOWNLOAD_IMAGE(AsyncTaskType.downloadImage),
     DOWNLOAD_IMAGE_FROM_STREAM(AsyncTaskType.downloadImageFromStream),
-    ADD_VM_LEASE(AsyncTaskType.addVmLease),
-    REMOVE_VM_LEASE(AsyncTaskType.removeVmLease),
+    ADD_VM_LEASE(AsyncTaskType.addLease),
+    REMOVE_VM_LEASE(AsyncTaskType.removeLease),
     REDUCE_IMAGE(AsyncTaskType.reduceImage),
+    EXTEND_IMAGE(AsyncTaskType.extendImageSize),
+    SWITCH_MASTER(AsyncTaskType.switchMaster),
     UNKNOWN(AsyncTaskType.unknown);
 
     /**

@@ -44,6 +44,7 @@ import org.ovirt.engine.core.dao.VmDao;
 import org.ovirt.engine.core.dao.VmTemplateDao;
 import org.ovirt.engine.core.dao.gluster.GlusterVolumeDao;
 import org.ovirt.engine.core.dao.network.NetworkViewDao;
+import org.ovirt.engine.core.dao.network.VmNetworkInterfaceDao;
 import org.ovirt.engine.core.searchbackend.SearchObjectAutoCompleter;
 import org.ovirt.engine.core.searchbackend.SearchObjects;
 import org.ovirt.engine.core.utils.MockConfigDescriptor;
@@ -91,6 +92,10 @@ public class SearchQueryTest extends AbstractQueryTest<SearchParameters, SearchQ
     private LockManager lockManager;
     @Mock
     private HostLocking hostLocking;
+    @Mock
+    private VmHandler vmHandler;
+    @Mock
+    private VmNetworkInterfaceDao vmNetworkInterfaceDao;
 
     List<Disk> diskImageResultList = new ArrayList<>();
     List<Quota> quotaResultList = new ArrayList<>();
@@ -401,6 +406,7 @@ public class SearchQueryTest extends AbstractQueryTest<SearchParameters, SearchQ
     public void testGetAllVMSearch() {
         when(getQueryParameters().getSearchPattern()).thenReturn("VM" + CommonConstants.QUERY_RETURN_TYPE_SEPARATOR);
         when(getQueryParameters().getSearchTypeValue()).thenReturn(SearchType.VM);
+        when(vmNetworkInterfaceDao.getAllWithVnicOutOfSync(any())).thenReturn(Collections.emptyList());
         getQuery().executeQueryCommand();
         assertEquals(vmResultList, getQuery().getQueryReturnValue().getReturnValue());
     }

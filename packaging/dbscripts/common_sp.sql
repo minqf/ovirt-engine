@@ -13,24 +13,11 @@ RETURNS void AS $PROCEDURE$
 DECLARE v_sql TEXT;
 
 BEGIN
-    IF (
-            NOT EXISTS (
-                SELECT 1
-                FROM information_schema.columns
-                WHERE table_schema = 'public'
-                    AND table_name ilike v_table
-                    AND column_name ilike v_column
-                )
-            ) THEN
-    BEGIN
-        v_sql := 'ALTER TABLE ' || v_table || ' ADD COLUMN ' || v_column || ' ' || v_column_def;
-
+        v_sql := 'ALTER TABLE ' || v_table || ' ADD COLUMN IF NOT EXISTS ' || v_column || ' ' || v_column_def;
         EXECUTE v_sql;
-    END;
-END
 
-IF ;END;$PROCEDURE$
-    LANGUAGE plpgsql;
+END;$PROCEDURE$
+LANGUAGE plpgsql;
 
 -- delete a column from a table and all its dependencied
 CREATE OR REPLACE FUNCTION fn_db_drop_column (
@@ -41,25 +28,8 @@ RETURNS void AS $PROCEDURE$
 DECLARE v_sql TEXT;
 
 BEGIN
-    IF (
-            EXISTS (
-                SELECT 1
-                FROM information_schema.columns
-                WHERE table_schema = 'public'
-                    AND table_name ilike v_table
-                    AND column_name ilike v_column
-                )
-            ) THEN
-    BEGIN
-        v_sql := 'ALTER TABLE ' || v_table || ' DROP COLUMN ' || v_column;
-
+        v_sql := 'ALTER TABLE ' || v_table || ' DROP COLUMN IF EXISTS ' || v_column;
         EXECUTE v_sql;
-    END;
-    ELSE
-        RAISE EXCEPTION 'Table % or Column % does not exist.',
-            v_table,
-            v_column;
-    END IF;
 
 END;$PROCEDURE$
 LANGUAGE plpgsql;
@@ -404,13 +374,7 @@ LANGUAGE plpgsql;
     RETURNS void AS $PROCEDURE$
 
     BEGIN
-        IF EXISTS (
-                SELECT 1
-                FROM pg_constraint
-                WHERE conname ilike v_constraint
-                ) THEN
-            EXECUTE 'ALTER TABLE ' || v_table || ' DROP CONSTRAINT ' || v_constraint || ' CASCADE';
-        END IF;
+            EXECUTE 'ALTER TABLE ' || v_table || ' DROP CONSTRAINT IF EXISTS ' || v_constraint || ' CASCADE';
 
     END;$PROCEDURE$
     LANGUAGE plpgsql;
@@ -1351,6 +1315,17 @@ BEGIN
 END;$PROCEDURE$
 LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION fn_db_get_versions()
+RETURNS VARCHAR []  AS $PROCEDURE$
+
+BEGIN
+
+RETURN
+ARRAY ['4.2', '4.3', '4.4', '4.5', '4.6'];
+
+END;$PROCEDURE$
+LANGUAGE plpgsql;
+
 -- please note that versions must be insync with  org.ovirt.engine.core.compat.Version
 CREATE OR REPLACE FUNCTION fn_db_add_config_value_for_versions_up_to (
     v_option_name VARCHAR(100),
@@ -1360,11 +1335,38 @@ CREATE OR REPLACE FUNCTION fn_db_add_config_value_for_versions_up_to (
 RETURNS void AS $PROCEDURE$
 DECLARE i INT;
 
-arr VARCHAR [] := array ['4.2', '4.3', '4.4'];
+arr VARCHAR [] := fn_db_get_versions();
 
 BEGIN
     FOR i IN array_lower(arr, 1)..array_upper(arr, 1) LOOP PERFORM fn_db_add_config_value(v_option_name, v_val, arr [i]);
         EXIT WHEN arr [i] = v_version;
+    END LOOP;
+
+END;$PROCEDURE$
+LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_db_update_config_value_for_versions_from_up_to (
+    v_option_name VARCHAR(100),
+    v_val VARCHAR(4000),
+    v_from_version VARCHAR(40),
+    v_to_version VARCHAR(40)
+    )
+RETURNS void AS $PROCEDURE$
+DECLARE i INT;
+
+arr VARCHAR [] := fn_db_get_versions();
+
+BEGIN
+    found := false;
+    FOR i IN array_lower(arr, 1)..array_upper(arr, 1) LOOP
+	IF  arr [i] != v_from_version THEN
+	    IF NOT found THEN
+	        CONTINUE;
+	    END IF;
+        END IF;
+	found := true;
+	PERFORM fn_db_update_config_value(v_option_name, v_val, arr [i]);
+        EXIT WHEN arr [i] = v_to_version;
     END LOOP;
 
 END;$PROCEDURE$
@@ -1381,7 +1383,7 @@ END;$PROCEDURE$
 LANGUAGE plpgsql;
 
 -- If value in v_table.v_column is jsonb compatible it's left untouched, otherwise it's replaced by v_default_value
--- Helper function for VARCHAR -> JSONB column type migration
+-- Helper function for VARCHAR|TEXT -> JSONB column type migration
 CREATE OR REPLACE FUNCTION fn_db_update_column_to_jsonb_compatible_values(
     v_table VARCHAR,
     v_column VARCHAR,
@@ -1398,7 +1400,7 @@ BEGIN
             WHERE table_schema = 'public'
                 AND table_name = v_table
                 AND column_name = v_column
-                AND data_type = 'character varying'
+                AND (data_type = 'character varying' OR data_type = 'text')
         )
     ) THEN
         BEGIN

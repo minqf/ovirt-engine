@@ -44,6 +44,14 @@ public class CompatibilityVersionUpdaterTest {
     private static final int OS_ID = 30;
     private static final int MAX_MEM = 4194304;
 
+    private static Map<String, Integer> createMaxNumberOfVmCpusMap() {
+        Map<String, Integer> maxVmCpusMap = new HashMap<>();
+        maxVmCpusMap.put("s390x", 384);
+        maxVmCpusMap.put("x86", 710);
+        maxVmCpusMap.put("ppc", 384);
+        return maxVmCpusMap;
+    }
+
     public static Stream<MockConfigDescriptor<?>> mockConfiguration() {
         return Stream.of(
                 MockConfigDescriptor.of(ConfigValues.SupportedClusterLevels, new HashSet<>(Version.ALL)),
@@ -52,7 +60,7 @@ public class CompatibilityVersionUpdaterTest {
                 MockConfigDescriptor.of(ConfigValues.UserDefinedVMProperties, Version.getLast(), "prop_2=^(true|false)$"),
 
                 MockConfigDescriptor.of(ConfigValues.VM64BitMaxMemorySizeInMB, Version.getLast(), MAX_MEM),
-                MockConfigDescriptor.of(ConfigValues.MaxNumOfVmCpus, Version.getLast(), 384),
+                MockConfigDescriptor.of(ConfigValues.MaxNumOfVmCpus, Version.getLast(), createMaxNumberOfVmCpusMap()),
                 MockConfigDescriptor.of(ConfigValues.MaxNumOfVmSockets, Version.getLast(), 16),
                 MockConfigDescriptor.of(ConfigValues.MaxNumOfCpuPerSocket, Version.getLast(), 254),
                 MockConfigDescriptor.of(ConfigValues.MaxNumOfThreadsPerCpu, Version.getLast(), 8),
@@ -88,6 +96,7 @@ public class CompatibilityVersionUpdaterTest {
         cluster.setId(Guid.newGuid());
         cluster.setArchitecture(ArchitectureType.x86_64);
         cluster.setCompatibilityVersion(Version.getLast());
+        cluster.setBiosType(BiosType.Q35_SEA_BIOS);
 
         vm = createVm();
 
@@ -110,7 +119,7 @@ public class CompatibilityVersionUpdaterTest {
 
         var updates = performUpdate();
 
-        assertThat(updates).containsOnly(CompatibilityVersionUpdater.Update.MEMORY);
+        assertThat(updates).containsOnly(VmUpdateType.MEMORY);
         assertThat(vm.getVmMemSizeMb()).isEqualTo(MAX_MEM);
         assertThat(vm.getMaxMemorySizeMb()).isEqualTo(MAX_MEM);
         assertThat(vm.getMinAllocatedMem()).isEqualTo(minMem);
@@ -124,8 +133,8 @@ public class CompatibilityVersionUpdaterTest {
 
         var updates = performUpdate();
 
-        assertThat(updates).containsOnly(CompatibilityVersionUpdater.Update.CPU_TOPOLOGY);
-        assertThat(vm.getNumOfSockets()).isEqualTo(3);
+        assertThat(updates).containsOnly(VmUpdateType.CPU_TOPOLOGY);
+        assertThat(vm.getNumOfSockets()).isEqualTo(11);
         assertThat(vm.getCpuPerSocket()).isEqualTo(16);
         assertThat(vm.getThreadsPerCpu()).isEqualTo(4);
     }
@@ -138,9 +147,9 @@ public class CompatibilityVersionUpdaterTest {
 
         var updates = performUpdate();
 
-        assertThat(updates).containsOnly(CompatibilityVersionUpdater.Update.CPU_TOPOLOGY);
+        assertThat(updates).containsOnly(VmUpdateType.CPU_TOPOLOGY);
         assertThat(vm.getNumOfSockets()).isEqualTo(1);
-        assertThat(vm.getCpuPerSocket()).isEqualTo(48);
+        assertThat(vm.getCpuPerSocket()).isEqualTo(88);
         assertThat(vm.getThreadsPerCpu()).isEqualTo(8);
     }
 
@@ -149,7 +158,7 @@ public class CompatibilityVersionUpdaterTest {
         vm.setCustomProperties("prop_1=false;prop_2=incorrect;nonexistent=123");
         var updates = performUpdate();
 
-        assertThat(updates).containsOnly(CompatibilityVersionUpdater.Update.PROPERTIES);
+        assertThat(updates).containsOnly(VmUpdateType.PROPERTIES);
         assertThat(vm.getCustomProperties()).isEqualTo("prop_1=false");
     }
 
@@ -159,7 +168,7 @@ public class CompatibilityVersionUpdaterTest {
         vm.setMigrationPolicyId(NoMigrationPolicy.ID);
         var updates = performUpdate();
 
-        assertThat(updates).containsOnly(CompatibilityVersionUpdater.Update.MIGRATION_POLICY);
+        assertThat(updates).containsOnly(VmUpdateType.MIGRATION_POLICY);
         assertThat(vm.getMigrationPolicyId()).isEqualTo(cluster.getMigrationPolicyId());
     }
 
@@ -167,11 +176,11 @@ public class CompatibilityVersionUpdaterTest {
     public void testUpdateDisplaytype() {
         vm.setDefaultDisplayType(DisplayType.cirrus);
         var updates = performUpdate();
-        assertThat(updates).containsOnly(CompatibilityVersionUpdater.Update.DEFAULT_DISPLAY_TYPE);
+        assertThat(updates).containsOnly(VmUpdateType.DEFAULT_DISPLAY_TYPE);
         assertThat(vm.getDefaultDisplayType()).isEqualTo(DisplayType.vga);
     }
 
-    private Set<CompatibilityVersionUpdater.Update> performUpdate() {
+    private Set<VmUpdateType> performUpdate() {
         return versionUpdater.updateVmCompatibilityVersion(vm, Version.getLast(), cluster);
     }
 
@@ -180,9 +189,10 @@ public class CompatibilityVersionUpdaterTest {
         vm.setId(Guid.newGuid());
         vm.setClusterArch(cluster.getArchitecture());
         vm.setMigrationPolicyId(Guid.newGuid());
-        vm.setBiosType(BiosType.CLUSTER_DEFAULT);
+        vm.setBiosType(BiosType.Q35_SEA_BIOS);
         vm.setDefaultDisplayType(DisplayType.vga);
         vm.setVmOs(OS_ID);
+        vm.setClusterArch(ArchitectureType.x86_64);
 
         vm.setVmMemSizeMb(2048);
         vm.setMaxMemorySizeMb(4096);

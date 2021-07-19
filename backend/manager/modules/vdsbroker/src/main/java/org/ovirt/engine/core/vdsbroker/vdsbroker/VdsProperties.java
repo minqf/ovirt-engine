@@ -81,6 +81,8 @@ public final class VdsProperties {
     public static final String NUMA_NODE_CPU_LIST = "cpus";
     public static final String NUMA_NODE_TOTAL_MEM = "totalMemory";
     public static final String NUMA_NODE_FREE_MEM_STAT = "numaNodeMemFree";
+    public static final String NUMA_NODE_HUGEPAGES = "hugepages";
+    public static final String NUMA_NODE_HUGEPAGES_FREE = "freePages";
     public static final String CPU_STATS = "cpuStatistics";
     public static final String NUMA_NODE_FREE_MEM = "memFree";
     public static final String NUMA_NODE_MEM_PERCENT = "memPercent";
@@ -135,6 +137,7 @@ public final class VdsProperties {
     public static final String NETMASK = "netmask";
     public static final String ADDR = "addr";
     public static final String OPENVSWITCH = "openvswitch";
+    public static final String NMSTATE = "nmstate";
 
     // LLDP related properties
     public static final String LLDP_ENABLED = "enabled";
@@ -209,7 +212,9 @@ public final class VdsProperties {
     // Disks configuration
     public static final String vm_disks = "disks";
     public static final String vm_disk_read_rate = "readRate";
+    public static final String vm_disk_read_ops = "readOps";
     public static final String vm_disk_write_rate = "writeRate";
+    public static final String vm_disk_write_ops = "writeOps";
     public static final String vm_disk_read_latency = "readLatency";
     public static final String vm_disk_write_latency = "writeLatency";
     public static final String vm_disk_flush_latency = "flushLatency";
@@ -219,6 +224,7 @@ public final class VdsProperties {
     public static final String size = "size";
     public static final String lun_guid = "lunGUID";
     public static final String compat_version = "qcow2_compat";
+    public static final String drive_spec = "drive_spec";
 
     // Iso/Floppy related properties
     public static final String iso_list = "isolist";
@@ -257,6 +263,7 @@ public final class VdsProperties {
     public static final String vm_guest_mem_buffered = "mem_buffers";
     public static final String vm_guest_mem_cached = "mem_cached";
     public static final String vm_guest_mem_free = "mem_free";
+    public static final String vm_guest_mem_unused = "mem_unused";
     public static final String vm_guest_mem_stats = "memoryStats";
     public static final String vm_usage_mem_percent = "memUsage";
     public static final String vm_migration_progress_percent = "migrationProgress";
@@ -325,6 +332,10 @@ public final class VdsProperties {
     public static final String memoryDumpVolumeInfo = "memoryDumpVolumeInfo";
     public static final String memoryMetadataVolumeInfo = "memoryMetadataVolumeInfo";
     public static final String engineXml = "xml";
+    public static final String nvramData = "_X_nvramdata";
+    public static final String nvramHash = "nvramHash";
+    public static final String tpmData = "_X_tpmdata";
+    public static final String tpmHash = "tpmHash";
     public static final String pauseCode = "pauseCode";
     public static final String KeyboardMap = "keyMap";
     public static final String TabletEnable = "tabletEnable";
@@ -473,6 +484,7 @@ public final class VdsProperties {
     public static final String MDEV = "mdev";
     public static final String MDEV_AVAILABLE_INSTANCES = "available_instances";
     public static final String MDEV_DESCRIPTION = "description";
+    public static final String MDEV_NAME = "name";
     public static final String PRODUCT_NAME = "product";
     public static final String PRODUCT_ID = "product_id";
     public static final String VENDOR_NAME = "vendor";
@@ -484,6 +496,11 @@ public final class VdsProperties {
     public static final String NET_INTERFACE_NAME = "interface";
     public static final String HOST_DEVICE_PASSTHROUGH = "hostdevPassthrough";
     public static final String IS_ASSIGNABLE = "is_assignable";
+    public static final String DEVICE_PATH = "device_path";
+    public static final String NUMA_NODE = "numa_node";
+    public static final String MODE = "mode";
+    public static final String DEVICE_SIZE = "device_size";
+    public static final String ALIGN_SIZE = "align_size";
 
     // fencing policy parameters
     public static final String STORAGE_DOMAIN_HOST_ID_MAP = "storageDomainHostIdMap";
@@ -546,7 +563,12 @@ public final class VdsProperties {
 
     // incremental backup
     public static final String BACKUP_ENABLED = "backupEnabled";
+    public static final String COLD_BACKUP_ENABLED = "coldBackupEnabled";
+    public static final String CLEAR_BITMAPS_ENABLED = "clearBitmapsEnabled";
     public static final String CHECKPOINT = "checkpoint";
+    public static final String CHECKPOINT_IDS = "checkpoint_ids";
+    public static final String BACKUP_MODE = "backup_mode";
+    public static final String SCRATCH_DISK = "scratch_disk";
 
     public static final String TSC_FREQUENCY = "tscFrequency";
 
@@ -555,4 +577,6 @@ public final class VdsProperties {
     public static final String TSC_SCALING = "tscScaling";
 
     public static final String BOOT_UUID = "boot_uuid";
+
+    public static final String CD_CHANGE_PDIV = "cd_change_pdiv";
 }

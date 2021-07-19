@@ -9,6 +9,7 @@ import javax.validation.constraints.Size;
 import javax.validation.groups.Default;
 
 import org.codehaus.jackson.annotate.JsonIgnore;
+import org.ovirt.engine.core.common.action.VmExternalDataKind;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
@@ -63,6 +64,11 @@ public class VmTemplate extends VmBase implements BusinessEntityWithStatus<Guid,
 
     private double cachedActualSize = -1.0;
 
+    @TransientField
+    private BiosType clusterBiosType;
+
+    private Map<VmExternalDataKind, String> vmExternalData;
+
     public VmTemplate() {
         setNiceLevel(0);
         setCpuShares(0);
@@ -83,7 +89,7 @@ public class VmTemplate extends VmBase implements BusinessEntityWithStatus<Guid,
                       int maxMemorySize,
                       String name,
                       int numOfSockets, int cpuPerSocket, int threadsPerCpu, int osId,
-                      Guid clusterId, Guid vmtGuid, int numOfMonitors, boolean singleQxlPci, int status, int usbPolicy,
+                      Guid clusterId, Guid vmtGuid, int numOfMonitors, int status, int usbPolicy,
                       String timeZone, int niceLevel, int cpuShares, BootSequence defaultBootSequence,
                       VmType vmType, boolean smartcardEnabled, boolean deleteProtected, SsoMethod ssoMethod,
                       Boolean tunnelMigration, String vncKeyboardLayout, int minAllocatedMem, boolean stateless,
@@ -94,12 +100,12 @@ public class VmTemplate extends VmBase implements BusinessEntityWithStatus<Guid,
                       Guid baseTemplateId, String templateVersionName,
                       SerialNumberPolicy serialNumberPolicy, String customSerialNumber,
                       boolean bootMenuEnabled, boolean spiceFIleTransferEnabled, boolean spiceCopyPasteEnabled,
-                      Guid cpuProfileId, NumaTuneMode numaTuneMode,
+                      Guid cpuProfileId,
                       Boolean autoConverge, Boolean migrateCompressed, Boolean migrateEncrypted,
                       String userDefinedProperties,
                       String predefinedProperties,
                       String customProperties,
-                      String emulatedMachine, BiosType biosType, String customCpuName, boolean useHostCpuFlags,
+                      String emulatedMachine, String customCpuName, boolean useHostCpuFlags,
                       Guid smallIconId,
                       Guid largeIconId,
                       int numOfIoThreads,
@@ -108,7 +114,11 @@ public class VmTemplate extends VmBase implements BusinessEntityWithStatus<Guid,
                       Guid leaseStorageDomainId,
                       VmResumeBehavior resumeBehavior,
                       boolean multiQueuesEnabled,
-                      boolean useTscFrequency) {
+                      boolean useTscFrequency,
+                      String cpuPinning,
+                      boolean virtioScsiMultiQueuesEnabled,
+                      boolean balloonEnabled,
+                      BiosType biosType) {
         super(name,
                 vmtGuid,
                 clusterId,
@@ -122,7 +132,6 @@ public class VmTemplate extends VmBase implements BusinessEntityWithStatus<Guid,
                 cpuPerSocket,
                 threadsPerCpu,
                 numOfMonitors,
-                singleQxlPci,
                 timeZone,
                 vmType,
                 UsbPolicy.forValue(usbPolicy),
@@ -158,7 +167,6 @@ public class VmTemplate extends VmBase implements BusinessEntityWithStatus<Guid,
                 spiceFIleTransferEnabled,
                 spiceCopyPasteEnabled,
                 cpuProfileId,
-                numaTuneMode,
                 autoConverge,
                 migrateCompressed,
                 migrateEncrypted,
@@ -166,7 +174,6 @@ public class VmTemplate extends VmBase implements BusinessEntityWithStatus<Guid,
                 predefinedProperties,
                 customProperties,
                 emulatedMachine,
-                biosType,
                 customCpuName,
                 useHostCpuFlags,
                 smallIconId,
@@ -178,7 +185,11 @@ public class VmTemplate extends VmBase implements BusinessEntityWithStatus<Guid,
                 leaseStorageDomainId,
                 resumeBehavior,
                 multiQueuesEnabled,
-                useTscFrequency);
+                useTscFrequency,
+                cpuPinning,
+                virtioScsiMultiQueuesEnabled,
+                balloonEnabled,
+                biosType);
 
         diskTemplateMap = new HashMap<>();
         diskImageMap = new HashMap<>();
@@ -398,4 +409,21 @@ public class VmTemplate extends VmBase implements BusinessEntityWithStatus<Guid,
     public boolean isSealed() {
         return sealed;
     }
+
+    public BiosType getClusterBiosType() {
+        return clusterBiosType;
+    }
+
+    public void setClusterBiosType(BiosType clusterBiosType) {
+        this.clusterBiosType = clusterBiosType;
+    }
+
+    public Map<VmExternalDataKind, String> getVmExternalData() {
+        return vmExternalData;
+    }
+
+    public void setVmExternalData(Map<VmExternalDataKind, String> vmExternalData) {
+        this.vmExternalData = vmExternalData;
+    }
+
 }

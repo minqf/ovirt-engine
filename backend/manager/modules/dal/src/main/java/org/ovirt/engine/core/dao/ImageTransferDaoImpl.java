@@ -10,6 +10,8 @@ import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.businessentities.storage.ImageTransfer;
 import org.ovirt.engine.core.common.businessentities.storage.ImageTransferBackend;
 import org.ovirt.engine.core.common.businessentities.storage.ImageTransferPhase;
+import org.ovirt.engine.core.common.businessentities.storage.TimeoutPolicyType;
+import org.ovirt.engine.core.common.businessentities.storage.TransferClientType;
 import org.ovirt.engine.core.common.businessentities.storage.TransferType;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.compat.Guid;
@@ -88,13 +90,17 @@ public class ImageTransferDaoImpl extends DefaultGenericDao<ImageTransfer, Guid>
         mapper.addValue("imaged_ticket_id", entity.getImagedTicketId() == null ? null : entity.getImagedTicketId().toString());
         mapper.addValue("proxy_uri", entity.getProxyUri());
         mapper.addValue("daemon_uri", entity.getDaemonUri());
-        mapper.addValue("signed_ticket", entity.getSignedTicket());
         mapper.addValue("bytes_sent", entity.getBytesSent());
         mapper.addValue("bytes_total", entity.getBytesTotal());
         mapper.addValue("client_inactivity_timeout", entity.getClientInactivityTimeout());
+        mapper.addValue("timeout_policy", entity.getTimeoutPolicy() == null ?
+                TimeoutPolicyType.LEGACY.toString() : entity.getTimeoutPolicy().toString());
         mapper.addValue("image_format", entity.getImageFormat());
         mapper.addValue("backend", entity.getBackend());
         mapper.addValue("backup_id", entity.getBackupId());
+        mapper.addValue("client_type", entity.getTransferClientType() == null ?
+                TransferClientType.UNKNOWN.getValue() : entity.getTransferClientType().getValue());
+        mapper.addValue("shallow", entity.isShallow() == null ? false : entity.isShallow());
         return mapper;
     }
 
@@ -114,13 +120,15 @@ public class ImageTransferDaoImpl extends DefaultGenericDao<ImageTransfer, Guid>
             entity.setImagedTicketId(getGuid(rs, "imaged_ticket_id"));
             entity.setProxyUri(rs.getString("proxy_uri"));
             entity.setDaemonUri(rs.getString("daemon_uri"));
-            entity.setSignedTicket(rs.getString("signed_ticket"));
             entity.setBytesSent(rs.getLong("bytes_sent"));
             entity.setBytesTotal(rs.getLong("bytes_total"));
             entity.setClientInactivityTimeout((Integer) rs.getObject("client_inactivity_timeout"));
+            entity.setTimeoutPolicy(TimeoutPolicyType.forString(rs.getString("timeout_policy")));
             entity.setImageFormat(VolumeFormat.forValue(rs.getInt("image_format")));
             entity.setBackend(ImageTransferBackend.forValue(rs.getInt("backend")));
             entity.setBackupId(getGuid(rs, "backup_id"));
+            entity.setTransferClientType(TransferClientType.forValue(rs.getInt("client_type")));
+            entity.setShallow(rs.getBoolean("shallow"));
             return entity;
         };
     }
@@ -128,5 +136,13 @@ public class ImageTransferDaoImpl extends DefaultGenericDao<ImageTransfer, Guid>
     @Override
     public List<ImageTransfer> getAllWithQuery(String query) {
         return getJdbcTemplate().query(query, createEntityRowMapper());
+    }
+
+    @Override
+    public void deleteCompletedImageTransfers(Date succeededImageTransfers, Date failedImageTransfers) {
+        MapSqlParameterSource parameterSource = getCustomMapSqlParameterSource()
+                .addValue("succeeded_end_time", succeededImageTransfers)
+                .addValue("failed_end_time", failedImageTransfers);
+        getCallsHandler().executeModification("DeleteCompletedImageTransfersOlderThanDate", parameterSource);
     }
 }

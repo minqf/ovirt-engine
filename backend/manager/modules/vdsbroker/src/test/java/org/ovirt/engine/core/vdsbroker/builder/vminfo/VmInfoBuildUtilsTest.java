@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.reset;
@@ -32,6 +31,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.ovirt.engine.core.common.businessentities.AdditionalFeature;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
+import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.GraphicsInfo;
 import org.ovirt.engine.core.common.businessentities.GraphicsType;
 import org.ovirt.engine.core.common.businessentities.SupportedAdditionalClusterFeature;
@@ -70,6 +70,7 @@ import org.ovirt.engine.core.dao.VdsDynamicDao;
 import org.ovirt.engine.core.dao.VdsNumaNodeDao;
 import org.ovirt.engine.core.dao.VdsStaticDao;
 import org.ovirt.engine.core.dao.VdsStatisticsDao;
+import org.ovirt.engine.core.dao.VmDao;
 import org.ovirt.engine.core.dao.VmDeviceDao;
 import org.ovirt.engine.core.dao.VmNumaNodeDao;
 import org.ovirt.engine.core.dao.network.NetworkClusterDao;
@@ -117,6 +118,8 @@ public class VmInfoBuildUtilsTest {
     @Mock
     private StorageQosDao storageQosDao;
     @Mock
+    private VmDao vmDao;
+    @Mock
     private VmDeviceDao vmDeviceDao;
     @Mock
     private VnicProfileDao vnicProfileDao;
@@ -162,17 +165,19 @@ public class VmInfoBuildUtilsTest {
 
     private VmDevice vmDevice;
 
-    private DiskImage diskImage = new DiskImage();
+    private DiskImage diskImage;
 
     public static Stream<MockConfigDescriptor<?>> mockConfiguration() {
         return Stream.of(
                 MockConfigDescriptor.of(ConfigValues.LibgfApiSupported, Version.v4_2, false),
-                MockConfigDescriptor.of(ConfigValues.LibgfApiSupported, Version.v4_3, true)
+                MockConfigDescriptor.of(ConfigValues.LibgfApiSupported, Version.v4_3, true),
+                MockConfigDescriptor.of(ConfigValues.PropagateDiskErrors, false)
         );
     }
 
     @BeforeEach
     public void setUp() {
+        diskImage = new DiskImage();
         diskImage.setDiskProfileId(Guid.newGuid());
 
         qos = new StorageQos();
@@ -189,6 +194,7 @@ public class VmInfoBuildUtilsTest {
         when(networkFilterDao.getNetworkFilterById(NETWORK_FILTER_ID)).thenReturn(networkFilter);
 
         when(vmNicFilterParameterDao.getAllForVmNic(VM_NIC_ID)).thenReturn(createVmNicFilterParameters());
+        when(hostDeviceDao.getVmExtendedHostDevicesByVmId(VM_ID)).thenReturn(Collections.emptyList());
     }
 
     List<VmNicFilterParameter> createVmNicFilterParameters() {
@@ -277,10 +283,12 @@ public class VmInfoBuildUtilsTest {
 
         DiskVmElement nonBootDiskVmElement = new DiskVmElement(lunDiskVmDevice.getId());
         nonBootDiskVmElement.setBoot(false);
+        nonBootDiskVmElement.setPlugged(true);
         nonBootDiskVmElement.setDiskInterface(DiskInterface.VirtIO_SCSI);
 
         DiskVmElement bootDiskVmElement = new DiskVmElement(diskImageVmDevice.getId());
         bootDiskVmElement.setBoot(true);
+        bootDiskVmElement.setPlugged(true);
         bootDiskVmElement.setDiskInterface(DiskInterface.VirtIO_SCSI);
 
         LunDisk lunDisk = new LunDisk();
@@ -425,34 +433,53 @@ public class VmInfoBuildUtilsTest {
         Assertions.assertThat(stringMap.get("openstack/latest/user_data")).isNotEmpty();
     }
 
+    private VmDevice getUsbDevice(Map<String, Object> specParams) {
+        return new VmDevice(new VmDeviceId(), VmDeviceGeneralType.CONTROLLER,
+                VmDeviceType.USB.getName(),
+                "",
+                specParams,
+                true,
+                true,
+                null,
+                "",
+                null,
+                null,
+                null);
+    }
     @Test
     public void testIsTabletEnabled() {
         VM vm = new VM();
+        vm.setBiosType(BiosType.Q35_SEA_BIOS);
         Map<GraphicsType, GraphicsInfo> m = new HashMap<>();
         vm.setGraphicsInfos(m);
+        Map<String, Object> specs = new HashMap<>();
+        specs.put(VdsProperties.Model, UsbControllerModel.EHCI);
+        specs.put(VdsProperties.Index, Integer.toString(0));
+        VmDevice usbController = getUsbDevice(specs);
+
+        Map<String, Object> specsNoUsb = new HashMap<>();
+        specsNoUsb.put(VdsProperties.Model, UsbControllerModel.NONE.libvirtName);
+        specsNoUsb.put(VdsProperties.Index, Integer.toString(0));
+        VmDevice noUsbController = getUsbDevice(specsNoUsb);
 
         // No VNC -- No HighPerformance -- No USB Controller
         vm.setVmType(VmType.Desktop);
-        reset(osRepository);
-        when(osRepository.getOsUsbControllerModel(anyInt(), any(), any())).thenReturn(UsbControllerModel.NONE);
+        when(vmDeviceDao.getVmDeviceByVmIdTypeAndDevice(vm.getId(), VmDeviceGeneralType.CONTROLLER, VmDeviceType.USB)).thenReturn(List.of(noUsbController));
         assertFalse(underTest.isTabletEnabled(vm));
 
         // No VNC -- HighPerformance -- No USB Controller
         vm.setVmType(VmType.HighPerformance);
-        reset(osRepository);
-        when(osRepository.getOsUsbControllerModel(anyInt(), any(), any())).thenReturn(UsbControllerModel.NONE);
+        when(vmDeviceDao.getVmDeviceByVmIdTypeAndDevice(vm.getId(), VmDeviceGeneralType.CONTROLLER, VmDeviceType.USB)).thenReturn(List.of(noUsbController));
         assertFalse(underTest.isTabletEnabled(vm));
 
         // No VNC -- No HighPerformance -- USB Controller
         vm.setVmType(VmType.Desktop);
-        reset(osRepository);
-        when(osRepository.getOsUsbControllerModel(anyInt(), any(), any())).thenReturn(UsbControllerModel.EHCI);
+        when(vmDeviceDao.getVmDeviceByVmIdTypeAndDevice(vm.getId(), VmDeviceGeneralType.CONTROLLER, VmDeviceType.USB)).thenReturn(List.of(usbController));
         assertFalse(underTest.isTabletEnabled(vm));
 
         // No VNC -- HighPerformance -- with USB Controller
         vm.setVmType(VmType.HighPerformance);
-        reset(osRepository);
-        when(osRepository.getOsUsbControllerModel(anyInt(), any(), any())).thenReturn(UsbControllerModel.EHCI);
+        when(vmDeviceDao.getVmDeviceByVmIdTypeAndDevice(vm.getId(), VmDeviceGeneralType.CONTROLLER, VmDeviceType.USB)).thenReturn(List.of(usbController));
         assertFalse(underTest.isTabletEnabled(vm));
 
 
@@ -461,81 +488,90 @@ public class VmInfoBuildUtilsTest {
 
         // with VNC -- No HighPerformance -- No USB Controller
         vm.setVmType(VmType.Desktop);
-        reset(osRepository);
-        when(osRepository.getOsUsbControllerModel(anyInt(), any(), any())).thenReturn(UsbControllerModel.NONE);
+        when(vmDeviceDao.getVmDeviceByVmIdTypeAndDevice(vm.getId(), VmDeviceGeneralType.CONTROLLER, VmDeviceType.USB)).thenReturn(List.of(noUsbController));
         assertFalse(underTest.isTabletEnabled(vm));
 
         // with VNC -- HighPerformance -- No USB Controller
         vm.setVmType(VmType.HighPerformance);
-        reset(osRepository);
-        when(osRepository.getOsUsbControllerModel(anyInt(), any(), any())).thenReturn(UsbControllerModel.NONE);
+        when(vmDeviceDao.getVmDeviceByVmIdTypeAndDevice(vm.getId(), VmDeviceGeneralType.CONTROLLER, VmDeviceType.USB)).thenReturn(List.of(noUsbController));
         assertFalse(underTest.isTabletEnabled(vm));
 
         // with VNC -- No HighPerformance -- USB Controller
         vm.setVmType(VmType.Desktop);
-        reset(osRepository);
-        when(osRepository.getOsUsbControllerModel(anyInt(), any(), any())).thenReturn(UsbControllerModel.EHCI);
+        when(vmDeviceDao.getVmDeviceByVmIdTypeAndDevice(vm.getId(), VmDeviceGeneralType.CONTROLLER, VmDeviceType.USB)).thenReturn(List.of(usbController));
         assertTrue(underTest.isTabletEnabled(vm));
 
         // with VNC -- HighPerformance -- with USB Controller
         vm.setVmType(VmType.HighPerformance);
-        reset(osRepository);
-        when(osRepository.getOsUsbControllerModel(anyInt(), any(), any())).thenReturn(UsbControllerModel.EHCI);
-        assertFalse(underTest.isTabletEnabled(vm));
+        when(vmDeviceDao.getVmDeviceByVmIdTypeAndDevice(vm.getId(), VmDeviceGeneralType.CONTROLLER, VmDeviceType.USB)).thenReturn(List.of(usbController));
+        assertTrue(underTest.isTabletEnabled(vm));
 
         // Adding SPICE
         m.put(GraphicsType.SPICE, new GraphicsInfo());
 
         // SPICE+VNC -- No HighPerformance -- No USB Controller
         vm.setVmType(VmType.Desktop);
-        reset(osRepository);
-        when(osRepository.getOsUsbControllerModel(anyInt(), any(), any())).thenReturn(UsbControllerModel.NONE);
+        when(vmDeviceDao.getVmDeviceByVmIdTypeAndDevice(vm.getId(), VmDeviceGeneralType.CONTROLLER, VmDeviceType.USB)).thenReturn(List.of(noUsbController));
         assertFalse(underTest.isTabletEnabled(vm));
 
         // SPICE+VNC -- HighPerformance -- No USB Controller
         vm.setVmType(VmType.HighPerformance);
-        reset(osRepository);
-        when(osRepository.getOsUsbControllerModel(anyInt(), any(), any())).thenReturn(UsbControllerModel.NONE);
+        when(vmDeviceDao.getVmDeviceByVmIdTypeAndDevice(vm.getId(), VmDeviceGeneralType.CONTROLLER, VmDeviceType.USB)).thenReturn(List.of(noUsbController));
         assertFalse(underTest.isTabletEnabled(vm));
 
         // SPICE+VNC -- No HighPerformance -- USB Controller
         vm.setVmType(VmType.Desktop);
-        reset(osRepository);
-        when(osRepository.getOsUsbControllerModel(anyInt(), any(), any())).thenReturn(UsbControllerModel.EHCI);
+        when(vmDeviceDao.getVmDeviceByVmIdTypeAndDevice(vm.getId(), VmDeviceGeneralType.CONTROLLER, VmDeviceType.USB)).thenReturn(List.of(usbController));
         assertTrue(underTest.isTabletEnabled(vm));
 
         // SPICE+VNC -- HighPerformance -- with USB Controller
         vm.setVmType(VmType.HighPerformance);
-        reset(osRepository);
-        when(osRepository.getOsUsbControllerModel(anyInt(), any(), any())).thenReturn(UsbControllerModel.EHCI);
-        assertFalse(underTest.isTabletEnabled(vm));
+        when(vmDeviceDao.getVmDeviceByVmIdTypeAndDevice(vm.getId(), VmDeviceGeneralType.CONTROLLER, VmDeviceType.USB)).thenReturn(List.of(usbController));
+        assertTrue(underTest.isTabletEnabled(vm));
 
         // Just SPICE
         m.clear();
         m.put(GraphicsType.SPICE, new GraphicsInfo());
 
-        // SPICE+VNC -- No HighPerformance -- No USB Controller
+        // SPICE -- No HighPerformance -- No USB Controller
         vm.setVmType(VmType.Desktop);
-        reset(osRepository);
-        when(osRepository.getOsUsbControllerModel(anyInt(), any(), any())).thenReturn(UsbControllerModel.NONE);
+        when(vmDeviceDao.getVmDeviceByVmIdTypeAndDevice(vm.getId(), VmDeviceGeneralType.CONTROLLER, VmDeviceType.USB)).thenReturn(List.of(noUsbController));
         assertFalse(underTest.isTabletEnabled(vm));
 
-        // SPICE+VNC -- HighPerformance -- No USB Controller
+        // SPICE -- HighPerformance -- No USB Controller
         vm.setVmType(VmType.HighPerformance);
-        reset(osRepository);
-        when(osRepository.getOsUsbControllerModel(anyInt(), any(), any())).thenReturn(UsbControllerModel.NONE);
+        when(vmDeviceDao.getVmDeviceByVmIdTypeAndDevice(vm.getId(), VmDeviceGeneralType.CONTROLLER, VmDeviceType.USB)).thenReturn(List.of(noUsbController));
         assertFalse(underTest.isTabletEnabled(vm));
 
-        // SPICE+VNC -- No HighPerformance -- USB Controller
+        // SPICE -- No HighPerformance -- USB Controller
         vm.setVmType(VmType.Desktop);
-        reset(osRepository);
-        when(osRepository.getOsUsbControllerModel(anyInt(), any(), any())).thenReturn(UsbControllerModel.EHCI);
+        when(vmDeviceDao.getVmDeviceByVmIdTypeAndDevice(vm.getId(), VmDeviceGeneralType.CONTROLLER, VmDeviceType.USB)).thenReturn(List.of(usbController));
         assertFalse(underTest.isTabletEnabled(vm));
 
-        // SPICE+VNC -- HighPerformance -- with USB Controller
+        // SPICE -- HighPerformance -- with USB Controller
         vm.setVmType(VmType.HighPerformance);
-        reset(osRepository);
-        when(osRepository.getOsUsbControllerModel(anyInt(), any(), any())).thenReturn(UsbControllerModel.EHCI);
+        when(vmDeviceDao.getVmDeviceByVmIdTypeAndDevice(vm.getId(), VmDeviceGeneralType.CONTROLLER, VmDeviceType.USB)).thenReturn(List.of(usbController));
         assertFalse(underTest.isTabletEnabled(vm));
+    }
+
+    @Test
+    public void testIsOvirtChannelEnabled() {
+        VM vm = new VM();
+
+        reset(osRepository);
+        when(osRepository.requiresOvirtGuestAgentChannel(anyInt())).thenReturn(false);
+        when(osRepository.requiresOvirtGuestAgentChannel(0)).thenReturn(true);
+
+        vm.setVmOs(0); // Other OS
+        assertTrue(underTest.isOvirtGuestAgent(vm.getVmOsId()));
+
+        vm.setVmOs(30); // RHEL 8 OS
+        assertFalse(underTest.isOvirtGuestAgent(vm.getVmOsId()));
+
+        vm.setVmOs(1257); // ubuntu_18_04
+        assertFalse(underTest.isOvirtGuestAgent(vm.getVmOsId()));
+
+        vm.setVmOs(1301); // debian_9
+        assertFalse(underTest.isOvirtGuestAgent(vm.getVmOsId()));
     }
 }

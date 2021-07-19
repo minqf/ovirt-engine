@@ -96,6 +96,11 @@ public class VnicProfileValidator {
                 : new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_CANNOT_ADD_VNIC_PROFILE_TO_NON_VM_NETWORK);
     }
 
+    public ValidationResult passthroughProfileNoPortIsolation() {
+        return ValidationResult.failWith(EngineMessage.ACTION_TYPE_FAILED_PASSTHROUGH_PROFILE_NOT_SUPPORTS_PORT_ISOLATION)
+                .when(vnicProfile.isPassthrough() && getNetwork().isPortIsolation());
+    }
+
     protected ValidationResult vnicProfileNotUsed(List<? extends Nameable> entities, EngineMessage entitiesReplacementPlural, EngineMessage entitiesReplacementSingular) {
         if (entities.isEmpty()) {
             return ValidationResult.VALID;
@@ -214,6 +219,47 @@ public class VnicProfileValidator {
                 ReplacementUtils.createSetVariableString(VAR_VNIC_PROFILE_NAME, vnicProfile.getName()),
                 ReplacementUtils.createSetVariableString(VAR_NETWORK_FILTER_ID, vnicProfile.getNetworkFilterId()))
                 .when(useDefaultNetworkFilterId && vnicProfile.getNetworkFilterId() != null);
+    }
+
+    public ValidationResult validFailoverId() {
+        var failoverId = vnicProfile.getFailoverVnicProfileId();
+        if (failoverId == null) {
+            return ValidationResult.VALID;
+        }
+
+        if (Objects.equals(vnicProfile.getId(), failoverId)) {
+            return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_FAILOVER_VNIC_PROFILE_ID_CANNOT_POINT_TO_SELF);
+        }
+
+        var failoverProfile = Injector.get(VnicProfileDao.class).get(failoverId);
+        if (failoverProfile == null || failoverProfile.isPassthrough()) {
+            return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_FAILOVER_VNIC_PROFILE_ID_IS_NOT_VALID);
+        }
+
+        var failoverNetwork = Injector.get(NetworkDao.class).get(failoverProfile.getNetworkId());
+        if (failoverNetwork.isExternal()) {
+            return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_FAILOVER_VNIC_PROFILE_NOT_SUPPORTED_WITH_EXTERNAL_NETWORK);
+        }
+
+        return ValidationResult.failWith(EngineMessage.ACTION_TYPE_FAILED_FAILOVER_IS_SUPPORTED_ONLY_FOR_MIGRATABLE_PASSTROUGH)
+                .when(!vnicProfile.isPassthrough() || !vnicProfile.isMigratable());
+    }
+
+    public ValidationResult validateProfileNotUpdatedIfFailover() {
+        var profiles = Injector.get(VnicProfileDao.class).getAllByFailoverVnicProfileId(vnicProfile.getId());
+        if (profiles.isEmpty()) {
+            return ValidationResult.VALID;
+        }
+        var replacements = ReplacementUtils.replaceWithNameable("ENTITIES_USING_FAILOVER", profiles);
+        return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_UPDATE_OF_FAILOVER_PROFILE_IS_NOT_SUPPORTED, replacements);
+    }
+
+    public ValidationResult failoverNotChangedIfUsedByVms() {
+        if (Objects.equals(vnicProfile.getFailoverVnicProfileId(), getOldVnicProfile().getFailoverVnicProfileId())) {
+            return ValidationResult.VALID;
+        }
+
+        return vnicProfileNotUsedByVms();
     }
 
     private Guid getNetworkFilterId() {

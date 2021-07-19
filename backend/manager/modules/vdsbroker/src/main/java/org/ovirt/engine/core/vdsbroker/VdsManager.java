@@ -2,6 +2,7 @@ package org.ovirt.engine.core.vdsbroker;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +30,7 @@ import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VDSDomainsData;
 import org.ovirt.engine.core.common.businessentities.VDSStatus;
 import org.ovirt.engine.core.common.businessentities.VDSType;
+import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VMStatus;
 import org.ovirt.engine.core.common.businessentities.VdsDynamic;
 import org.ovirt.engine.core.common.businessentities.VdsNumaNode;
@@ -55,11 +57,11 @@ import org.ovirt.engine.core.dao.VdsDao;
 import org.ovirt.engine.core.dao.VdsDynamicDao;
 import org.ovirt.engine.core.dao.VdsNumaNodeDao;
 import org.ovirt.engine.core.dao.VdsStatisticsDao;
+import org.ovirt.engine.core.dao.VmDao;
 import org.ovirt.engine.core.dao.VmDynamicDao;
 import org.ovirt.engine.core.dao.network.InterfaceDao;
 import org.ovirt.engine.core.dao.network.NetworkDao;
 import org.ovirt.engine.core.dao.provider.ProviderDao;
-import org.ovirt.engine.core.di.Injector;
 import org.ovirt.engine.core.utils.crypt.EngineEncryptionUtils;
 import org.ovirt.engine.core.utils.lock.EngineLock;
 import org.ovirt.engine.core.utils.lock.LockManager;
@@ -68,6 +70,7 @@ import org.ovirt.engine.core.utils.transaction.TransactionSupport;
 import org.ovirt.engine.core.vdsbroker.irsbroker.IRSErrorException;
 import org.ovirt.engine.core.vdsbroker.irsbroker.IrsProxy;
 import org.ovirt.engine.core.vdsbroker.irsbroker.IrsProxyManager;
+import org.ovirt.engine.core.vdsbroker.kubevirt.PrometheusUrlResolver;
 import org.ovirt.engine.core.vdsbroker.monitoring.HostConnectionRefresherInterface;
 import org.ovirt.engine.core.vdsbroker.monitoring.HostMonitoring;
 import org.ovirt.engine.core.vdsbroker.monitoring.HostMonitoringInterface;
@@ -122,6 +125,9 @@ public class VdsManager {
     private VmDynamicDao vmDynamicDao;
 
     @Inject
+    private VmDao vmDao;
+
+    @Inject
     private VdsStatisticsDao vdsStatisticsDao;
 
     @Inject
@@ -141,6 +147,10 @@ public class VdsManager {
 
     @Inject
     private Instance<IrsProxyManager> irsProxyManager;
+
+    @Inject
+    private PrometheusUrlResolver prometheusUrlResolver;
+
     private final AtomicInteger unrespondedAttempts;
     private final Guid vdsId;
     private final VdsMonitor vdsMonitor = new VdsMonitor();
@@ -165,14 +175,12 @@ public class VdsManager {
     private ArrayList<VDSDomainsData> domains;
 
     private final ReentrantLock autoStartVmsWithLeasesLock;
-    protected final long HOST_REFRESH_RATE;
     protected final int NUMBER_HOST_REFRESHES_BEFORE_SAVE;
     private HostConnectionRefresherInterface hostRefresher;
     private volatile boolean inServerRebootTimeout;
 
     VdsManager(VDS vds, ResourceManager resourceManager) {
         this.resourceManager = resourceManager;
-        HOST_REFRESH_RATE = Config.<Long> getValue(ConfigValues.VdsRefreshRate) * 1000L;
         NUMBER_HOST_REFRESHES_BEFORE_SAVE = Config.<Integer> getValue(ConfigValues.NumberVmRefreshesBeforeSave);
         refreshIteration = new AtomicInteger(NUMBER_HOST_REFRESHES_BEFORE_SAVE - 1);
         log.info("Entered VdsManager constructor");
@@ -317,7 +325,7 @@ public class VdsManager {
     private HostMonitoringInterface createHostMonitoring() {
         switch (cachedVds.getVdsType()) {
         case KubevirtNode:
-            return new KubevirtNodesMonitoring(this, providerDao, auditLogDirector);
+            return new KubevirtNodesMonitoring(this, providerDao, prometheusUrlResolver);
         default:
             return new HostMonitoring(this,
                     cachedVds,
@@ -625,6 +633,9 @@ public class VdsManager {
 
                 // Always check VdsVersion
                 resourceManager.getEventListener().handleVdsVersion(vds.getId());
+
+                // Check FIPS compatibility
+                resourceManager.getEventListener().handleVdsFips(vds.getId());
             }
         }
     }
@@ -898,7 +909,7 @@ public class VdsManager {
                 if (cachedVds.getStatus() == VDSStatus.Maintenance) {
                     saveToDb = false;
                 } else {
-                    List<VmDynamic> vmsRunningOnVds = vmDynamicDao.getAllRunningForVds(getVdsId());
+                    List<VM> vmsRunningOnVds = vmDao.getMonitoredVmsRunningByVds(getVdsId());
                     if (cachedVds.getStatus() != VDSStatus.NonResponsive) {
                         setStatus(VDSStatus.NonResponsive, cachedVds);
                         moveVmsToUnknown(vmsRunningOnVds);
@@ -920,7 +931,7 @@ public class VdsManager {
         }
     }
 
-    private void restartVmsWithLeaseIfNeeded(List<VmDynamic> vms) {
+    private void restartVmsWithLeaseIfNeeded(List<VM> vms) {
         if (vms.isEmpty() || !autoStartVmsWithLeasesLock.tryLock()) {
             return;
         }
@@ -931,11 +942,12 @@ public class VdsManager {
             // we don't want to restart VMs with lease too frequently
             if (autoRestartUnknownVmsIteration >= 0 &&
                     autoRestartUnknownVmsIteration % (skippedIterationsBeforeRetry + 1) == 0) {
-                resourceManager.getEventListener().restartVmsWithLease(vms.stream()
-                        .map(VmDynamic::getId)
-                        .filter(vmId -> resourceManager.getVmManager(vmId).getLeaseStorageDomainId() != null)
-                        .sorted(Injector.injectMembers(new VmsOnHostComparator(getVdsId())))
-                        .collect(Collectors.toList()));
+                var vmIdsToRestart = vms.stream()
+                        .filter(vm -> vm.getLeaseStorageDomainId() != null)
+                        .sorted(Comparator.comparing(VM::getPriority).reversed())
+                        .map(VM::getId)
+                        .collect(Collectors.toList());
+                resourceManager.getEventListener().restartVmsWithLease(vmIdsToRestart, getVdsId());
             }
         } finally {
             autoStartVmsWithLeasesLock.unlock();
@@ -1091,12 +1103,12 @@ public class VdsManager {
         return System.currentTimeMillis() > nextMaintenanceAttemptTime;
     }
 
-    private void moveVmsToUnknown(List<VmDynamic> vms) {
+    private void moveVmsToUnknown(List<VM> vms) {
         if (vms.isEmpty()) {
             return;
         }
 
-        List<Guid> vmIds = vms.stream().map(VmDynamic::getId).collect(Collectors.toList());
+        List<Guid> vmIds = vms.stream().map(VM::getId).collect(Collectors.toList());
         vmIds.forEach(resourceManager::removeAsyncRunningVm);
         getVmDynamicDao().updateVmsToUnknown(vmIds);
 
@@ -1183,6 +1195,16 @@ public class VdsManager {
      */
     public void setLastVmsList(Map<Guid, VMStatus> lastVmsList) {
         this.lastVmsList = lastVmsList;
+    }
+
+    public void addVmsToLastVmsList(Map<Guid, VMStatus> additionalVmsList) {
+        try {
+            this.lastVmsList.putAll(additionalVmsList);
+        } catch (UnsupportedOperationException e) {
+            // lastVmsList is an emptyMap collection.
+            // It can happen if the event happens before polling on engine start.
+            this.lastVmsList = additionalVmsList;
+        }
     }
 
     public boolean isInServerRebootTimeout() {

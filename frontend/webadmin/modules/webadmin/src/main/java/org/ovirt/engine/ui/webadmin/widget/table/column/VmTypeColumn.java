@@ -81,10 +81,17 @@ public class VmTypeColumn extends AbstractSafeHtmlColumn<VM> {
             res.put(getImageSafeHtml(resources.mgmtNetwork()), SafeHtmlUtils.fromString(constants.isHostedEngineVmTooltip()));
         }
 
+        if (!vm.isManaged()) {
+            res.put(getImageSafeHtml(resources.container()), SafeHtmlUtils.fromString(constants.isRunningInContainer()));
+        }
+
         if (configurationWillChangeAfterRestart(vm)) {
             Set<String> nextRunFields = vm.getNextRunChangedFields() != null ? vm.getNextRunChangedFields() : new HashSet<>();
             if (clusterCpuChanged(vm) && !nextRunFields.contains("customCpuName")){ //$NON-NLS-1$
                 nextRunFields.add("clusterCpuChange"); //$NON-NLS-1$
+            }
+            if (vm.isVnicsOutOfSync()) {
+                nextRunFields.add("interfaces"); //$NON-NLS-1$
             }
             res.put(SafeHtmlUtils.EMPTY_SAFE_HTML, getNextRunChangedFieldsTooltip(nextRunFields));
         }
@@ -92,14 +99,16 @@ public class VmTypeColumn extends AbstractSafeHtmlColumn<VM> {
     }
 
     private static boolean clusterCpuChanged(VM vm){
-        return vm.isRunningOrPaused()
+        return vm.isManaged()
+                && !vm.isHostedEngine()
+                && vm.isRunningOrPaused()
                 && vm.getCustomCpuName() == null
                 && !vm.isUsingCpuPassthrough()
                 && !Objects.equals(vm.getCpuName(), vm.getClusterCpuVerb());
     }
 
     private static boolean configurationWillChangeAfterRestart(VM vm){
-        return clusterCpuChanged(vm) || vm.isNextRunConfigurationExists();
+        return clusterCpuChanged(vm) || vm.isNextRunConfigurationExists() || vm.isVnicsOutOfSync();
     }
 
     private SafeHtml getNextRunChangedFieldsTooltip(Set<String> changedFields) {
@@ -152,6 +161,10 @@ public class VmTypeColumn extends AbstractSafeHtmlColumn<VM> {
 
         if (vm.isHostedEngine()) {
             images.add(getImageSafeHtml(resources.mgmtNetwork()));
+        }
+
+        if (!vm.isManaged()) {
+            images.add(getImageSafeHtml(resources.container()));
         }
 
         return images.isEmpty() ? null : MultiImageColumnHelper.getValue(images);

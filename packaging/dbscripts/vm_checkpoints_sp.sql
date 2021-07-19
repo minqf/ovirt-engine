@@ -4,7 +4,7 @@
 --  VM Checkpoints Table
 ----------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION GetVmCheckpointByVmCheckpointId (v_checkpoint_id UUID)
-RETURNS SETOF vm_backups STABLE AS $PROCEDURE$
+RETURNS SETOF vm_checkpoints STABLE AS $PROCEDURE$
 BEGIN
     RETURN QUERY
 
@@ -19,7 +19,7 @@ CREATE OR REPLACE FUNCTION InsertVmCheckpoint (
     v_vm_id UUID,
     v_parent_id UUID,
     v__create_date TIMESTAMP WITH TIME ZONE,
-    v_checkpoint_xml TEXT
+    v_state TEXT
     )
 RETURNS VOID AS $PROCEDURE$
 BEGIN
@@ -28,26 +28,31 @@ BEGIN
         vm_id,
         parent_id,
         _create_date,
-        checkpoint_xml
+        state
         )
     VALUES (
         v_checkpoint_id,
         v_vm_id,
         v_parent_id,
         v__create_date,
-        v_checkpoint_xml
+        v_state
         );
 END;$PROCEDURE$
 LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION UpdateVmCheckpointXml (
+CREATE OR REPLACE FUNCTION UpdateVmCheckpoint (
     v_checkpoint_id UUID,
-    v_checkpoint_xml TEXT
+    v_vm_id UUID,
+    v_parent_id UUID,
+    v_state TEXT
     )
 RETURNS VOID AS $PROCEDURE$
 BEGIN
     UPDATE vm_checkpoints
-    SET checkpoint_xml = v_checkpoint_xml
+    SET checkpoint_id = v_checkpoint_id,
+        vm_id = v_vm_id,
+        parent_id = v_parent_id,
+        state = v_state
     WHERE checkpoint_id = v_checkpoint_id;
 END;$PROCEDURE$
 LANGUAGE plpgsql;
@@ -90,6 +95,38 @@ BEGIN
 END;$PROCEDURE$
 LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION DeleteAllCheckpointsByVmId (v_vm_id UUID)
+RETURNS VOID AS $PROCEDURE$
+BEGIN
+    DELETE
+    FROM vm_checkpoints
+    WHERE vm_id = v_vm_id;
+END;$PROCEDURE$
+LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION GetVmCheckpointByVmCheckpointParentId (v_checkpoint_id UUID)
+RETURNS SETOF vm_checkpoints STABLE AS $PROCEDURE$
+BEGIN
+    RETURN QUERY
+
+    SELECT *
+    FROM vm_checkpoints
+    WHERE parent_id = v_checkpoint_id;
+END;$PROCEDURE$
+LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION InvalidateAllCheckpointsByVmId (
+    v_vm_id UUID,
+    v_state TEXT
+    )
+RETURNS VOID AS $PROCEDURE$
+BEGIN
+    UPDATE vm_checkpoints
+    SET state = v_state
+    WHERE vm_id = v_vm_id;
+END;$PROCEDURE$
+LANGUAGE plpgsql;
+
 ----------------------------------------------------------------
 -- [vm_checkpoint_disk_map] Table
 ----------------------------------------------------------------------
@@ -114,19 +151,6 @@ BEGIN
 END;$PROCEDURE$
 LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION DeleteAllVmCheckpointDiskMapByVmCheckpointId (v_checkpoint_id UUID)
-RETURNS VOID AS $PROCEDURE$
-BEGIN
-    BEGIN
-        DELETE
-        FROM vm_checkpoint_disk_map
-        WHERE checkpoint_id = v_checkpoint_id;
-    END;
-
-    RETURN;
-END;$PROCEDURE$
-LANGUAGE plpgsql;
-
 CREATE OR REPLACE FUNCTION GetDisksByVmCheckpointId (v_checkpoint_id UUID)
 RETURNS SETOF images_storage_domain_view STABLE AS $PROCEDURE$
 BEGIN
@@ -136,5 +160,19 @@ BEGIN
     FROM   images_storage_domain_view
     JOIN   vm_checkpoint_disk_map on vm_checkpoint_disk_map.disk_id = images_storage_domain_view.image_group_id
     WHERE  images_storage_domain_view.active AND vm_checkpoint_disk_map.checkpoint_id = v_checkpoint_id;
+END;$PROCEDURE$
+LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION IsDiskIncludedInCheckpoint (v_disk_id UUID)
+RETURNS SETOF booleanResultType STABLE
+    AS $PROCEDURE$
+BEGIN
+    RETURN QUERY
+
+    SELECT EXISTS (
+            SELECT 1
+            FROM vm_checkpoint_disk_map
+            WHERE disk_id = v_disk_id
+           );
 END;$PROCEDURE$
 LANGUAGE plpgsql;

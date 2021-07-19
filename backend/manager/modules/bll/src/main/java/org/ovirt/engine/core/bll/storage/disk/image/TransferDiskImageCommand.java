@@ -1,8 +1,5 @@
 package org.ovirt.engine.core.bll.storage.disk.image;
 
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -31,6 +28,7 @@ import org.ovirt.engine.core.bll.validator.storage.DiskValidator;
 import org.ovirt.engine.core.bll.validator.storage.StorageDomainValidator;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.VdcObjectType;
+import org.ovirt.engine.core.common.action.ActionParametersBase;
 import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.AddDiskParameters;
@@ -43,12 +41,15 @@ import org.ovirt.engine.core.common.businessentities.StorageDomain;
 import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VmBackup;
+import org.ovirt.engine.core.common.businessentities.VmBackupPhase;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.ImageStatus;
+import org.ovirt.engine.core.common.businessentities.storage.ImageTicket;
 import org.ovirt.engine.core.common.businessentities.storage.ImageTicketInformation;
 import org.ovirt.engine.core.common.businessentities.storage.ImageTransfer;
 import org.ovirt.engine.core.common.businessentities.storage.ImageTransferBackend;
 import org.ovirt.engine.core.common.businessentities.storage.ImageTransferPhase;
+import org.ovirt.engine.core.common.businessentities.storage.TimeoutPolicyType;
 import org.ovirt.engine.core.common.businessentities.storage.TransferType;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeType;
@@ -82,27 +83,17 @@ import org.ovirt.engine.core.dao.VdsDao;
 import org.ovirt.engine.core.dao.VmBackupDao;
 import org.ovirt.engine.core.dao.VmDao;
 import org.ovirt.engine.core.utils.EngineLocalConfig;
-import org.ovirt.engine.core.utils.JsonHelper;
-import org.ovirt.engine.core.utils.crypt.EngineEncryptionUtils;
-import org.ovirt.engine.core.uutils.crypto.ticket.TicketEncoder;
-import org.ovirt.engine.core.uutils.net.HttpURLConnectionBuilder;
+import org.ovirt.engine.core.utils.ReplacementUtils;
 import org.ovirt.engine.core.vdsbroker.vdsbroker.PrepareImageReturn;
 
 @NonTransactiveCommandAttribute
 public class TransferDiskImageCommand<T extends TransferDiskImageParameters> extends BaseImagesCommand<T> implements QuotaStorageDependent {
-    // Some token/"claim" names are from RFC 7519 on JWT
-    private static final String TOKEN_NOT_BEFORE = "nbf";
-    private static final String TOKEN_EXPIRATION = "exp";
-    private static final String TOKEN_ISSUED_AT = "iat";
-    private static final String TOKEN_IMAGED_HOST_URI = "imaged-uri";
-    private static final String TOKEN_TRANSFER_TICKET = "transfer-ticket";
-    private static final String TOKEN_TRANSFER_ID = "transfer-id";
     private static final boolean LEGAL_IMAGE = true;
     private static final boolean ILLEGAL_IMAGE = false;
-    private static final String HTTP_SCHEME = "http://";
+    private static final int PROXY_DATA_PORT = 54323;
+    private static final int PROXY_CONTROL_PORT = 54324;
     private static final String HTTPS_SCHEME = "https://";
     private static final String IMAGES_PATH = "/images";
-    private static final String TICKETS_PATH = "/tickets/";
     private static final String FILE_URL_SCHEME = "file://";
     private static final String IMAGE_TYPE = "disk";
 
@@ -130,6 +121,10 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
     @Typed(TransferImageCommandCallback.class)
     private Instance<TransferImageCommandCallback> callbackProvider;
 
+    private ImageioClient proxyClient;
+    private VmBackup backup;
+    private VM backupVm;
+
     public TransferDiskImageCommand(T parameters, CommandContext cmdContext) {
         super(parameters, cmdContext);
     }
@@ -152,13 +147,13 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
     }
 
     protected String prepareImage(Guid vdsId, Guid imagedTicketId) {
-        if (getParameters().getBackupId() != null) {
+        if (isLiveBackup()) {
             return vmBackupDao.getBackupUrlForDisk(
                     getParameters().getBackupId(), getDiskImage().getId());
         }
         VDSReturnValue vdsRetVal = runVdsCommand(VDSCommandType.PrepareImage,
                     getPrepareParameters(vdsId));
-        if (getTransferBackend() == ImageTransferBackend.NBD) {
+        if (usingNbdServer()) {
             vdsRetVal = runVdsCommand(VDSCommandType.StartNbdServer,
                     getStartNbdServerParameters(vdsId, imagedTicketId));
             return (String) vdsRetVal.getReturnValue();
@@ -177,8 +172,8 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
                 validate(diskValidator.isDiskExists())
                 && validate(diskImagesValidator.diskImagesNotIllegal())
                 && validate(storageDomainValidator.isDomainExistAndActive());
-        if (getParameters().getBackupId() != null) {
-            return isValid && validate(isVmBackupExists()) && validate(isFormatApplicableForBackup());
+        if (isBackup()) {
+            return isValid && validate(isVmBackupReady()) && validate(isFormatApplicableForBackup());
         }
         return isValid
                 && validateActiveDiskPluggedToAnyNonDownVm(diskImage, diskValidator)
@@ -189,10 +184,13 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
         return diskImage.isDiskSnapshot() || validate(diskValidator.isDiskPluggedToAnyNonDownVm(false));
     }
 
-    private ValidationResult isVmBackupExists() {
-        VmBackup vmBackup = vmBackupDao.get(getParameters().getBackupId());
-        if (vmBackup == null) {
+    private ValidationResult isVmBackupReady() {
+        if (getBackup() == null) {
             return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_BACKUP_NOT_EXIST);
+        }
+        if (!getBackup().getPhase().equals(VmBackupPhase.READY)) {
+            return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_BACKUP_NOT_READY,
+                    ReplacementUtils.createSetVariableString("vmBackupPhase", getBackup().getPhase()));
         }
         return ValidationResult.VALID;
     }
@@ -224,14 +222,24 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
                 getDiskImage().getImageId(), true);
     }
 
+    private Guid getBitmap() {
+        if (getParameters().getTransferType() == TransferType.Download
+                && getBackupVm() != null && getBackupVm().isDown()) {
+            return getBackup().getFromCheckpointId();
+        }
+        return null;
+    }
+
     private NbdServerVDSParameters getStartNbdServerParameters(Guid vdsId, Guid imagedTicketId) {
         NbdServerVDSParameters nbdServerVDSParameters = new NbdServerVDSParameters(vdsId);
         nbdServerVDSParameters.setServerId(imagedTicketId);
         nbdServerVDSParameters.setStorageDomainId(getParameters().getStorageDomainId());
         nbdServerVDSParameters.setImageId(getDiskImage().getId());
         nbdServerVDSParameters.setVolumeId(getDiskImage().getImageId());
-        nbdServerVDSParameters.setReadonly(false);
+        nbdServerVDSParameters.setReadonly(getParameters().getTransferType() == TransferType.Download);
         nbdServerVDSParameters.setDiscard(isSparseImage());
+        nbdServerVDSParameters.setBackingChain(!getParameters().isShallow());
+        nbdServerVDSParameters.setBitmap(getBitmap());
         return nbdServerVDSParameters;
     }
 
@@ -300,6 +308,7 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
         diskParameters.setParentParameters(getParameters());
         diskParameters.setShouldRemainIllegalOnFailedExecution(true);
         diskParameters.setSkipDomainCheck(true);
+        diskParameters.setEndProcedure(ActionParametersBase.EndProcedure.COMMAND_MANAGED);
         return diskParameters;
     }
 
@@ -327,6 +336,20 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
             diskImage = (DiskImage) diskDao.get(getParameters().getImageGroupID());
         }
         return diskImage;
+    }
+
+    private VmBackup getBackup() {
+        if (backup == null) {
+            backup = vmBackupDao.get(getParameters().getBackupId());
+        }
+        return backup;
+    }
+
+    private VM getBackupVm() {
+        if (backupVm == null && getBackup() != null) {
+            backupVm = vmDao.get(getBackup().getVmId());
+        }
+        return backupVm;
     }
 
     @Override
@@ -363,7 +386,7 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
     @Override
     protected Map<String, Pair<String, String>> getSharedLocks() {
         Map<String, Pair<String, String>> locks = new HashMap<>();
-        if (getParameters().getBackupId() != null) {
+        if (isBackup()) {
             // StartVmBackup should handle locks
             return locks;
         }
@@ -378,7 +401,7 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
     @Override
     protected Map<String, Pair<String, String>> getExclusiveLocks() {
         Map<String, Pair<String, String>> locks = new HashMap<>();
-        if (getParameters().getBackupId() != null) {
+        if (isBackup()) {
             // StartVmBackup should handle locks
             return locks;
         }
@@ -391,7 +414,7 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
 
     @Override
     protected void executeCommand() {
-        log.info("Creating ImageTransfer entity for command '{}'", getCommandId());
+        log.info("Creating ImageTransfer entity for command '{}', proxyEnabled: {}", getCommandId(), proxyEnabled());
         ImageTransfer entity = new ImageTransfer(getCommandId());
         entity.setCommandType(getActionType());
         entity.setPhase(ImageTransferPhase.INITIALIZING);
@@ -402,9 +425,13 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
         entity.setClientInactivityTimeout(getParameters().getClientInactivityTimeout() != null ?
                 getParameters().getClientInactivityTimeout() :
                 getTransferImageClientInactivityTimeoutInSeconds());
+        entity.setTimeoutPolicy(getParameters().getTimeoutPolicyType() != null ?
+                getParameters().getTimeoutPolicyType() : TimeoutPolicyType.LEGACY);
         entity.setImageFormat(getTransferImageFormat());
         entity.setBackend(getTransferBackend());
         entity.setBackupId(getParameters().getBackupId());
+        entity.setTransferClientType(getParameters().getTransferClientType());
+        entity.setShallow(getParameters().isShallow());
         imageTransferDao.save(entity);
 
         if (isImageProvided()) {
@@ -439,7 +466,7 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
     }
 
     protected ImageTransferBackend getTransferBackend() {
-        if (getParameters().getBackupId() != null) {
+        if (isBackup()) {
             // Incremental backup uses NBD transfer backend
             return ImageTransferBackend.NBD;
         }
@@ -559,7 +586,7 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
         getParameters().setStorageDomainId(domainId);
         getParameters().setDestinationImageId(image.getImageId());
 
-        // ovirt-imageio-daemon must know the boundaries of the target image for writing permissions.
+        // imageio server limits access to range 0-size.
         getParameters().setTransferSize(getTransferSize());
 
         persistCommand(getParameters().getParentCommand(), true);
@@ -627,7 +654,7 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
             throw new RuntimeException(String.format(
                     "Invalid volume format: %s", image.getVolumeFormat()));
         } else if (getParameters().getTransferType() == TransferType.Upload) {
-            if (getParameters().isTransferringViaBrowser()) {
+            if (getParameters().getTransferClientType().isBrowserTransfer()) {
                 return getParameters().getTransferSize();
             }
             if (image.getVolumeFormat() == VolumeFormat.RAW) {
@@ -788,12 +815,6 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
         // If stopping the session did not succeed, don't change the transfer state.
         if (stopImageTransferSession(context.entity)) {
             Guid transferingVdsId = context.entity.getVdsId();
-            Guid imageTicketId = context.entity.getImagedTicketId();
-
-            // Stopping NBD server if necessary
-            if (getTransferBackend() == ImageTransferBackend.NBD) {
-                stopNbdServer(transferingVdsId, imageTicketId);
-            }
 
             // Verify image is relevant only on upload
             if (getParameters().getTransferType() == TransferType.Download) {
@@ -857,29 +878,24 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
         } else {
             log.info("Cleaning up after cancelled transfer. {}", getTransferDescription());
         }
-        stopImageTransferSession(context.entity);
 
-        // Stopping NBD server if necessary
-        if (getTransferBackend() == ImageTransferBackend.NBD) {
-            stopNbdServer(context.entity.getVdsId(), context.entity.getImagedTicketId());
-        }
-
-        // Setting disk status to ILLEGAL only on upload failure
-        // (only if not disk snapshot)
-        if (!Guid.isNullOrEmpty(getParameters().getImageGroupID())) {
+        // If stopping the session did not succeed, don't change the transfer state.
+        // TODO: refactor to reuse similar logic in handleFinalizingSuccess
+        if (stopImageTransferSession(context.entity)) {
+            // Setting disk status to ILLEGAL only on upload failure
             setImageStatus(getParameters().getTransferType() == TransferType.Upload ?
                     ImageStatus.ILLEGAL : ImageStatus.OK);
-        }
-        Guid vdsId = context.entity.getVdsId() != null ? context.entity.getVdsId() : getVdsId();
-        // Teardown is required for all scenarios as we call prepareImage when
-        // starting a new session.
-        tearDownImage(vdsId, context.entity.getBackupId());
-        if (failure) {
-            updateEntityPhase(ImageTransferPhase.FINISHED_FAILURE);
-            setAuditLogTypeFromPhase(ImageTransferPhase.FINISHED_FAILURE);
-        } else {
-            updateEntityPhase(ImageTransferPhase.FINISHED_CLEANUP);
-            setAuditLogTypeFromPhase(ImageTransferPhase.FINISHED_CLEANUP);
+            Guid vdsId = context.entity.getVdsId() != null ? context.entity.getVdsId() : getVdsId();
+            // Teardown is required for all scenarios as we call prepareImage when
+            // starting a new session.
+            tearDownImage(vdsId, context.entity.getBackupId());
+            if (failure) {
+                updateEntityPhase(ImageTransferPhase.FINISHED_FAILURE);
+                setAuditLogTypeFromPhase(ImageTransferPhase.FINISHED_FAILURE);
+            } else {
+                updateEntityPhase(ImageTransferPhase.FINISHED_CLEANUP);
+                setAuditLogTypeFromPhase(ImageTransferPhase.FINISHED_CLEANUP);
+            }
         }
     }
 
@@ -908,14 +924,25 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
      */
     private void stopTransferIfNecessary(ImageTransfer entity, long ts, Integer idleTimeFromTicket) {
         if (shouldAbortOnClientInactivityTimeout(entity, ts, idleTimeFromTicket)) {
-            if (getParameters().getTransferType() == TransferType.Download) {
-                // In download flows, we can cancel the transfer if there was no activity
-                // for a while, as the download is handled by the client.
-                auditLog(this, AuditLogType.DOWNLOAD_IMAGE_CANCELED_TIMEOUT);
+            switch (entity.getTimeoutPolicy()) {
+            case LEGACY:
+                if (getParameters().getTransferType() == TransferType.Download) {
+                    // In download flows, we can cancel the transfer if there was no activity
+                    // for a while, as the download is handled by the client.
+                    auditLog(this, AuditLogType.DOWNLOAD_IMAGE_CANCELED_TIMEOUT);
+                    updateEntityPhase(ImageTransferPhase.CANCELLED_SYSTEM);
+                } else {
+                    updateEntityPhaseToStoppedBySystem(AuditLogType.UPLOAD_IMAGE_PAUSED_BY_SYSTEM_TIMEOUT);
+                }
+                break;
+            case PAUSE:
+                auditLog(this, AuditLogType.TRANSFER_IMAGE_PAUSED_ON_TIMEOUT);
+                updateEntityPhase(ImageTransferPhase.PAUSED_SYSTEM);
+                break;
+            case CANCEL:
+                auditLog(this, AuditLogType.TRANSFER_IMAGE_CANCELED_ON_TIMEOUT);
                 updateEntityPhase(ImageTransferPhase.CANCELLED_SYSTEM);
-            } else {
-                updateEntityPhaseToStoppedBySystem(
-                        AuditLogType.UPLOAD_IMAGE_PAUSED_BY_SYSTEM_TIMEOUT);
+                break;
             }
         }
     }
@@ -959,78 +986,120 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
             return;
         }
         Guid imagedTicketId = Guid.newGuid();
-
-        // Create the signed ticket first because we can just throw it away if we fail to start the image
-        // transfer session.  The converse would require us to close the transfer session on failure.
-        String signedTicket = createSignedTicket(getVds(), imagedTicketId);
-        if (signedTicket == null) {
-            log.error("Failed to create a signed image ticket");
-            updateEntityPhaseToStoppedBySystem(
-                    AuditLogType.TRANSFER_IMAGE_STOPPED_BY_SYSTEM_FAILED_TO_CREATE_TICKET);
+        String imagePath;
+        try {
+            imagePath = prepareImage(getVdsId(), imagedTicketId);
+        } catch (Exception e) {
+            log.error("Failed to prepare image for transfer session: {}", e.getMessage(), e);
             return;
         }
 
-        long timeout = getHostTicketLifetime();
-        if (!addImageTicketToDaemon(imagedTicketId, timeout)) {
-            log.error("Failed to add image ticket to ovirt-imageio-daemon");
+        if (!addImageTicketToDaemon(imagedTicketId, imagePath)) {
+            log.error("Failed to add host image ticket");
             updateEntityPhaseToStoppedBySystem(
                     AuditLogType.TRANSFER_IMAGE_STOPPED_BY_SYSTEM_FAILED_TO_ADD_TICKET_TO_DAEMON);
             return;
         }
-        if (!addImageTicketToProxy(imagedTicketId, signedTicket)) {
-            log.error("Failed to add image ticket to ovirt-imageio-proxy");
-            if (getParameters().isTransferringViaBrowser()) {
-                updateEntityPhaseToStoppedBySystem(
-                        AuditLogType.TRANSFER_IMAGE_STOPPED_BY_SYSTEM_FAILED_TO_ADD_TICKET_TO_PROXY);
-                return;
+
+        if (proxyEnabled()) {
+            if (!addImageTicketToProxy(imagedTicketId, getImageDaemonUri(getVds().getHostName()))) {
+                log.error("Failed to add proxy image ticket");
+                if (getParameters().getTransferClientType().isBrowserTransfer()) {
+                    updateEntityPhaseToStoppedBySystem(
+                            AuditLogType.TRANSFER_IMAGE_STOPPED_BY_SYSTEM_FAILED_TO_ADD_TICKET_TO_PROXY);
+                    return;
+                }
+                // No need to stop the transfer - API client can use the daemon url directly.
+                auditLog(this, AuditLogType.TRANSFER_FAILED_TO_ADD_TICKET_TO_PROXY);
             }
-            // No need to stop the transfer - API client can use the daemon url directly.
-            auditLog(this, AuditLogType.TRANSFER_FAILED_TO_ADD_TICKET_TO_PROXY);
         }
+
+        log.info("Started transfer session with transfer id {}, timeout {} seconds",
+                getParameters().getCommandId().toString(), getClientTicketLifetime());
 
         ImageTransfer updates = new ImageTransfer();
         updates.setVdsId(getVdsId());
         updates.setImagedTicketId(imagedTicketId);
         updates.setProxyUri(getProxyUri() + IMAGES_PATH);
         updates.setDaemonUri(getImageDaemonUri(getVds().getHostName()) + IMAGES_PATH);
-        updates.setSignedTicket(signedTicket);
         updateEntity(updates);
 
-        setNewSessionExpiration(timeout);
+        setNewSessionExpiration(getClientTicketLifetime());
         updateEntityPhase(ImageTransferPhase.TRANSFERRING);
     }
 
-    private boolean addImageTicketToDaemon(Guid imagedTicketId, long timeout) {
-        String imagePath;
-        try {
-            imagePath = prepareImage(getVdsId(), imagedTicketId);
-        } catch (Exception e) {
-            log.error("Failed to prepare image for transfer session: {}", e);
-            return false;
-        }
+    private static boolean proxyEnabled() {
+        // We always use the proxy in normal deployment, but some users are
+        // still using the old unsupported all-in-one configuration, running
+        // engine and vdsm on the same host. In this configuration, the proxy
+        // must be disabled.
+        //
+        // When we don't use the proxy:
+        // - We don't add, extend or remove proxy image tickets.
+        // - ImageTransfer's proxy_url is same as transfer_url, both use the
+        //   daemon port.
+        // - The administration portal is transferring images directly to the
+        //   daemon.
+        return Config.<Boolean>getValue(ConfigValues.ImageTransferProxyEnabled);
+    }
 
+    @Override
+    protected boolean initializeVds() {
+        // In case of downloading a backup disk, the host that runs the VM must handle the transfer
+        if (isBackup() && getParameters().getTransferType() == TransferType.Download) {
+            VmBackup backup = getBackup();
+            if (backup == null) {
+                log.error("Cannot download disk: '{}'. Backup id: '{}' doesn't exist.",
+                        getDiskImage().getId(),
+                        getParameters().getBackupId());
+                return false;
+            }
+
+            if (getBackupVm() == null) {
+                log.error("Cannot download disk: '{}' for backup id: '{}', backup VM '{}' could not be found.",
+                        getDiskImage().getId(),
+                        getParameters().getBackupId(),
+                        backup.getVmId());
+                return false;
+            }
+
+            // Downloading a cold VM backup disk can be done from the host specified by the user,
+            // or from any active host otherwise.
+            if (getBackupVm().isDown()) {
+                return super.initializeVds();
+            }
+
+            VDS vds = vdsDao.get(getBackupVm().getRunOnVds());
+            if (vds == null) {
+                // Can happen when the VM crashed and Not running on any host.
+                log.warn("Cannot download disk id: '{}' backup id: '{}', the VM is down.",
+                        getDiskImage().getId(),
+                        getParameters().getBackupId());
+                return false;
+            }
+
+            setVds(vds);
+            return true;
+        }
+        return super.initializeVds();
+    }
+
+    private boolean addImageTicketToDaemon(Guid imagedTicketId, String imagePath) {
         if (getParameters().getTransferType() == TransferType.Upload &&
                 !setVolumeLegalityInStorage(ILLEGAL_IMAGE)) {
             return false;
         }
 
-        String[] transferOps = new String[] {getParameters().getTransferType().getAllowedOperation()};
-        AddImageTicketVDSCommandParameters transferCommandParams = new AddImageTicketVDSCommandParameters(getVdsId(),
-                imagedTicketId,
-                getParameters().getCommandId(),
-                transferOps,
-                timeout,
-                getParameters().getTransferSize(),
-                imagePath,
-                getParameters().getDownloadFilename(),
-                isSparseImage());
+        ImageTicket ticket = buildImageTicket(imagedTicketId, imagePath);
+        AddImageTicketVDSCommandParameters transferCommandParams =
+                new AddImageTicketVDSCommandParameters(getVdsId(), ticket);
 
         // TODO This is called from doPolling(), we should run it async (runFutureVDSCommand?)
         VDSReturnValue vdsRetVal;
         try {
             vdsRetVal = vdsBroker.runVdsCommand(VDSCommandType.AddImageTicket, transferCommandParams);
         } catch (RuntimeException e) {
-            log.error("Failed to start image transfer session: {}", e);
+            log.error("Failed to start image transfer session: {}", e.getMessage(), e);
             return false;
         }
 
@@ -1039,7 +1108,7 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
             return false;
         }
         log.info("Started transfer session with ticket id {}, timeout {} seconds",
-                imagedTicketId.toString(), timeout);
+                imagedTicketId.toString(), ticket.getTimeout());
 
         return true;
     }
@@ -1050,47 +1119,56 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
                 getStorageDomain().getStorageType().isFileDomain();
     }
 
-    private boolean addImageTicketToProxy(Guid imagedTicketId, String signedTicket) {
-        log.info("Adding image ticket to ovirt-imageio-proxy, id {}", imagedTicketId);
-        try {
-            HttpURLConnection connection = getProxyConnection(getProxyUri() + TICKETS_PATH);
-            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            connection.setRequestMethod("PUT");
-            // Send request
-            log.debug(String.format("Add image ticket to proxy request: %s", connection.toString()));
-            try (OutputStream outputStream = connection.getOutputStream()) {
-                outputStream.write(signedTicket.getBytes(StandardCharsets.UTF_8));
-                outputStream.flush();
-            }
-            int responseCode = connection.getResponseCode();
-            log.debug(String.format("Add image ticket to proxy response: code - %d, message - %s",
-                    connection.getResponseCode(), connection.getResponseMessage()));
-            if (responseCode != HttpURLConnection.HTTP_OK) {
-                throw new RuntimeException(String.format(
-                        "Request to imageio-proxy failed, response code: %s", responseCode));
-            }
-        } catch (Exception ex) {
-            log.error("Failed to add image ticket to ovirt-imageio-proxy", ex);
+    private boolean isBackup() {
+        return getParameters().getBackupId() != null;
+    }
+
+    private boolean isLiveBackup() {
+        return isBackup() && getBackupVm() != null && !getBackupVm().isDown();
+    }
+
+    private boolean isSupportsDirtyExtents() {
+        if (!isBackup() || getParameters().getTransferType() != TransferType.Download) {
             return false;
         }
+        VmBackup backup = getBackup();
+        return backup != null && backup.isIncremental();
+    }
+
+    private boolean usingNbdServer() {
+        return !isLiveBackup() && getTransferBackend() == ImageTransferBackend.NBD;
+    }
+
+    private boolean addImageTicketToProxy(Guid imagedTicketId, String hostUri) {
+        // ToDo: move formatting to an helper for reuse in ImageTransfer
+        String url = String.format("%s%s/%s", hostUri, IMAGES_PATH, imagedTicketId);
+        ImageTicket imageTicket = buildImageTicket(imagedTicketId, url);
+
+        log.info("Adding proxy image ticket, id {}", imagedTicketId);
+        try {
+            getProxyClient().putTicket(imageTicket);
+        } catch (RuntimeException e) {
+            log.error("Failed to add proxy image ticket: {}", e.getMessage(), e);
+            return false;
+        }
+
         return true;
     }
 
-    private HttpURLConnection getProxyConnection(String url) {
-        try {
-            HttpURLConnectionBuilder builder = new HttpURLConnectionBuilder().setURL(url);
-            // Set SSL details
-            builder.setTrustStore(EngineLocalConfig.getInstance().getHttpsPKITrustStore().getAbsolutePath())
-                    .setTrustStorePassword(EngineLocalConfig.getInstance().getHttpsPKITrustStorePassword())
-                    .setTrustStoreType(EngineLocalConfig.getInstance().getHttpsPKITrustStoreType())
-                    .setHttpsProtocol(Config.getValue(ConfigValues.ExternalCommunicationProtocol));
-            HttpURLConnection connection = builder.create();
-            connection.setDoOutput(true);
-            return connection;
-        } catch (Exception ex) {
-            throw new RuntimeException(String.format(
-                    "Failed to communicate with ovirt-imageio-proxy: %s", ex.getMessage()));
-        }
+    private ImageTicket buildImageTicket(Guid ticketId, String ticketUrl) {
+        ImageTicket ticket = new ImageTicket();
+
+        ticket.setId(ticketId);
+        ticket.setTimeout(getClientTicketLifetime());
+        ticket.setSize(getParameters().getTransferSize());
+        ticket.setUrl(ticketUrl);
+        ticket.setTransferId(getParameters().getCommandId().toString());
+        ticket.setFilename(getParameters().getDownloadFilename());
+        ticket.setSparse(isSparseImage());
+        ticket.setDirty(isSupportsDirtyExtents());
+        ticket.setOps(new String[] {getParameters().getTransferType().getAllowedOperation()});
+
+        return ticket;
     }
 
     private boolean setVolumeLegalityInStorage(boolean legal) {
@@ -1128,16 +1206,15 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
 
         long timeout = getHostTicketLifetime();
         Guid resourceId = entity.getImagedTicketId();
-        ExtendImageTicketVDSCommandParameters
-                transferCommandParams = new ExtendImageTicketVDSCommandParameters(entity.getVdsId(),
-                entity.getImagedTicketId(), timeout);
 
-        // TODO This is called from doPolling(), we should run it async (runFutureVDSCommand?)
+        // Send extend ticket request to vdsm
+        ExtendImageTicketVDSCommandParameters transferCommandParams =
+                new ExtendImageTicketVDSCommandParameters(entity.getVdsId(), entity.getImagedTicketId(), timeout);
         VDSReturnValue vdsRetVal;
         try {
             vdsRetVal = vdsBroker.runVdsCommand(VDSCommandType.ExtendImageTicket, transferCommandParams);
         } catch (RuntimeException e) {
-            log.error("Failed to extend image transfer session for ticket '{}': {}",
+            log.error("Failed to extend host image ticket '{}': {}",
                     resourceId.toString(), e);
             return false;
         }
@@ -1148,6 +1225,20 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
         }
         log.info("Transfer session with ticket id {} extended, timeout {} seconds",
                 resourceId.toString(), timeout);
+
+        // Send extend ticket request to proxy
+        if (proxyEnabled()) {
+            try {
+                getProxyClient().extendTicket(resourceId, timeout);
+            } catch (RuntimeException e) {
+                log.error("Failed to extend proxy image ticket: {}", e.getMessage(), e);
+                if (getParameters().getTransferClientType().isBrowserTransfer()) {
+                    updateEntityPhaseToStoppedBySystem(
+                            AuditLogType.TRANSFER_IMAGE_STOPPED_BY_SYSTEM_FAILED_TO_ADD_TICKET_TO_PROXY);
+                    return false;
+                }
+            }
+        }
 
         setNewSessionExpiration(timeout);
         return true;
@@ -1164,13 +1255,22 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
             return false;
         }
 
+        // If we failed to remove the ticket from the daemon, we must fail and
+        // retry the operation again.
         if (!removeImageTicketFromDaemon(entity.getImagedTicketId(), entity.getVdsId())) {
             return false;
         }
-        if (!removeImageTicketFromProxy(entity.getImagedTicketId())) {
-            // ignoring when we are not uploading using the browser which
-            // always uses the proxy url.
-            return !getParameters().isTransferringViaBrowser();
+
+        // Do not fail if removing proxy ticket fails. Once we remove the host
+        // ticket, the proxy ticket cannot be used anyway. In the worst case we
+        // are left with proxy ticket that allow access to non-existing URL.
+        if (proxyEnabled()) {
+            removeImageTicketFromProxy(entity.getImagedTicketId());
+        }
+
+        // Stopping NBD server if necessary
+        if (usingNbdServer()) {
+            stopNbdServer(entity.getVdsId(), entity.getImagedTicketId());
         }
 
         ImageTransfer updates = new ImageTransfer();
@@ -1198,57 +1298,15 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
     }
 
     private boolean removeImageTicketFromProxy(Guid imagedTicketId) {
-        log.info("Removing image ticket from ovirt-imageio-proxy, id {}", imagedTicketId);
+        // Send DELETE request
         try {
-            HttpURLConnection connection = getProxyConnection(getProxyUri() + TICKETS_PATH + imagedTicketId);
-            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            connection.setRequestMethod("DELETE");
-            connection.connect();
-            int responseCode = connection.getResponseCode();
-            if (responseCode != HttpURLConnection.HTTP_NO_CONTENT) {
-                throw new RuntimeException(String.format(
-                        "Request to imageio-proxy failed, response code: %s", responseCode));
-            }
-        } catch (Exception ex) {
-            log.error("Failed to remove image ticket from ovirt-imageio-proxy", ex.getMessage());
+            log.info("Removing proxy image ticket, id {}", imagedTicketId);
+            getProxyClient().deleteTicket(imagedTicketId);
+        } catch (RuntimeException e) {
+            log.error("Failed to remove proxy image ticket: {}", e.getMessage(), e);
             return false;
         }
         return true;
-    }
-
-    private String createSignedTicket(VDS vds, Guid transferToken) {
-        String ticket;
-
-        Map<String, Object> elements = new HashMap<>();
-        long ts = System.currentTimeMillis() / 1000;
-        elements.put(TOKEN_NOT_BEFORE, ts);
-        elements.put(TOKEN_ISSUED_AT, ts);
-        elements.put(TOKEN_EXPIRATION, ts + getClientTicketLifetime());
-        elements.put(TOKEN_IMAGED_HOST_URI, getImageDaemonUri(vds.getHostName()));
-        elements.put(TOKEN_TRANSFER_TICKET, transferToken.toString());
-        elements.put(TOKEN_TRANSFER_ID, getParameters().getCommandId().toString());
-
-        String payload;
-        try {
-            payload = JsonHelper.mapToJson(elements);
-        } catch (Exception e) {
-            log.error("Failed to create JSON payload for signed ticket", e);
-            return null;
-        }
-        log.debug("Signed ticket payload: {}", payload);
-
-        try {
-            ticket = new TicketEncoder(
-                    EngineEncryptionUtils.getPrivateKeyEntry().getCertificate(),
-                    EngineEncryptionUtils.getPrivateKeyEntry().getPrivateKey(),
-                    getClientTicketLifetime()
-            ).encode(payload);
-        } catch (Exception e) {
-            log.error("Failed to encode ticket for image transfer", e);
-            return null;
-        }
-
-        return ticket;
     }
 
     private void updateEntityPhase(ImageTransferPhase phase) {
@@ -1294,13 +1352,16 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
         return Config.<Integer>getValue(ConfigValues.TransferImageClientInactivityTimeoutInSeconds);
     }
 
-    private String getProxyUri() {
-        String scheme = Config.<Boolean> getValue(ConfigValues.ImageProxySSLEnabled)?  HTTPS_SCHEME : HTTP_SCHEME;
-        String address = Config.getValue(ConfigValues.ImageProxyAddress);
-        return scheme + address;
+    public static String getProxyUri() {
+        String engineHost = EngineLocalConfig.getInstance().getHost();
+        if (proxyEnabled()) {
+            return HTTPS_SCHEME + engineHost + ":" + PROXY_DATA_PORT;
+        } else {
+            return getImageDaemonUri(engineHost);
+        }
     }
 
-    private String getImageDaemonUri(String daemonHostname) {
+    private static String getImageDaemonUri(String daemonHostname) {
         String port = Config.getValue(ConfigValues.ImageDaemonPort);
         return HTTPS_SCHEME + daemonHostname + ":" + port;
     }
@@ -1340,6 +1401,13 @@ public class TransferDiskImageCommand<T extends TransferDiskImageParameters> ext
                 getImageAlias(),
                 getDiskImage().getId(),
                 getDiskImage().getImageId());
+    }
+
+    private ImageioClient getProxyClient() {
+        if (proxyClient == null) {
+            proxyClient = new ImageioClient("localhost", PROXY_CONTROL_PORT);
+        }
+        return proxyClient;
     }
 
     public void onSucceeded() {

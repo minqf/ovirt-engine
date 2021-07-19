@@ -18,7 +18,6 @@ import org.ovirt.engine.api.model.Cpu;
 import org.ovirt.engine.api.model.CpuTopology;
 import org.ovirt.engine.api.model.Display;
 import org.ovirt.engine.api.model.ExternalHostProvider;
-import org.ovirt.engine.api.model.ExternalNetworkProviderConfiguration;
 import org.ovirt.engine.api.model.ExternalStatus;
 import org.ovirt.engine.api.model.HardwareInformation;
 import org.ovirt.engine.api.model.Hook;
@@ -122,17 +121,6 @@ public class HostMapper {
             mapOperatingSystem(model.getOs(), entity);
         }
 
-        if (model.isSetExternalNetworkProviderConfigurations()
-                && model.getExternalNetworkProviderConfigurations().isSetExternalNetworkProviderConfigurations()) {
-            List<ExternalNetworkProviderConfiguration> externalProviders =
-                    model.getExternalNetworkProviderConfigurations().getExternalNetworkProviderConfigurations();
-            if (externalProviders.size() > 0) {
-                // Ignore everything but the first external provider, because engine's VdsStatic currently supports
-                // only a single external network provider
-                String providerId = externalProviders.get(0).getExternalNetworkProvider().getId();
-                entity.setOpenstackNetworkProviderId(providerId == null ? null : GuidUtils.asGuid(providerId));
-            }
-        }
         return entity;
     }
 
@@ -156,6 +144,9 @@ public class HostMapper {
         }
         if (model.isSetFingerprint()) {
             entity.setSshKeyFingerprint(model.getFingerprint());
+        }
+        if (model.isSetPublicKey()) {
+            entity.setSshPublicKey(model.getPublicKey());
         }
         return entity;
     }
@@ -347,6 +338,8 @@ public class HostMapper {
             model.getCertificate().setOrganization(subject.split(",")[0].replace("O=", ""));
         }
 
+        model.setReinstallationRequired(entity.getStaticData().isReinstallRequired());
+
         return model;
     }
 
@@ -413,6 +406,7 @@ public class HostMapper {
         model.setUser(new User());
         model.getUser().setUserName(entity.getSshUsername());
         model.setFingerprint(entity.getSshKeyFingerprint());
+        model.setPublicKey(entity.getSshPublicKey());
         return model;
     }
 
@@ -552,6 +546,9 @@ public class HostMapper {
             if (action.getSsh().isSetFingerprint()) {
                 params.getvds().setSshKeyFingerprint(action.getSsh().getFingerprint());
             }
+            if (action.getSsh().isSetPublicKey()){
+                params.getvds().setSshPublicKey(action.getSsh().getPublicKey());
+            }
             if (action.getSsh().isSetAuthenticationMethod()) {
                 params.setAuthMethod(mapSshAuthenticationMethod(action.getSsh().getAuthenticationMethod()));
             }
@@ -585,6 +582,10 @@ public class HostMapper {
             if (host.getSsh().isSetFingerprint()) {
                 params.getvds().setSshKeyFingerprint(host.getSsh().getFingerprint());
             }
+            if (host.getSsh().isSetPublicKey()){
+                params.getvds().setSshPublicKey(host.getSsh().getPublicKey());
+            }
+
             if (host.getSsh().isSetAuthenticationMethod()) {
                 params.setAuthMethod(mapSshAuthenticationMethod(host.getSsh().getAuthenticationMethod()));
             }

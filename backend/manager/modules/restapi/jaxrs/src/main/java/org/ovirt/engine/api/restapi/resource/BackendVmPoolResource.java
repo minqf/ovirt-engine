@@ -127,11 +127,11 @@ public class BackendVmPoolResource
                                                 vm.getVmtGuid().toString());
                 vm.getStaticData().setMemSizeMb(template.getMemSizeMb());
                 vm.getStaticData().setMaxMemorySizeMb(template.getMaxMemorySizeMb());
-                vm.getStaticData().setSingleQxlPci(template.getSingleQxlPci());
                 vm.getStaticData().setOsId(template.getOsId());
                 vm.getStaticData().setDefaultDisplayType(template.getDefaultDisplayType());
                 vm.getStaticData().setMigrationSupport(template.getMigrationSupport());
                 vm.getStaticData().setMultiQueuesEnabled(template.isMultiQueuesEnabled());
+                vm.getStaticData().setVirtioScsiMultiQueuesEnabled(template.isVirtioScsiMultiQueuesEnabled());
                 if (vm.getVmInit() == null) {
                     vm.setVmInit(template.getVmInit());
                 }

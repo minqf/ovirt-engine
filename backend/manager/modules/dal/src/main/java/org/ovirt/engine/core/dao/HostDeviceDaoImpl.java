@@ -55,7 +55,8 @@ public class HostDeviceDaoImpl extends MassOperationsGenericDao<HostDevice, Host
                 .addValue("driver", entity.getDriver())
                 .addValue("is_assignable", entity.isAssignable())
                 .addValue("address", SerializationFactory.getSerializer().serialize(entity.getAddress()))
-                .addValue("block_path", entity.getBlockPath());
+                .addValue("block_path", entity.getBlockPath())
+                .addValue("hostdev_spec_params", SerializationFactory.getSerializer().serialize(entity.getSpecParams()));
     }
 
     @Override
@@ -132,6 +133,13 @@ public class HostDeviceDaoImpl extends MassOperationsGenericDao<HostDevice, Host
     }
 
     @Override
+    public List<HostDeviceView> getUsedScsiDevicesByHostId(Guid hostId) {
+        return getCallsHandler().executeReadList("GetUsedScsiDevicesByHostId",
+                ExtendedHostDeviceRowMapper.instance,
+                getCustomMapSqlParameterSource().addValue("host_id", hostId));
+    }
+
+    @Override
     public void cleanDownVms() {
         getCallsHandler().executeModification("CleanDownVms",
                 getCustomMapSqlParameterSource());
@@ -156,7 +164,7 @@ public class HostDeviceDaoImpl extends MassOperationsGenericDao<HostDevice, Host
                     String[] mdevNames = mdevs.split(",");
                     List<MDevType> mdevTypes = new ArrayList<>();
                     for (String mdevName : mdevNames) {
-                        mdevTypes.add(new MDevType(mdevName, null, null));
+                        mdevTypes.add(new MDevType(mdevName, null, null, null));
                     }
                     device.setMdevTypes(mdevTypes);
                 }
@@ -175,7 +183,8 @@ public class HostDeviceDaoImpl extends MassOperationsGenericDao<HostDevice, Host
             device.setVmId(getGuid(rs, "vm_id"));
             device.setDriver(rs.getString("driver"));
             device.setBlockPath(rs.getString("block_path"));
-
+            device.setSpecParams(SerializationFactory.getDeserializer()
+                    .deserializeOrCreateNew(rs.getString("hostdev_spec_params"), HashMap.class));
         }
     }
 

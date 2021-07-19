@@ -52,12 +52,14 @@ import org.ovirt.engine.core.common.asynctasks.EntityInfo;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
 import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.BootSequence;
+import org.ovirt.engine.core.common.businessentities.DisplayType;
 import org.ovirt.engine.core.common.businessentities.GraphicsInfo;
 import org.ovirt.engine.core.common.businessentities.GraphicsType;
 import org.ovirt.engine.core.common.businessentities.InitializationType;
 import org.ovirt.engine.core.common.businessentities.Snapshot;
 import org.ovirt.engine.core.common.businessentities.Snapshot.SnapshotType;
 import org.ovirt.engine.core.common.businessentities.StorageDomain;
+import org.ovirt.engine.core.common.businessentities.UsbPolicy;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VMStatus;
 import org.ovirt.engine.core.common.businessentities.VdsNumaNode;
@@ -68,6 +70,7 @@ import org.ovirt.engine.core.common.businessentities.VmPayload;
 import org.ovirt.engine.core.common.businessentities.VmPool;
 import org.ovirt.engine.core.common.businessentities.VmPoolType;
 import org.ovirt.engine.core.common.businessentities.VmRngDevice;
+import org.ovirt.engine.core.common.businessentities.VmType;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.ImageFileType;
@@ -502,9 +505,13 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
             return getVm().getIsoPath();
         }
 
-        String guestToolPath = guestToolsVersionTreatment(isoDomainListSynchronizer.getRegexToolPattern());
-        if (guestToolPath != null) {
-            return guestToolPath;
+        if (FeatureSupported.isWindowsGuestToolsSupported(getVm().getCompatibilityVersion())) {
+            // Auto-attaching WGT is removed since 4.4.
+            String guestToolPath = guestToolsVersionTreatment(isoDomainListSynchronizer.getRegexToolPattern());
+
+            if (guestToolPath != null) {
+                return guestToolPath;
+            }
         }
 
         return getVm().getIsoPath();
@@ -597,7 +604,7 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
         updateCdPath();
         // set the path for windows guest tools secondary cd-rom
         if (getParameters().isAttachWgt()) {
-            getVm().setWgtCdPath(cdPathWindowsToLinux(guestToolsVersionTreatment(getRegexVirtIoPattern())));
+            getVm().setWgtCdPath(cdPathWindowsToLinux(guestToolsVersionTreatment(vmHandler.getRegexVirtIoIsoPattern())));
         }
 
         if (!StringUtils.isEmpty(getParameters().getFloppyPath())) {
@@ -732,13 +739,6 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
         }
     }
 
-    private String getRegexVirtIoPattern() {
-        return String.format("%1$s(?<%2$s>[0-9]{1,}.[0-9])\\.(?<%3$s>[0-9]{1,})[.\\w]*.[i|I][s|S][o|O]$",
-                "virtio-win-",
-                IsoDomainListSynchronizer.TOOL_CLUSTER_LEVEL,
-                IsoDomainListSynchronizer.TOOL_VERSION);
-    }
-
     protected boolean isVmRunningOnNonDefaultVds() {
         return !getVm().getDedicatedVmForVdsList().isEmpty()
                 && !getVm().getDedicatedVmForVdsList().contains(getVm().getRunOnVds());
@@ -756,9 +756,11 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
             return;
         }
 
+        getVmManager().resetExternalDataStatus();
         fetchVmDisksFromDb();
         updateVmDevicesOnRun();
         updateGraphicsAndDisplayInfos();
+        updateUsbController();
 
         getVm().setRunAndPause(getParameters().getRunAndPause() == null ? getVm().isRunAndPause() : getParameters().getRunAndPause());
 
@@ -808,7 +810,26 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
     }
 
     protected String getEffectiveEmulatedMachine() {
-        return EmulatedMachineUtils.getEffective(getVm().getStaticData(), this::getCluster);
+        return EmulatedMachineUtils.getEffective(getVm(), this::getCluster);
+    }
+
+    private void updateUsbController() {
+        if (getVm().getClusterArch().getFamily() == ArchitectureType.ppc
+                && getVm().getUsbPolicy() == UsbPolicy.DISABLED
+                && getVm().getVmType() == VmType.HighPerformance) {
+            if (getVm().getDefaultDisplayType() != DisplayType.none) {
+                // if the VM is set with a console, let libvirt add a corresponding usb controller needed
+                // for input devices (to make the console usable)
+                getVmDeviceUtils().removeUsbControllers(getVm().getId());
+                return;
+            }
+            // otherwise, make sure that headless VM is set with disabled USB controller
+            if (!getVmDeviceUtils().isUsbControllerDisabled(getVm().getId())) {
+                getVmDeviceUtils().removeUsbControllers(getVm().getId());
+                getVmDeviceUtils().addDisableUsbControllers(getVm().getId());
+                return;
+            }
+        }
     }
 
     /**
@@ -1090,7 +1111,7 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
             return failValidation(EngineMessage.VMPAYLOAD_CDROM_OR_CLOUD_INIT_MAXIMUM_DEVICES);
         }
 
-        if (!validate(vmHandler.isCpuSupported(
+        if (getVm().getCustomCpuName() == null && !validate(vmHandler.isCpuSupported(
                 getVm().getVmOsId(),
                 getVm().getCompatibilityVersion(),
                 getCluster().getCpuName()))) {
@@ -1111,10 +1132,13 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
         }
 
         if (FeatureSupported.isBiosTypeSupported(getCluster().getCompatibilityVersion())
-                && getVm().getBiosType() != BiosType.CLUSTER_DEFAULT
                 && getVm().getBiosType() != BiosType.I440FX_SEA_BIOS
                 && getCluster().getArchitecture().getFamily() != ArchitectureType.x86) {
             return failValidation(EngineMessage.NON_DEFAULT_BIOS_TYPE_FOR_X86_ONLY);
+        }
+
+        if (isVmDuringBackup()) {
+            return failValidation(EngineMessage.ACTION_TYPE_FAILED_VM_IS_DURING_BACKUP);
         }
 
         return true;

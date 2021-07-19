@@ -16,6 +16,7 @@ import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.common.businessentities.QuotaEnforcementTypeEnum;
 import org.ovirt.engine.core.common.businessentities.storage.CinderDisk;
 import org.ovirt.engine.core.common.businessentities.storage.DiskBackup;
+import org.ovirt.engine.core.common.businessentities.storage.DiskBackupMode;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.DiskStorageType;
 import org.ovirt.engine.core.common.businessentities.storage.ImageStatus;
@@ -151,6 +152,16 @@ public class DiskImageDaoImpl extends BaseDao implements DiskImageDao {
     }
 
     @Override
+    public List<Guid> getAllMetadataAndMemoryDisksForStorageDomain(Guid storageDomainId) {
+        MapSqlParameterSource parameterSource = getCustomMapSqlParameterSource()
+                .addValue("storage_domain_id", storageDomainId);
+
+        return getCallsHandler().executeReadList("GetAllMetadataAndMemoryDisksForStorageDomain",
+                createGuidMapper(),
+                parameterSource);
+    }
+
+    @Override
     public List<DiskImage> getImagesWithNoDisk(Guid vmId) {
         MapSqlParameterSource parameterSource = getCustomMapSqlParameterSource()
                 .addValue("vm_id", vmId);
@@ -236,7 +247,9 @@ public class DiskImageDaoImpl extends BaseDao implements DiskImageDao {
             entity.setId(getGuidDefaultEmpty(rs, "image_group_id"));
             entity.setStoragePoolId(getGuid(rs, "storage_pool_id"));
             entity.setReadRate(rs.getInt("read_rate"));
+            entity.setReadOps(rs.getLong("read_ops"));
             entity.setWriteRate(rs.getInt("write_rate"));
+            entity.setWriteOps(rs.getLong("write_ops"));
             entity.setImageTransferPhase(rs.getObject("image_transfer_phase") != null
                     ? ImageTransferPhase.forValue(rs.getInt("image_transfer_phase")) : null);
             entity.setTransferType(TransferType.forValue(rs.getInt("image_transfer_type")));
@@ -257,6 +270,10 @@ public class DiskImageDaoImpl extends BaseDao implements DiskImageDao {
             entity.setDiskProfileNames(splitPreserveAllTokens(rs.getString("disk_profile_name")));
             entity.setVolumeClassification(VolumeClassification.forValue(rs.getInt("volume_classification")));
             entity.setBackup(DiskBackup.forName(rs.getString("backup")));
+            String backupMode = rs.getString("backup_mode");
+            if (!StringUtils.isEmpty(backupMode)) {
+                entity.setBackupMode(DiskBackupMode.valueOf(backupMode));
+            }
         }
 
         @Override

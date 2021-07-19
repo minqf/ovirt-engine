@@ -11,7 +11,6 @@ import java.util.stream.Collectors;
 import org.ovirt.engine.core.common.action.VdsOperationActionParameters.AuthenticationMethod;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
 import org.ovirt.engine.core.common.businessentities.Cluster;
-import org.ovirt.engine.core.common.businessentities.ExternalEntityBase;
 import org.ovirt.engine.core.common.businessentities.HostedEngineDeployConfiguration;
 import org.ovirt.engine.core.common.businessentities.Label;
 import org.ovirt.engine.core.common.businessentities.Provider;
@@ -61,7 +60,6 @@ import org.ovirt.engine.ui.uicompat.PropertyChangedEventArgs;
 import org.ovirt.engine.ui.uicompat.UIConstants;
 
 public abstract class HostModel extends Model implements HasValidatedTabs {
-    public static final int HostNameMaxLength = 255;
     public static final String BeginTestStage = "BeginTest"; //$NON-NLS-1$
     public static final String EndTestStage = "EndTest"; //$NON-NLS-1$
     public static final String RootUserName = "root"; //$NON-NLS-1$
@@ -81,16 +79,6 @@ public abstract class HostModel extends Model implements HasValidatedTabs {
     private CpuVendor lastNonNullCpuVendor;
 
     private EnableableEventListener<EventArgs> kernelCmdlineListener;
-
-    private UICommand privateUpdateHostsCommand;
-
-    public UICommand getUpdateHostsCommand() {
-        return privateUpdateHostsCommand;
-    }
-
-    private void setUpdateHostsCommand(UICommand value) {
-        privateUpdateHostsCommand = value;
-    }
 
     public boolean getIsNew() {
         return getHostId() == null;
@@ -156,14 +144,14 @@ public abstract class HostModel extends Model implements HasValidatedTabs {
         privatePkSection = value;
     }
 
-    private EntityModel<String> privateFetchSshFingerprint;
+    private EntityModel<String> privateFetchSshPublicKey;
 
-    public EntityModel<String> getFetchSshFingerprint() {
-        return privateFetchSshFingerprint;
+    public EntityModel<String> getFetchSshPublicKey(){
+        return privateFetchSshPublicKey;
     }
 
-    private void setFetchSshFingerprint(EntityModel<String> value) {
-        privateFetchSshFingerprint = value;
+    public void setFetchSshPublicKey(EntityModel<String> value){
+        this.privateFetchSshPublicKey = value;
     }
 
     private EntityModel<Integer> privateAuthSshPort;
@@ -184,6 +172,16 @@ public abstract class HostModel extends Model implements HasValidatedTabs {
 
     private void setActivateHostAfterInstall(EntityModel<Boolean> value) {
         activateHostAfterInstall = value;
+    }
+
+    private EntityModel<Boolean> rebootHostAfterInstall;
+
+    public EntityModel<Boolean> getRebootHostAfterInstall() {
+        return rebootHostAfterInstall;
+    }
+
+    private void setRebootHostAfterInstall(EntityModel<Boolean> value) {
+        rebootHostAfterInstall = value;
     }
 
     private EntityModel<String> privateUserPassword;
@@ -214,26 +212,6 @@ public abstract class HostModel extends Model implements HasValidatedTabs {
 
     private void setPublicKey(EntityModel<String> value) {
         privatePublicKey = value;
-    }
-
-    private EntityModel<String> privateProviderSearchFilterLabel;
-
-    public EntityModel<String> getProviderSearchFilterLabel() {
-        return privateProviderSearchFilterLabel;
-    }
-
-    private void setProviderSearchFilterLabel(EntityModel<String> value) {
-        privateProviderSearchFilterLabel = value;
-    }
-
-    private EntityModel<String> privateProviderSearchFilter;
-
-    public EntityModel<String> getProviderSearchFilter() {
-        return privateProviderSearchFilter;
-    }
-
-    private void setProviderSearchFilter(EntityModel<String> value) {
-        privateProviderSearchFilter = value;
     }
 
     private EntityModel<String> privateHost;
@@ -573,14 +551,14 @@ public abstract class HostModel extends Model implements HasValidatedTabs {
         return fenceAgents;
     }
 
-    private UICommand proxySSHFingerPrintCommand;
+    private UICommand proxySSHPublicKeyCommand;
 
-    public UICommand getSSHFingerPrint() {
-        return proxySSHFingerPrintCommand;
+    public UICommand getSSHPublicKey(){
+        return proxySSHPublicKeyCommand;
     }
 
-    public void setSSHFingerPrint(UICommand value) {
-        proxySSHFingerPrintCommand = value;
+    public void setSSHPublicKey(UICommand value){
+        this.proxySSHPublicKeyCommand =value;
     }
 
     private Integer postponedSpmPriority;
@@ -613,46 +591,6 @@ public abstract class HostModel extends Model implements HasValidatedTabs {
         spmPriority = value;
     }
 
-    private ListModel<VDS> privateExternalHostName;
-
-    public ListModel<VDS> getExternalHostName() {
-        return privateExternalHostName;
-    }
-
-    protected void setExternalHostName(ListModel<VDS> value) {
-        privateExternalHostName = value;
-    }
-
-    private ListModel<ExternalEntityBase> privateExternalDiscoveredHosts;
-
-    public ListModel<ExternalEntityBase> getExternalDiscoveredHosts() {
-        return privateExternalDiscoveredHosts;
-    }
-
-    protected void setExternalDiscoveredHosts(ListModel<ExternalEntityBase> value) {
-        privateExternalDiscoveredHosts = value;
-    }
-
-    private ListModel<ExternalEntityBase> privateExternalHostGroups;
-
-    public ListModel<ExternalEntityBase> getExternalHostGroups() {
-        return privateExternalHostGroups;
-    }
-
-    protected void setExternalHostGroups(ListModel<ExternalEntityBase> value) {
-        privateExternalHostGroups = value;
-    }
-
-    private ListModel<ExternalEntityBase> privateExternalComputeResource;
-
-    public ListModel<ExternalEntityBase> getExternalComputeResource() {
-        return privateExternalComputeResource;
-    }
-
-    protected void setExternalComputeResource(ListModel<ExternalEntityBase> value) {
-        privateExternalComputeResource = value;
-    }
-
     private EntityModel<String> privateComment;
 
     public EntityModel<String> getComment() {
@@ -681,16 +619,6 @@ public abstract class HostModel extends Model implements HasValidatedTabs {
 
     protected void setProviders(ListModel<Provider<Provider.AdditionalProperties>> value) {
         privateProviders = value;
-    }
-
-    private EntityModel<Boolean> isDiscoveredHosts;
-
-    public EntityModel<Boolean> getIsDiscoveredHosts() {
-        return isDiscoveredHosts;
-    }
-
-    public void setIsDiscoveredHosts(EntityModel<Boolean> value) {
-        isDiscoveredHosts = value;
     }
 
     private HostedEngineHostModel hostedEngineHostModel;
@@ -751,26 +679,15 @@ public abstract class HostModel extends Model implements HasValidatedTabs {
     }
 
     public HostModel() {
-        setUpdateHostsCommand(new UICommand("", new ICommandTarget() { //$NON-NLS-1$
+        setSSHPublicKey(new UICommand("fetch", new ICommandTarget() { //$NON-NLS-1$
             @Override
             public void executeCommand(UICommand command) {
-                updateProvisionedHosts();
+                fetchSSHPublicKey();
             }
 
             @Override
             public void executeCommand(UICommand uiCommand, Object... parameters) {
-                updateProvisionedHosts();
-            }
-        }));
-        setSSHFingerPrint(new UICommand("fetch", new ICommandTarget() {    //$NON-NLS-1$
-            @Override
-            public void executeCommand(UICommand command) {
-                fetchSSHFingerprint();
-            }
-
-            @Override
-            public void executeCommand(UICommand uiCommand, Object... parameters) {
-                fetchSSHFingerprint();
+                fetchSSHPublicKey();
             }
         }));
 
@@ -782,12 +699,14 @@ public abstract class HostModel extends Model implements HasValidatedTabs {
         getAuthSshPort().setEntity(VdsStatic.DEFAULT_SSH_PORT);
         setActivateHostAfterInstall(new EntityModel<Boolean>());
         getActivateHostAfterInstall().setEntity(true);
+        setRebootHostAfterInstall(new EntityModel<Boolean>());
+        getRebootHostAfterInstall().setEntity(true);
         setUserName(new EntityModel<String>());
         getUserName().setEntity(RootUserName);
         // TODO: remove setIsChangeable when configured ssh username is enabled
         getUserName().setIsChangeable(false);
-        setFetchSshFingerprint(new EntityModel<String>());
-        getFetchSshFingerprint().setEntity(""); //$NON-NLS-1$
+        setFetchSshPublicKey(new EntityModel<String>());
+        getFetchSshPublicKey().setEntity(""); //$NON-NLS-1$
         setUserPassword(new EntityModel<String>());
         getUserPassword().setEntity(""); //$NON-NLS-1$
         setPublicKey(new EntityModel<String>());
@@ -805,22 +724,10 @@ public abstract class HostModel extends Model implements HasValidatedTabs {
 
         IEventListener<EventArgs> pmListener = (ev, sender, args) -> updatePmModels();
 
-        setExternalHostName(new ListModel<VDS>());
-        getExternalHostName().setIsAvailable(false);
         setExternalHostProviderEnabled(new EntityModel<>(false));
         getExternalHostProviderEnabled().setIsAvailable(false);
         setProviders(new ListModel<>());
         getProviders().setIsAvailable(false);
-        setProviderSearchFilter(new EntityModel<String>());
-        getProviderSearchFilter().setIsAvailable(false);
-        setProviderSearchFilterLabel(new EntityModel<String>());
-        getProviderSearchFilterLabel().setIsAvailable(false);
-        setExternalDiscoveredHosts(new ListModel<ExternalEntityBase>());
-        setExternalHostGroups(new ListModel<ExternalEntityBase>());
-        getExternalHostGroups().setIsChangeable(true);
-        setExternalComputeResource(new ListModel<ExternalEntityBase>());
-        getExternalComputeResource().setIsChangeable(true);
-        getUpdateHostsCommand().setIsExecutionAllowed(false);
 
         setDisableAutomaticPowerManagement(new EntityModel<Boolean>());
         getDisableAutomaticPowerManagement().setEntity(false);
@@ -849,7 +756,6 @@ public abstract class HostModel extends Model implements HasValidatedTabs {
         initSpmPriorities();
         fetchEngineSshPublicKey();
 
-        setIsDiscoveredHosts(new EntityModel<Boolean>());
         setKernelCmdline(new EntityModel<String>());
         setKernelCmdlineBlacklistNouveau(new EntityModel<>(false));
         setKernelCmdlineIommu(new EntityModel<>(false));
@@ -893,17 +799,17 @@ public abstract class HostModel extends Model implements HasValidatedTabs {
         }));
     }
 
-    private void fetchSSHFingerprint() {
+    private void fetchSSHPublicKey() {
         // Cleaning up fields for initialization
-        getFetchSshFingerprint().setEntity(""); //$NON-NLS-1$
+        getFetchSshPublicKey().setEntity(""); //$NON-NLS-1$
         getFetchResult().setEntity(""); //$NON-NLS-1$
 
-        AsyncQuery<String> aQuery = new AsyncQuery<>(fingerprint -> {
-            if (fingerprint != null && fingerprint.length() > 0) {
-                getFetchSshFingerprint().setEntity(fingerprint);
-                getFetchResult().setEntity(ConstantsManager.getInstance().getConstants().successLoadingFingerprint());
+        AsyncQuery<String> aQuery = new AsyncQuery<>(publicKeyPem -> {
+            if (publicKeyPem != null && publicKeyPem.length() > 0) {
+                getFetchSshPublicKey().setEntity(publicKeyPem);
+                getFetchResult().setEntity(ConstantsManager.getInstance().getConstants().successLoadingPublicKey());
             } else {
-                getFetchResult().setEntity(ConstantsManager.getInstance().getConstants().errorLoadingFingerprint());
+                getFetchResult().setEntity(ConstantsManager.getInstance().getConstants().errorLoadingPublicKey());
             }
         });
 
@@ -912,11 +818,11 @@ public abstract class HostModel extends Model implements HasValidatedTabs {
                 new LengthValidation(255),
                 new HostAddressValidation() });
         if (!getHost().getIsValid()) {
-            getFetchResult().setEntity(ConstantsManager.getInstance().getConstants().fingerprintAddressError()
+            getFetchResult().setEntity(ConstantsManager.getInstance().getConstants().publicKeyAddressError()
                     + getHost().getInvalidityReasons().get(0));
         } else {
-            getFetchResult().setEntity(ConstantsManager.getInstance().getConstants().loadingFingerprint());
-            AsyncDataProvider.getInstance().getHostFingerprint(
+            getFetchResult().setEntity(ConstantsManager.getInstance().getConstants().loadingPublicKey());
+            AsyncDataProvider.getInstance().getHostSshPublicKey(
                     aQuery,
                     getHost().getEntity(),
                     getAuthSshPort().getEntity());
@@ -1131,18 +1037,6 @@ public abstract class HostModel extends Model implements HasValidatedTabs {
                 new LengthValidation(255),
                 new HostAddressValidation() });
 
-        if (Boolean.TRUE.equals(getIsDiscoveredHosts().getEntity())) {
-            getUserPassword().validateEntity(new IValidation[] {
-                    new NotEmptyValidation(),
-                    new LengthValidation(255)
-            });
-            getExternalComputeResource().setIsValid(getExternalComputeResource().getSelectedItem() != null);
-            getExternalHostGroups().setIsValid(getExternalHostGroups().getSelectedItem() != null);
-        } else {
-            getExternalComputeResource().setIsValid(true);
-            getExternalHostGroups().setIsValid(true);
-        }
-
         getAuthSshPort().validateEntity(new IValidation[] {new NotEmptyValidation(), new IntegerValidation(1, 65535)});
 
         if (getConsoleAddressEnabled().getEntity()) {
@@ -1169,8 +1063,6 @@ public abstract class HostModel extends Model implements HasValidatedTabs {
                 && getHost().getIsValid()
                 && getAuthSshPort().getIsValid()
                 && getCluster().getIsValid()
-                && getExternalHostGroups().getIsValid()
-                && getExternalComputeResource().getIsValid()
                 && getUserPassword().getIsValid()
                 && getProviders().getIsValid()
         );
@@ -1196,7 +1088,7 @@ public abstract class HostModel extends Model implements HasValidatedTabs {
         getComment().setEntity(vds.getComment());
         getKernelCmdlineBootUuid().setEntity(vds.getBootUuid());
         getHost().setEntity(vds.getHostName());
-        getFetchSshFingerprint().setEntity(vds.getSshKeyFingerprint());
+        getFetchSshPublicKey().setEntity(vds.getSshPublicKey());
         getUserName().setEntity(vds.getSshUsername());
         getAuthSshPort().setEntity(vds.getSshPort());
         if (StringHelper.isNotNullOrEmpty(vds.getKernelArgs())) {
@@ -1292,11 +1184,6 @@ public abstract class HostModel extends Model implements HasValidatedTabs {
         return agents;
     }
 
-    public void cleanHostParametersFields() {
-        getName().setEntity(""); //$NON-NLS-1$
-        getHost().setEntity(""); //$NON-NLS-1$
-    }
-
     public static void orderAgents(List<FenceAgent> fenceAgents) {
         synchronized (fenceAgents) {
             Collections.sort(fenceAgents, new FenceAgent.FenceAgentOrderComparator());
@@ -1321,9 +1208,6 @@ public abstract class HostModel extends Model implements HasValidatedTabs {
                 providersListModel.setItems(providers, Linq.firstOrNull(providers));
             }
             providersListModel.setIsChangeable(true);
-            if (!externalProvisionEnabled()) {
-                getIsDiscoveredHosts().setEntity(null);
-            }
         }), ProviderType.FOREMAN);
     }
 
@@ -1555,8 +1439,6 @@ public abstract class HostModel extends Model implements HasValidatedTabs {
     public void updateHosts() {
         updateExternalHostModels(null);
     }
-
-    protected abstract void updateProvisionedHosts();
 
     public boolean externalProvisionEnabled() {
         return true;

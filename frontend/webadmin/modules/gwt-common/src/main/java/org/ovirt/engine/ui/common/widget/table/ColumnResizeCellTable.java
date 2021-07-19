@@ -1,6 +1,11 @@
 package org.ovirt.engine.ui.common.widget.table;
 
+import static org.ovirt.engine.ui.common.system.StorageKeyUtils.GRID_COLUMN_WIDTH_PREFIX;
+import static org.ovirt.engine.ui.common.system.StorageKeyUtils.GRID_HIDDEN_COLUMN_WIDTH_PREFIX;
+import static org.ovirt.engine.ui.common.system.StorageKeyUtils.GRID_SWAPPED_COLUMN_LIST_SUFFIX;
+
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -11,12 +16,14 @@ import java.util.Set;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
+import org.ovirt.engine.core.compat.IntegerCompat;
 import org.ovirt.engine.core.compat.StringHelper;
 import org.ovirt.engine.ui.common.CommonApplicationConstants;
 import org.ovirt.engine.ui.common.CommonApplicationTemplates;
 import org.ovirt.engine.ui.common.css.PatternflyConstants;
 import org.ovirt.engine.ui.common.gin.AssetProvider;
 import org.ovirt.engine.ui.common.system.ClientStorage;
+import org.ovirt.engine.ui.common.system.StorageKeyUtils;
 import org.ovirt.engine.ui.common.uicommon.ClientAgentType;
 import org.ovirt.engine.ui.common.uicommon.model.DefaultModelItemComparator;
 import org.ovirt.engine.ui.common.utils.JqueryUtils;
@@ -76,8 +83,8 @@ import com.google.gwt.view.client.ProvidesKey;
 public class ColumnResizeCellTable<T> extends DataGrid<T> implements HasResizableColumns<T>, ColumnController<T>,
     HasCleanup {
 
-    private static final String GRID_HIDDEN = "grid-hidden"; // $NON-NLS-1$
-    private static final String GRID_VISIBLE = "grid-visible"; // $NON-NLS-1$
+    private static final String GRID_HIDDEN = StorageKeyUtils.GRID_HIDDEN;
+    private static final String GRID_VISIBLE = StorageKeyUtils.GRID_VISIBLE;
     private static final String HIDE_ONE_ROW_SCROLL = "hide-one-row-scroll"; // $NON-NLS-1$
 
     private static final int CHROME_HEIGHT_ADJUST = 2;
@@ -137,7 +144,7 @@ public class ColumnResizeCellTable<T> extends DataGrid<T> implements HasResizabl
     // Prefix for keys used to store widths of individual columns
     private static final String GRID_COLUMN_WIDTH_PREFIX = "GridColumnWidth"; //$NON-NLS-1$
 
-    private static final String GRID_SWAPPED_COLUMN_LIST = "GridSwappedColumns"; //$NON-NLS-1$
+    // Legacy way of hiding columns - preserved for reading legacy column width data from storage
     // This is 1px instead of 0px as zero-size columns seem to confuse the cell table.
     private static final String HIDDEN_WIDTH = "1px"; //$NON-NLS-1$
 
@@ -168,11 +175,16 @@ public class ColumnResizeCellTable<T> extends DataGrid<T> implements HasResizabl
     // Current column widths
     private final Map<Column<T, ?>, String> columnWidthMap = new HashMap<>();
 
+    // Default column widths
+    private final Map<Column<T, ?>, String> defaultWidthMap = new HashMap<>();
+
     // Mapping of column indexes to swapped indexes
     private final Map<Integer, Integer> realToSwappedIndexes = new HashMap<>();
     private final List<Column<T, ?>> unaddedColumns = new ArrayList<>();
     private final List<Header<?>> unaddedHeaders = new ArrayList<>();
     private final Map<Column<T, ?>, String> unaddedColumnWidths = new HashMap<>();
+    // Columns not displayed in default configuration (user can override that)
+    private final Set<Column<T, ?>> hiddenByDefault = new HashSet<>();
     private int maxSwappedIndex = -1;
 
     // Column header context menu popup
@@ -238,7 +250,7 @@ public class ColumnResizeCellTable<T> extends DataGrid<T> implements HasResizabl
         }
     }
 
-    private NativeContextMenuHandler ensureContextMenuHandler() {
+    public NativeContextMenuHandler ensureContextMenuHandler() {
         if (headerContextMenuHandler == null) {
             headerContextMenuHandler = event -> {
                 event.preventDefault();
@@ -462,12 +474,15 @@ public class ColumnResizeCellTable<T> extends DataGrid<T> implements HasResizabl
     }
 
     public void setColumnWidth(Column<T, ?> column, String width, boolean overridePersist) {
+        if (!defaultWidthMap.containsKey(column)) {
+            // treat first width ever set as the default one
+            defaultWidthMap.put(column, width);
+        }
+
         boolean columnVisible = isColumnVisible(column);
 
         if (columnVisible) {
             columnWidthMap.put(column, width);
-        } else {
-            width = HIDDEN_WIDTH;
         }
 
         // Update header cell visibility
@@ -476,13 +491,6 @@ public class ColumnResizeCellTable<T> extends DataGrid<T> implements HasResizabl
             headerCell.getStyle().setVisibility(columnVisible ? Visibility.VISIBLE : Visibility.HIDDEN);
         }
 
-        // Prevent resizing of "hidden" (1px wide) columns
-        if (columnResizingEnabled) {
-            Header<?> header = getHeader(getColumnIndex(column));
-            if (header instanceof ResizableHeader) {
-                ((ResizableHeader<?>) header).setResizeEnabled(columnVisible);
-            }
-        }
         if (columnResizePersistenceEnabled && !overridePersist && columnVisible) {
             String persistedWidth = readColumnWidth(column);
             if (persistedWidth != null) {
@@ -526,6 +534,96 @@ public class ColumnResizeCellTable<T> extends DataGrid<T> implements HasResizabl
 
     private boolean isColumnPresent(Column<T, ?> column) {
         return getColumnIndex(column) != -1;
+    }
+
+    public void markColumnAsHiddenByDefault(Column<T, ?> column) {
+        hiddenByDefault.add(column);
+    }
+
+    public boolean isHiddenByDefault(Column<T, ?> column) {
+        return hiddenByDefault.contains(column);
+    }
+
+    public boolean isVisibleOnUserRequest(Column<T, ?> column) {
+        if (!isHiddenByDefault(column)) {
+            return false;
+        }
+
+        return getVisibleByUserRequestColumns().contains(column);
+    }
+
+    private Set<Column<T, ?>> getVisibleByUserRequestColumns() {
+        String key = getVisibleByUserRequestListKey();
+        if (key == null) {
+            return Collections.emptySet();
+        }
+
+        String encodedList = clientStorage.getLocalItem(key);
+        if (encodedList == null) {
+            return Collections.emptySet();
+        }
+        // format: comma separated list of (original) indices
+        return Arrays.stream(encodedList.split(",")) //$NON-NLS-1$
+                .map(IntegerCompat::tryParse)
+                .filter(index -> index != null)
+                .map(index -> determineRealIndex(index))
+                // forward compatibility - column count could change
+                .filter(realIndex -> realIndex >= 0 && realIndex < getColumnCount())
+                .map(realIndex -> getColumn(realIndex))
+                .collect(Collectors.toSet());
+    }
+
+    private void addToVisibleByUserRequest(Column<T, ?> column) {
+        Set<Column<T, ?>> alreadyStored = getVisibleByUserRequestColumns();
+        if(!columnResizePersistenceEnabled || alreadyStored.contains(column)) {
+            return;
+        }
+
+        Set<Column<T, ?>> toBeStored = new HashSet<>(alreadyStored);
+        toBeStored.add(column);
+
+        storeVisibleByUserRequestList(toBeStored);
+    }
+
+    private void storeVisibleByUserRequestList(Set<Column<T, ?>> toBeStored) {
+        String key = getVisibleByUserRequestListKey();
+        if( key == null) {
+            return;
+        }
+
+        if(toBeStored.isEmpty()) {
+            clientStorage.removeRemoteItem(key);
+            return;
+        }
+
+        String encodedList = toBeStored.stream()
+                // forward compatibility - column could be made visible by default
+                .filter(this::isHiddenByDefault)
+                .map(this::getColumnIndex)
+                .map(this::determineOriginalIndex)
+                .map(String::valueOf)
+                .collect(Collectors.joining(","));  //$NON-NLS-1$
+
+        clientStorage.setRemoteItem(key, encodedList);
+    }
+
+    private void removeFromVisibleByUserRequest(Column<T, ?> column) {
+        Set<Column<T, ?>> visibleColumns = getVisibleByUserRequestColumns();
+        if(!columnResizePersistenceEnabled || !visibleColumns.contains(column) || !isHiddenByDefault(column)) {
+            return;
+        }
+
+        Set<Column<T, ?>> toBeStored = new HashSet<>(visibleColumns);
+        toBeStored.remove(column);
+
+        storeVisibleByUserRequestList(toBeStored);
+    }
+
+    private String getVisibleByUserRequestListKey() {
+        if (columnResizePersistenceEnabled) {
+            return GRID_VISIBLE + "_" + getGridElementId(); //$NON-NLS-1$
+        }
+        return null;
     }
 
     @Override
@@ -643,13 +741,23 @@ public class ColumnResizeCellTable<T> extends DataGrid<T> implements HasResizabl
         return index;
     }
 
+    private int determineRealIndex(int originalIndex) {
+        for (Map.Entry<Integer, Integer> entry: realToSwappedIndexes.entrySet()) {
+            if( entry.getValue().intValue() == originalIndex) {
+                return entry.getKey();
+            }
+        }
+        return originalIndex;
+    }
+
+
     private void storeSwappedIndexMap() {
         String value = realToSwappedIndexes.entrySet().stream().map(
                 entry -> entry.getValue() + "=" + entry.getKey()).collect(Collectors.joining(",")); //$NON-NLS-1$ $NON-NLS-2$
         if (value != null && !"".equals(value)) { // $NON-NLS-1$
             String swappedColumnKey = getSwappedColumnListKey();
             if (swappedColumnKey != null) {
-                clientStorage.setLocalItem(swappedColumnKey, value);
+                clientStorage.setRemoteItem(swappedColumnKey, value);
             }
         }
     }
@@ -715,7 +823,7 @@ public class ColumnResizeCellTable<T> extends DataGrid<T> implements HasResizabl
 
     @Override
     public void resizeColumn(Column<T, ?> column, int newWidth) {
-        setColumnWidth(column, newWidth + "px", true); //$NON-NLS-1$
+        setColumnWidth(column, toPixelString(newWidth), true);
     }
 
     @Override
@@ -749,7 +857,7 @@ public class ColumnResizeCellTable<T> extends DataGrid<T> implements HasResizabl
 
     protected String getHiddenColumnWidthKey(Column<T, ?> column) {
         if (columnResizePersistenceEnabled) {
-            return GRID_HIDDEN + "_" + GRID_COLUMN_WIDTH_PREFIX + "_" + getGridElementId() //$NON-NLS-1$ //$NON-NLS-2$
+            return GRID_HIDDEN_COLUMN_WIDTH_PREFIX + getGridElementId() //$NON-NLS-1$ //$NON-NLS-2$
                 + "_" + determineOriginalIndex(getColumnIndex(column)); //$NON-NLS-1$
         }
         return null;
@@ -757,7 +865,7 @@ public class ColumnResizeCellTable<T> extends DataGrid<T> implements HasResizabl
 
     protected String getSwappedColumnListKey() {
         if (columnResizePersistenceEnabled) {
-            return getGridElementId() + "_" + GRID_SWAPPED_COLUMN_LIST; //$NON-NLS-1$
+            return getGridElementId() + "_" + GRID_SWAPPED_COLUMN_LIST_SUFFIX; //$NON-NLS-1$
         }
         return null;
     }
@@ -786,27 +894,40 @@ public class ColumnResizeCellTable<T> extends DataGrid<T> implements HasResizabl
     }
 
     protected String getHiddenPersistedColumnWidth(Column<T, ?> column) {
-        String result = null;
-        if (columnResizePersistenceEnabled) {
-            String key = getHiddenColumnWidthKey(column);
-            if (key != null) {
-                result = clientStorage.getLocalItem(key);
-            }
+        if (!columnResizePersistenceEnabled) {
+            return null;
         }
-        return result;
+        String result = null;
+        String key = getHiddenColumnWidthKey(column);
+        if (key != null) {
+            result = clientStorage.getLocalItem(key);
+        }
+        // hidden width is not used/persisted anymore if present in legacy storage it needs to be replaced
+        // as it makes difficult to resize the column to reasonable size
+        return HIDDEN_WIDTH.equals(result) ? toPixelString(DEFAULT_MINIMUM_COLUMN_WIDTH) : result;
     }
 
     @Override
     public void persistColumnVisibility(Column<T, ?> column, boolean visible) {
-        if (columnResizePersistenceEnabled) {
-            String key = getHiddenColumnWidthKey(column);
-            if (key != null) {
-                if (!visible) {
-                    // Store the width of the column before hiding it, so we can restore it.
-                    clientStorage.setLocalItem(key, getColumnWidth(column));
-                } else {
-                    clientStorage.removeLocalItem(key);
-                }
+        String key = getHiddenColumnWidthKey(column);
+        if (!columnResizePersistenceEnabled || key == null) {
+            return;
+        }
+
+        if (!visible) {
+            if (isHiddenByDefault(column)) {
+                // don't store the width since it should be stored under getColumnWidthKey()
+                removeFromVisibleByUserRequest(column);
+            } else {
+                // Store the width of the column before hiding it, so we can restore it.
+                // TODO: width is stored 2x: under this key and getColumnWidthKey()
+                clientStorage.setRemoteItem(key, getColumnWidth(column));
+            }
+        } else {
+            // column just recently made hidden-by-default might have already grid-hidden keys
+            clientStorage.removeRemoteItem(key);
+            if (isHiddenByDefault(column)) {
+                addToVisibleByUserRequest(column);
             }
         }
     }
@@ -993,4 +1114,75 @@ public class ColumnResizeCellTable<T> extends DataGrid<T> implements HasResizabl
         updateGridSize(calculateGridHeight(values.size()));
     }
 
+    private static String toPixelString(int width) {
+        return width + "px"; // $NON-NLS-1$
+    }
+
+    private void clearPersistedSettings() {
+        clientStorage.removeRemoteItem(getSwappedColumnListKey());
+        clientStorage.removeRemoteItem(getVisibleByUserRequestListKey());
+
+        for(Column column : getAllColumns().values()) {
+            clientStorage.removeLocalItem(getColumnWidthKey(column));
+            clientStorage.removeRemoteItem(getHiddenColumnWidthKey(column));
+        }
+    }
+
+    private Map<Integer, Column> getAllColumns() {
+        Map<Integer, Column> result = new HashMap<>();
+        for (int index = 0; index < getColumnCount(); index++) {
+            result.put(index, getColumn(index));
+        }
+        return result;
+    }
+
+    public void resetGridSettings() {
+        clearPersistedSettings();
+
+        boolean originalFlag = columnResizePersistenceEnabled;
+        columnResizePersistenceEnabled = false;
+
+        // touch only regular columns
+        Map<Integer, Column> indexToColumn = getAllColumns().entrySet().stream()
+                .filter(entry -> entry.getValue() != emptyNoWidthColumn)
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+        List<Object[]> tuples = indexToColumn.keySet().stream()
+                .map(currentIndex -> {
+                    Object[] tuple = {
+                            Integer.valueOf(determineOriginalIndex(currentIndex)),
+                            getHeader(currentIndex),
+                            indexToColumn.get(currentIndex)
+                    };
+                    return tuple;
+                }).collect(Collectors.toList());
+
+        // original indices are already resolved - we can clear this mapping
+        realToSwappedIndexes.clear();
+
+        for (Column column :indexToColumn.values()) {
+            // side effect: columns hidden by default receive default width
+            setColumnVisible(column, true);
+            // we assume that all column related mappings are not cleared
+            removeColumn(column);
+            contextPopup.getContextMenu().removeItem(column);
+        }
+
+        tuples.stream()
+                // sort columns by original index
+                .sorted(Comparator.comparingInt(tuple -> (Integer)tuple[0]))
+                .forEach(tuple -> {
+                    int originalIndex = (Integer)tuple[0];
+                    Header<?> header = (Header)tuple[1];
+                    Column column = (Column)tuple[2];
+
+                    insertColumn(originalIndex, column, header);
+                    contextPopup.getContextMenu().addItem(column);
+
+                    setColumnWidth(column, defaultWidthMap.get(column));
+                    setColumnVisible(column, !isHiddenByDefault(column));
+                });
+
+        columnResizePersistenceEnabled = originalFlag;
+    }
 }

@@ -1,5 +1,6 @@
 package org.ovirt.engine.core.dao;
 
+import java.util.Date;
 import java.util.List;
 
 import javax.inject.Named;
@@ -30,6 +31,7 @@ public class VmBackupDaoImpl extends DefaultGenericDao<VmBackup, Guid> implement
     protected MapSqlParameterSource createFullParametersMapper(VmBackup entity) {
         return createIdParameterMapper(entity.getId())
                 .addValue("vm_id", entity.getVmId())
+                .addValue("host_id", entity.getHostId())
                 .addValue("from_checkpoint_id", entity.getFromCheckpointId())
                 .addValue("to_checkpoint_id", entity.getToCheckpointId())
                 .addValue("phase", entity.getPhase().getName())
@@ -50,6 +52,7 @@ public class VmBackupDaoImpl extends DefaultGenericDao<VmBackup, Guid> implement
         VmBackup entity = new VmBackup();
         entity.setId(getGuid(rs, "backup_id"));
         entity.setVmId(getGuid(rs, "vm_id"));
+        entity.setHostId(getGuid(rs, "host_id"));
         entity.setFromCheckpointId(getGuid(rs, "from_checkpoint_id"));
         entity.setToCheckpointId(getGuid(rs, "to_checkpoint_id"));
         entity.setPhase(VmBackupPhase.forName(rs.getString("phase")));
@@ -68,6 +71,7 @@ public class VmBackupDaoImpl extends DefaultGenericDao<VmBackup, Guid> implement
         MapSqlParameterSource parameterSource = getCustomMapSqlParameterSource()
                 .addValue("backup_id", entity.getId())
                 .addValue("vm_id", entity.getVmId())
+                .addValue("host_id", entity.getHostId())
                 .addValue("from_checkpoint_id", entity.getFromCheckpointId())
                 .addValue("to_checkpoint_id", entity.getToCheckpointId())
                 .addValue("phase", entity.getPhase().getName());
@@ -109,9 +113,10 @@ public class VmBackupDaoImpl extends DefaultGenericDao<VmBackup, Guid> implement
     }
 
     @Override
-    public void removeAllDisksFromBackup(Guid backupId) {
-        getCallsHandler().executeModification("DeleteAllVmBackupDiskMapByVmBackupId",
-                getCustomMapSqlParameterSource().addValue("backup_id", backupId));
+    public void deleteCompletedBackups(Date succeededBackups, Date failedBackups) {
+        MapSqlParameterSource parameterSource = getCustomMapSqlParameterSource()
+                .addValue("succeeded_end_time", succeededBackups)
+                .addValue("failed_end_time", failedBackups);
+        getCallsHandler().executeModification("DeleteCompletedBackupsOlderThanDate", parameterSource);
     }
-
 }

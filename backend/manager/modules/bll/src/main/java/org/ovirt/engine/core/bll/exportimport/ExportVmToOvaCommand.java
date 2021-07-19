@@ -9,7 +9,6 @@ import javax.enterprise.inject.Instance;
 import javax.enterprise.inject.Typed;
 import javax.inject.Inject;
 
-import org.ovirt.engine.core.bll.ConcurrentChildCommandsExecutionCallback;
 import org.ovirt.engine.core.bll.LockMessage;
 import org.ovirt.engine.core.bll.LockMessagesMatchUtil;
 import org.ovirt.engine.core.bll.NonTransactiveCommandAttribute;
@@ -20,7 +19,6 @@ import org.ovirt.engine.core.bll.job.ExecutionContext;
 import org.ovirt.engine.core.bll.job.ExecutionHandler;
 import org.ovirt.engine.core.bll.tasks.interfaces.CommandCallback;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
-import org.ovirt.engine.core.bll.validator.VmValidator;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.ActionParametersBase.EndProcedure;
@@ -34,6 +32,7 @@ import org.ovirt.engine.core.common.businessentities.Nameable;
 import org.ovirt.engine.core.common.businessentities.Snapshot;
 import org.ovirt.engine.core.common.businessentities.VmDeviceId;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
+import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.common.constants.StorageConstants;
 import org.ovirt.engine.core.common.errors.EngineException;
 import org.ovirt.engine.core.common.errors.EngineMessage;
@@ -51,7 +50,7 @@ import org.ovirt.engine.core.dao.SnapshotDao;
 public class ExportVmToOvaCommand<T extends ExportVmToOvaParameters> extends ExportOvaCommand<T> implements SerialChildExecutingCommand {
 
     @Inject
-    @Typed(ConcurrentChildCommandsExecutionCallback.class)
+    @Typed(SerialChildCommandsExecutionCallback.class)
     private Instance<SerialChildCommandsExecutionCallback> callbackProvider;
     @Inject
     private SnapshotDao snapshotDao;
@@ -59,7 +58,6 @@ public class ExportVmToOvaCommand<T extends ExportVmToOvaParameters> extends Exp
     private DiskImageDao diskImageDao;
     @Inject
     private DiskVmElementDao diskVmElementDao;
-
     private List<DiskImage> cachedDisks;
     private String cachedVmIsBeingExportedMessage;
 
@@ -96,12 +94,6 @@ public class ExportVmToOvaCommand<T extends ExportVmToOvaParameters> extends Exp
         if (getEntity() == null) {
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_VM_NOT_FOUND);
         }
-
-        VmValidator vmValidator = new VmValidator(getVm());
-        if (!validate(vmValidator.vmDown())) {
-            return false;
-        }
-
         return super.validate();
     }
 
@@ -241,6 +233,9 @@ public class ExportVmToOvaCommand<T extends ExportVmToOvaParameters> extends Exp
             cachedDisks = diskImageDao.getAllSnapshotsForVmSnapshot(getParameters().getSnapshotId());
             cachedDisks.forEach(disk -> disk.setDiskVmElements(Collections.singleton(
                     diskVmElementDao.get(new VmDeviceId(disk.getId(), getParameters().getEntityId())))));
+            for (DiskImage disk : cachedDisks) {
+                disk.getImage().setVolumeFormat(VolumeFormat.COW);
+            }
         }
         return cachedDisks;
     }

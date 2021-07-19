@@ -12,9 +12,11 @@ import os
 import tempfile
 import time
 
-from M2Crypto import EVP
-from M2Crypto import RSA
-from M2Crypto import X509
+from cryptography import x509
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from otopi import base
 from otopi import constants as otopicons
@@ -22,6 +24,7 @@ from otopi import filetransaction
 from otopi import util
 
 from ovirt_engine_setup import constants as osetupcons
+from ovirt_engine_setup.engine_common import pki_utils
 
 
 def _(m):
@@ -67,9 +70,10 @@ class RemoteEngine(base.Base):
             text=text,
         )
 
-    def copy_from_engine(self, file_name):
+    def copy_from_engine(self, file_name, dialog_name=None):
         return self._style.copy_from_engine(
             file_name=file_name,
+            dialog_name=dialog_name,
         )
 
     def copy_to_engine(
@@ -204,16 +208,38 @@ class EnrollCert(base.Base):
     def logger(self):
         return self._plugin.logger
 
-    def _genCsr(self):
-        rsa = RSA.gen_key(self._key_size, 65537)
-        rsapem = rsa.as_pem(cipher=None)
-        evp = EVP.PKey()
-        evp.assign_rsa(rsa)
-        rsa = None  # should not be freed here
-        csr = X509.Request()
-        csr.set_pubkey(evp)
-        csr.sign(evp, 'sha1')
-        return rsapem, csr.as_pem(), csr.get_pubkey().as_pem(cipher=None)
+    def _genCsr(self, private_key=None):
+        if private_key is None:
+            private_key = rsa.generate_private_key(
+                public_exponent=65537,
+                key_size=self._key_size,
+                backend=default_backend(),
+            )
+        rsa_private_key_pem = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        )
+        request = x509.CertificateSigningRequestBuilder(
+        ).subject_name(
+            x509.Name([
+                x509.NameAttribute(x509.oid.NameOID.COMMON_NAME, u'/'),
+            ])
+        ).sign(
+            private_key=private_key,
+            # TODO Replace with SHA256 if/when it's safe
+            algorithm=hashes.SHA1(),
+            backend=default_backend(),
+        )
+        request_pem = request.public_bytes(
+            encoding=serialization.Encoding.PEM
+        )
+        public_key_pem = request.public_key(
+        ).public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        return rsa_private_key_pem, request_pem, public_key_pem
 
     def _enroll_cert_auto_ssh(self):
         cert = None
@@ -243,9 +269,15 @@ class EnrollCert(base.Base):
                         remote_name=self._remote_name,
                     ),
                 )
-                goodcert = self._pubkey == X509.load_cert_string(
-                    cert
-                ).get_pubkey().as_pem(cipher=None)
+                cert_pubkey = x509.load_pem_x509_certificate(
+                    cert,
+                    backend=default_backend(),
+                ).public_key(
+                ).public_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PublicFormat.SubjectPublicKeyInfo,
+                )
+                goodcert = self._pubkey == cert_pubkey
                 if not goodcert:
                     self.logger.error(
                         _(
@@ -255,7 +287,7 @@ class EnrollCert(base.Base):
                             base_touser=self._base_touser,
                         )
                     )
-            except:
+            except Exception:
                 self.logger.error(
                     _(
                         'Error while trying to sign {base_touser} certificate'
@@ -267,9 +299,15 @@ class EnrollCert(base.Base):
             tries_left -= 1
             if not goodcert and tries_left > 0:
                 self.dialog.note(
-                    text=_('Trying again...')
+                    text=_('Waiting a bit...')
                 )
                 time.sleep(10)
+                self.dialog.note(
+                    text=_('Trying again...')
+                )
+
+        if not goodcert:
+            raise RuntimeError(_('Failed to get or verify the certificate'))
 
         self.logger.info(
             _('{base_touser} certificate signed successfully').format(
@@ -285,7 +323,7 @@ class EnrollCert(base.Base):
             open(csr_fname, 'w') if csr_fname
             else tempfile.NamedTemporaryFile(mode='w', delete=False)
         ) as self._csr_file:
-            self._csr_file.write(self._csr)
+            self._csr_file.write(self._csr.decode())
         self.dialog.note(
             text=_(
                 "\n\nTo sign the {base_touser} certificate on the engine "
@@ -296,8 +334,6 @@ class EnrollCert(base.Base):
                 "{enroll_command}\n\n"
                 "3. Copy {enginecert} from the engine server to some file "
                 "here. Provide the file name below.\n\n"
-                "See {url} for more details, including using an external "
-                "certificate authority."
             ).format(
                 base_touser=self._base_touser,
                 tmpcsr=self._csr_file.name,
@@ -310,7 +346,6 @@ class EnrollCert(base.Base):
                     pkicertdir=self._engine_pki_certs_dir,
                     remote_name=self._remote_name,
                 ),
-                url=self._url,
             ),
         )
         goodcert = False
@@ -326,11 +361,17 @@ class EnrollCert(base.Base):
                 prompt=True,
             )
             try:
-                with open(filename) as f:
+                with open(filename, 'rb') as f:
                     cert = f.read()
-                goodcert = self._pubkey == X509.load_cert_string(
-                    cert
-                ).get_pubkey().as_pem(cipher=None)
+                cert_pubkey = x509.load_pem_x509_certificate(
+                    cert,
+                    backend=default_backend(),
+                ).public_key(
+                ).public_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PublicFormat.SubjectPublicKeyInfo,
+                )
+                goodcert = self._pubkey == cert_pubkey
                 if not goodcert:
                     self.logger.error(
                         _(
@@ -341,7 +382,7 @@ class EnrollCert(base.Base):
                             csr=self._csr_file.name,
                         )
                     )
-            except:
+            except Exception:
                 self.logger.error(
                     _(
                         'Error while reading or parsing {cert}. '
@@ -362,15 +403,36 @@ class EnrollCert(base.Base):
         pass
 
     def enroll_cert(self):
-        cert = None
-
         self.logger.debug('enroll_cert')
-        self._need_cert = not os.path.exists(self._cert_file)
-        self._need_key = not os.path.exists(self._key_file)
 
-        if self._need_key:
-            self._key, self._csr, self._pubkey = self._genCsr()
+        cert = None
+        self._need_cert = True
+        if os.path.exists(self._cert_file):
+            self._need_cert = False
+            cert = pki_utils.x509_load_cert(self._cert_file)
+            if pki_utils.ok_to_renew_cert(
+                self.logger,
+                cert,
+                None,
+                self._base_name,
+                True,
+            ):
+                self._need_cert = True
+
+        private_key = None
+        self._need_key = True
+        if os.path.exists(self._key_file):
+            with open(self._key_file, 'rb') as f:
+                private_key = serialization.load_pem_private_key(
+                    f.read(),
+                    password=None,
+                    backend=default_backend(),
+                )
+            self._need_key = False
+        else:
             self._need_cert = True
+
+        self._key, self._csr, self._pubkey = self._genCsr(private_key)
 
         if self._need_cert:
             self._remote_name = '{name}-{fqdn}'.format(
@@ -381,9 +443,10 @@ class EnrollCert(base.Base):
                 " /usr/share/ovirt-engine/bin/pki-enroll-request.sh \\\n"
                 "     --name={remote_name} \\\n"
                 "     --subject=\""
-                "$(openssl x509 -in {engine_ca_cert_file} -noout "
-                "-subject | sed 's;subject= \(/C=[^/]*/O=[^/]*\)/.*;\\1;')"
-                "/CN={fqdn}\""
+                "$(openssl x509 -in {engine_ca_cert_file} -text "
+                "| sed -n 's; *DirName:\\(.*\\)/CN=.*;\\1;p')"
+                "/CN={fqdn}\" \\\n"
+                "     --san=DNS:{fqdn}"
             ).format(
                 remote_name=self._remote_name,
                 engine_ca_cert_file=self._engine_ca_cert_file,
@@ -435,6 +498,7 @@ class EnrollCert(base.Base):
                     owner=self.environment[osetupcons.SystemEnv.USER_ENGINE],
                     enforcePermissions=True,
                     content=self._key,
+                    binary=True,
                     modifiedList=uninstall_files,
                 )
             )
@@ -447,6 +511,7 @@ class EnrollCert(base.Base):
                     owner=self.environment[osetupcons.SystemEnv.USER_ENGINE],
                     enforcePermissions=True,
                     content=self._cert,
+                    binary=True,
                     modifiedList=uninstall_files,
                 )
             )

@@ -2,7 +2,6 @@ package org.ovirt.engine.ui.uicommonweb.models.vms.instancetypes;
 
 import static org.ovirt.engine.ui.uicommonweb.dataprovider.AsyncDataProvider.getInstance;
 
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -10,7 +9,6 @@ import java.util.Set;
 
 import org.ovirt.engine.core.common.businessentities.GraphicsDevice;
 import org.ovirt.engine.core.common.businessentities.GraphicsType;
-import org.ovirt.engine.core.common.businessentities.UsbPolicy;
 import org.ovirt.engine.core.common.businessentities.VmBase;
 import org.ovirt.engine.core.common.businessentities.VmDevice;
 import org.ovirt.engine.core.common.businessentities.VmRngDevice;
@@ -39,7 +37,6 @@ public class ExistingNonClusterModelBehavior extends NonClusterModelBehaviorBase
     public void initialize() {
         super.initialize();
         updateNumOfSockets();
-        getModel().getUsbPolicy().setItems(Arrays.asList(UsbPolicy.values()));
 
         getModel().getIsSoundcardEnabled().setIsChangeable(true);
 
@@ -59,12 +56,9 @@ public class ExistingNonClusterModelBehavior extends NonClusterModelBehaviorBase
         ));
 
         initSoundCard(entity.getId());
+        updateTpm(entity.getId());
         updateConsoleDevice(entity.getId());
         initPriority(entity.getPriority());
-
-        Frontend.getInstance().runQuery(QueryType.IsBalloonEnabled, new IdQueryParameters(entity.getId()),
-                new AsyncQuery<QueryReturnValue>(returnValue -> getModel().getMemoryBalloonDeviceEnabled().setEntity((Boolean) returnValue.getReturnValue())
-        ));
 
         getInstance().isVirtioScsiEnabledForVm(new AsyncQuery<>(returnValue -> getModel().getIsVirtioScsiEnabled().setEntity(returnValue)), entity.getId());
 
@@ -98,12 +92,7 @@ public class ExistingNonClusterModelBehavior extends NonClusterModelBehaviorBase
 
     public void doBuild() {
         buildModel(entity, (source, destination) -> {
-            Frontend.getInstance().runQuery(QueryType.IsBalloonEnabled, new IdQueryParameters(entity.getId()), new AsyncQuery<>(
-                    (QueryReturnValue returnValue) -> getModel().getMemoryBalloonDeviceEnabled().setEntity((Boolean) returnValue.getReturnValue())
-            ));
-
             getInstance().isVirtioScsiEnabledForVm(new AsyncQuery<>(returnValue -> getModel().getIsVirtioScsiEnabled().setEntity(returnValue)), entity.getId());
-
 
             getInstance().getWatchdogByVmId(new AsyncQuery<QueryReturnValue>(returnValue -> {
                 @SuppressWarnings("unchecked")

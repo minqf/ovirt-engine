@@ -71,7 +71,6 @@ import org.ovirt.engine.core.common.vdscommands.MigrateVDSCommandParameters;
 import org.ovirt.engine.core.common.vdscommands.VDSCommandType;
 import org.ovirt.engine.core.common.vdscommands.VDSReturnValue;
 import org.ovirt.engine.core.compat.Guid;
-import org.ovirt.engine.core.compat.Version;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dao.DiskDao;
 import org.ovirt.engine.core.dao.VdsDao;
@@ -80,6 +79,7 @@ import org.ovirt.engine.core.dao.network.HostNetworkQosDao;
 import org.ovirt.engine.core.dao.network.InterfaceDao;
 import org.ovirt.engine.core.dao.network.NetworkDao;
 import org.ovirt.engine.core.dao.network.VmNetworkInterfaceDao;
+import org.ovirt.engine.core.vdsbroker.vdsbroker.MigrateStatusReturn;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -117,6 +117,7 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
 
     /** Used to log the migration error. */
     private EngineError migrationErrorCode;
+    private String migrationErrorMessage;
 
     private Integer actualDowntime;
     private Object actualDowntimeLock = new Object();
@@ -155,6 +156,8 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
         if (migrationErrorCode != null) {
             return " due to an Error: " +
                     backend.getVdsErrorsTranslator().translateErrorTextSingle(migrationErrorCode.name(), true);
+        } else if (migrationErrorMessage != null) {
+            return " due to an Error: " + migrationErrorMessage;
         }
         return " ";
     }
@@ -366,10 +369,12 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
             PlugAction plugAction) {
         ActivateDeactivateVmNicParameters parameters = new ActivateDeactivateVmNicParameters(nic, plugAction, false);
         parameters.setVmId(getParameters().getVmId());
+        parameters.setWithFailover(false);
         return parameters;
     }
 
     private boolean migrateVm() {
+        getVmManager().setLastStatusBeforeMigration(getVm().getStatus());
         setActionReturnValue(vdsBroker
                 .runAsyncVdsCommand(
                         VDSCommandType.Migrate,
@@ -390,7 +395,7 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
 
         Boolean autoConverge = getAutoConverge();
         Boolean migrateCompressed = getMigrateCompressed();
-        Boolean migrateEncrypted = getMigrateEncrypted();
+        Boolean migrateEncrypted = vmHandler.getMigrateEncrypted(getVm(), getCluster());
         Boolean enableGuestEvents = null;
         Integer maxIncomingMigrations = null;
         Integer maxOutgoingMigrations = null;
@@ -572,7 +577,10 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
             VDSReturnValue retVal = runVdsCommand(VDSCommandType.MigrateStatus,
                     new MigrateStatusVDSCommandParameters(getDestinationVdsId(), getVmId()));
             if (retVal != null && retVal.getReturnValue() != null) {
-                setActualDowntime((int) retVal.getReturnValue());
+                Integer downtime = ((MigrateStatusReturn) retVal.getReturnValue()).getDowntime();
+                if (downtime != null) {
+                    setActualDowntime(downtime);
+                }
             }
         } catch (EngineException e) {
             migrationErrorCode = e.getErrorCode();
@@ -614,27 +622,6 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
         }
 
         return Config.getValue(ConfigValues.DefaultMigrationCompression);
-    }
-
-    private Boolean getMigrateEncrypted() {
-        Version version = getVm().getCompatibilityVersion();
-        if (version == null) {
-            return null;
-        }
-
-        if (!FeatureSupported.isMigrateEncryptedSupported(version)) {
-            return null;
-        }
-
-        if (getVm().getMigrateEncrypted() != null) {
-            return getVm().getMigrateEncrypted();
-        }
-
-        if (getCluster().getMigrateEncrypted() != null) {
-            return getCluster().getMigrateEncrypted();
-        }
-
-        return Config.getValue(ConfigValues.DefaultMigrationEncryption);
     }
 
     private int getMaximumMigrationDowntime() {
@@ -779,6 +766,10 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
     }
 
     protected AuditLogType getAuditLogForMigrationFailure() {
+        if (getVm().getOrigin() == OriginType.KUBEVIRT) {
+            return AuditLogType.VM_MIGRATION_FAILED;
+        }
+
         if (getDestinationVds() == null) {
             auditLogDirector.log(this, AuditLogType.VM_MIGRATION_NO_VDS_TO_MIGRATE_TO);
         }
@@ -836,10 +827,11 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
 
         if (getParameters().getTargetClusterId() != null) {
             ChangeVmClusterValidator changeVmClusterValidator = ChangeVmClusterValidator.create(
-                    this,
+                    getVm(),
                     getParameters().getTargetClusterId(),
-                    getVm().getCustomCompatibilityVersion());
-            if (!changeVmClusterValidator.validate()) {
+                    getVm().getCustomCompatibilityVersion(),
+                    getUserId());
+            if (!validate(changeVmClusterValidator.validate())) {
                 return false;
             }
         }
@@ -932,7 +924,11 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
     protected void determineMigrationFailureForAuditLog() {
         if (getVm() != null && getVm().getStatus() == VMStatus.Up) {
             try {
-                runVdsCommand(VDSCommandType.MigrateStatus, new MigrateStatusVDSCommandParameters(getVdsId(), getVmId()));
+                VDSReturnValue retVal = runVdsCommand(VDSCommandType.MigrateStatus,
+                        new MigrateStatusVDSCommandParameters(getVdsId(), getVmId()));
+                if (retVal != null && retVal.getReturnValue() != null) {
+                    migrationErrorMessage = ((MigrateStatusReturn) retVal.getReturnValue()).getMessage();
+                }
             } catch (EngineException e) {
                 migrationErrorCode = e.getErrorCode();
             }

@@ -2,6 +2,8 @@ package org.ovirt.engine.core.bll.utils;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.sql.Time;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -14,6 +16,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 import java.util.TimeZone;
@@ -37,8 +40,11 @@ import org.ovirt.engine.core.common.businessentities.gluster.GlusterStatus;
 import org.ovirt.engine.core.common.businessentities.gluster.GlusterVolumeEntity;
 import org.ovirt.engine.core.common.businessentities.gluster.GlusterVolumeSnapshotSchedule;
 import org.ovirt.engine.core.common.businessentities.gluster.PeerStatus;
+import org.ovirt.engine.core.common.businessentities.network.Network;
+import org.ovirt.engine.core.common.businessentities.network.VdsNetworkInterface;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
+import org.ovirt.engine.core.common.constants.StorageConstants;
 import org.ovirt.engine.core.common.constants.gluster.GlusterConstants;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.locks.LockingGroup;
@@ -52,9 +58,11 @@ import org.ovirt.engine.core.common.vdscommands.gluster.GlusterServiceVDSParamet
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AlertDirector;
 import org.ovirt.engine.core.dao.AuditLogDao;
+import org.ovirt.engine.core.dao.ClusterDao;
 import org.ovirt.engine.core.dao.VdsDao;
 import org.ovirt.engine.core.dao.gluster.GlusterDBUtils;
 import org.ovirt.engine.core.dao.gluster.GlusterServerDao;
+import org.ovirt.engine.core.dao.network.InterfaceDao;
 import org.ovirt.engine.core.di.Injector;
 import org.ovirt.engine.core.utils.XmlUtils;
 import org.ovirt.engine.core.utils.lock.EngineLock;
@@ -105,6 +113,12 @@ public class GlusterUtil {
 
     @Inject
     private AlertDirector alertDirector;
+
+    @Inject
+    private InterfaceDao interfaceDao;
+
+    @Inject
+    private ClusterDao clusterDao;
 
     /**
      * Returns a server that is in {@link VDSStatus#Up} status.<br>
@@ -185,20 +199,17 @@ public class GlusterUtil {
      *            Privilege username to authenticate with server
      * @param password
      *            password of the server
-     * @param fingerprint
-     *            pre-approved fingerprint of the server. This is validated against the server before attempting
-     *            authentication using the root password.
-     * @return Map of peers of the server with key = peer name and value = SSH fingerprint of the peer
+     * @return Map of peers of the server with key = peer name and value = SSH public key of the peer
      * @throws AuthenticationException
      *             If SSH authentication with given root password fails
      */
-    public Map<String, String> getPeers(String server, String username, String password, String fingerprint)
+    public Map<String, String> getPeersWithSshPublicKeys(String server, String username, String password)
             throws AuthenticationException, IOException {
         try (final SSHClient client = getSSHClient()) {
             connect(client, server, username, password);
             authenticate(client);
             String serversXml = executePeerStatusCommand(client);
-            return getFingerprints(extractServers(serversXml));
+            return getPublicKeys(extractServers(serversXml));
         }
     }
 
@@ -215,6 +226,53 @@ public class GlusterUtil {
             log.debug("Could not connect to server '{}': {}", serverName, e.getMessage());
             throw new RuntimeException(e);
         }
+    }
+
+    private String getIpAddressForHost(Guid vdsId, String networkName) {
+        Optional<VdsNetworkInterface> nic =
+                getGlusterIpaddressUtil(vdsId).stream().filter(v -> v.getNetworkName().equals(networkName)).findFirst();
+        if (nic.isEmpty()) {
+            return null;
+        }
+        return !StringUtils.isBlank(nic.get().getIpv4Address()) ?
+                nic.get().getIpv4Address() :
+                !StringUtils.isBlank(nic.get().getIpv6Address()) ?
+                        nic.get().getIpv6Address() : null;
+    }
+
+    public Map<VDS, String> getGlusterIpaddressAsMap(Map<String, Network> networkNameObjectMap,
+                                                     VDS currentHostVds, List<VDS> hostlist) {
+
+        Map<VDS, String> hostGlusterIpMap = new HashMap<>();
+        String networkName = StringUtils.EMPTY;
+
+        Optional<Map.Entry<String, Network>> result =
+              networkNameObjectMap.entrySet().stream().filter(v -> v.getValue().getCluster().isGluster()).findFirst();
+
+        if(result.isPresent()) {
+            networkName = result.get().getKey();
+
+        } else {
+          return null;
+        }
+        hostGlusterIpMap.put(currentHostVds, getIpAddressForHost(currentHostVds.getId(),
+                networkName));
+        hostGlusterIpMap.put(hostlist.get(0), getIpAddressForHost(hostlist.get(0).getId(),
+                networkName));
+        hostGlusterIpMap.put(hostlist.get(1), getIpAddressForHost(hostlist.get(1).getId(),
+                networkName));
+
+        Optional<Map.Entry<VDS, String>> hostGlusterIpresult =
+                hostGlusterIpMap.entrySet().stream().filter(x -> x.getValue().equals(null)).findAny();
+
+        if(hostGlusterIpresult.isPresent()) {
+            return null;
+        }
+        return hostGlusterIpMap;
+    }
+
+    public List<VdsNetworkInterface> getGlusterIpaddressUtil(Guid hostId){
+        return interfaceDao.getAllInterfacesForVds(hostId);
     }
 
     protected void authenticate(SSHClient client) throws AuthenticationException {
@@ -262,20 +320,22 @@ public class GlusterUtil {
         return servers;
     }
 
-    protected Map<String, String> getFingerprints(Set<String> servers) {
-        QueryReturnValue returnValue;
-        Map<String, String> fingerprints = new HashMap<>();
+    protected Map<String, String> getPublicKeys(Set<String> servers) {
+        QueryReturnValue publicKeyReturnValue;
+        Map<String, String> publicKeys = new HashMap<>();
         for (String server : servers) {
-            returnValue = backend.
-                    runInternalQuery(QueryType.GetServerSSHKeyFingerprint,
-                            new ServerParameters(server), null);
-            if (returnValue != null && returnValue.getSucceeded() && returnValue.getReturnValue() != null) {
-                fingerprints.put(server, returnValue.getReturnValue().toString());
-            } else {
-                fingerprints.put(server, null);
+            publicKeyReturnValue = backend.runInternalQuery(QueryType.GetServerSSHPublicKey,
+                    new ServerParameters(server));
+
+            String publicKey = null;
+            if (publicKeyReturnValue != null && publicKeyReturnValue.getSucceeded()
+                    && publicKeyReturnValue.getReturnValue() != null) {
+                publicKey = publicKeyReturnValue.getReturnValue().toString();
             }
+            publicKeys.put(server, publicKey != null ? publicKey : "");
+
         }
-        return fingerprints;
+        return publicKeys;
     }
 
     protected Set<String> extractServers(String serversXml) {
@@ -531,6 +591,37 @@ public class GlusterUtil {
                 return EngineMessage.ACTION_TYPE_FAILED_INVALID_GLUSTER_OPTIONS;
         }
         return null;
+    }
+
+    public GlusterVolumeEntity getGlusterVolInfoFromVolumePath(String volumePath) {
+        String[] pathElements = volumePath.split(StorageConstants.GLUSTER_VOL_SEPARATOR);
+        if (pathElements.length != 2) {
+            // return empty as volume name could not be determined
+            log.warn("Volume name could not be determined from storage connection '{}' ", volumePath);
+            return null;
+        }
+        String volumeName = pathElements[1];
+        String hostName = pathElements[0];
+        String hostAddress;
+
+        hostAddress = resolveHostName(hostName);
+        if (hostAddress == null) {
+            log.warn("Host name could not be determined from storage connection '{}' ", hostName);
+            return null;
+        }
+        Guid clusterId = clusterDao.getClusterIdForHostByNameOrAddress(hostName, hostAddress);
+        if (Guid.isNullOrEmpty(clusterId)) {
+            return null;
+        }
+        return glusterDBUtils.getGlusterVolInfoByClusterIdAndVolName(clusterId, volumeName);
+    }
+
+    protected String resolveHostName(String hostName) {
+        try {
+            return InetAddress.getByName(hostName).getHostAddress();
+        } catch (UnknownHostException e) {
+            return null;
+        }
     }
 
 }

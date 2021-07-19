@@ -40,6 +40,7 @@ void attribute() : {} {
     | (<PRODUCT_KEY>  stringValue())
     | (<VM_INIT_TYPE>) stringValue()
     | ("isTimezoneTypeInteger" booleanValue())
+    | ("q35Support" q35SupportValue())
     | resources()
     | devices()
     )
@@ -58,11 +59,11 @@ void devices() : {} {
     (
       ("display.protocols" displayValue())
     | ("display.vramMultiplier" intValue())
+    | ("display.vgamemMultiplier" intValue())
     | ("watchdog.models" watchdogValue())
     | ("network" networkValue())
     | ("network.hotplugSupport" booleanValue())
     | ("disk.hotpluggableInterfaces" hardwareInterfacesValue())
-    | ("balloon.enabled" booleanValue())
     | ("audio" audioValue())
     | ("audio.enabled" booleanValue())
     | ("cdInterface" cdInterfaceValue())
@@ -73,6 +74,9 @@ void devices() : {} {
     | ("usb.controller" usbControllerModelValue())
     | ("console.target.type" consoleTargetTypeValue())
     | ("memoryHotplug.specialBlock" booleanValue())
+    | ("legacyVirtio" booleanValue())
+    | ("ovirtGuestAgentChannel" booleanValue())
+    | ("tpmAllowed" booleanValue())
     )
 }
 
@@ -128,6 +132,10 @@ void consoleTargetTypeValue() : {} {
     valueSpecifier() ("serial" | "virtio" | "sclp")
 }
 
+void q35SupportValue() : {} {
+    valueSpecifier() ("true" | "insecure" | "false")
+}
+
 void valueSpecifier() : {} {
     <VALUE> (<DOT> <VERSION>)* (<WS>)* <EQUALS> (<WS>)*
 }
@@ -181,7 +189,7 @@ void valueSpecifier() : {} {
     >
 |   < DISPLAY_TYPE
     :
-    ("qxl" | "cirrus" | "vga")
+    ("qxl" | "cirrus" | "vga" | "bochs")
     >
 |   < CHIPSET_CD_INTERFACE_TYPE
     :

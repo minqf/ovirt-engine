@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import javax.enterprise.inject.Instance;
 import javax.enterprise.inject.Typed;
@@ -48,6 +49,7 @@ import org.ovirt.engine.core.common.businessentities.network.NetworkCluster;
 import org.ovirt.engine.core.common.businessentities.network.ProviderNetwork;
 import org.ovirt.engine.core.common.businessentities.network.VdsNetworkInterface;
 import org.ovirt.engine.core.common.businessentities.network.VdsNetworkInterface.NetworkImplementationDetails;
+import org.ovirt.engine.core.common.businessentities.network.VmNic;
 import org.ovirt.engine.core.common.errors.EngineError;
 import org.ovirt.engine.core.common.errors.EngineException;
 import org.ovirt.engine.core.common.errors.EngineMessage;
@@ -55,13 +57,16 @@ import org.ovirt.engine.core.common.utils.NetworkCommonUtils;
 import org.ovirt.engine.core.common.utils.Pair;
 import org.ovirt.engine.core.common.validation.group.UpdateEntity;
 import org.ovirt.engine.core.compat.Guid;
+import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogable;
+import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogableImpl;
 import org.ovirt.engine.core.dao.StoragePoolDao;
 import org.ovirt.engine.core.dao.VdsStaticDao;
 import org.ovirt.engine.core.dao.network.InterfaceDao;
 import org.ovirt.engine.core.dao.network.NetworkAttachmentDao;
 import org.ovirt.engine.core.dao.network.NetworkClusterDao;
 import org.ovirt.engine.core.dao.network.NetworkDao;
+import org.ovirt.engine.core.dao.network.VmNicDao;
 import org.ovirt.engine.core.di.Injector;
 import org.ovirt.engine.core.utils.NetworkUtils;
 import org.ovirt.engine.core.utils.transaction.TransactionSupport;
@@ -83,8 +88,12 @@ public class UpdateNetworkCommand<T extends AddNetworkStoragePoolParameters> ext
     @Inject
     private StoragePoolDao storagePoolDao;
     @Inject
+    private VmNicDao vmNicDao;
+    @Inject
     @Typed(ConcurrentChildCommandsExecutionCallback.class)
     private Instance<ConcurrentChildCommandsExecutionCallback> callbackProvider;
+    @Inject
+    private AuditLogDirector auditLogDirector;
 
     private Network oldNetwork;
 
@@ -104,6 +113,11 @@ public class UpdateNetworkCommand<T extends AddNetworkStoragePoolParameters> ext
 
             if (networkChangedToNonVmNetwork()) {
                 removeVnicProfiles();
+            } else if (isMtuUpdated() || isVlanUpdated()) {
+                var vnics = vmNicDao.getActiveForNetwork(getNetwork().getId());
+                vnics.forEach(vnic -> vnic.setSynced(false));
+                vmNicDao.updateAllInBatch(vnics);
+                logOutOfSync(vnics);
             }
 
             if (networkNameChanged()) {
@@ -122,6 +136,14 @@ public class UpdateNetworkCommand<T extends AddNetworkStoragePoolParameters> ext
 
     private boolean networkNameChanged() {
         return !getOldNetwork().getName().equals(getNetworkName());
+    }
+
+    private boolean isMtuUpdated() {
+        return NetworkUtils.getVmMtuActualValue(getOldNetwork()) != NetworkUtils.getVmMtuActualValue(getNetwork());
+    }
+
+    private boolean isVlanUpdated() {
+        return !Objects.equals(getOldNetwork().getVlanId(), getNetwork().getVlanId());
     }
 
     private void applyNetworkChangesToHosts() {
@@ -163,6 +185,8 @@ public class UpdateNetworkCommand<T extends AddNetworkStoragePoolParameters> ext
                 && validate(validatorNew.networkNameNotUsedAsVdsmName())
                 && validate(validatorOld.nonVmNetworkNotUsedByVms(getNetwork()))
                 && validate(validatorOld.nonVmNetworkNotUsedByTemplates(getNetwork()))
+                && validate(validatorNew.portIsolationForVmNetworkOnly())
+                && validate(validatorOld.portIsolationUnchanged(getNetwork()))
                 && validate(validatorOld.notRenamingUsedNetwork(getNetworkName()))
                 && validate(validatorOld.notRenamingLabel(getNetwork().getLabel()))
                 && (oldAndNewNetworkIsNotExternal()
@@ -194,7 +218,8 @@ public class UpdateNetworkCommand<T extends AddNetworkStoragePoolParameters> ext
                 Objects.equals(oldNetwork.getProvidedBy(), newNetwork.getProvidedBy()) &&
                 Objects.equals(oldNetwork.getStp(), newNetwork.getStp()) &&
                 Objects.equals(oldNetwork.getVlanId(), newNetwork.getVlanId()) &&
-                Objects.equals(oldNetwork.isVmNetwork(), newNetwork.isVmNetwork());
+                Objects.equals(oldNetwork.isVmNetwork(), newNetwork.isVmNetwork()) &&
+                Objects.equals(oldNetwork.isPortIsolation(), newNetwork.isPortIsolation());
     }
 
     private boolean oldAndNewNetworkIsNotExternal() {
@@ -216,6 +241,13 @@ public class UpdateNetworkCommand<T extends AddNetworkStoragePoolParameters> ext
             return NETWORK_UPDATE_NETWORK;
         }
         return NETWORK_UPDATE_NETWORK_FAILED;
+    }
+
+    private void logOutOfSync(List<VmNic> vnics) {
+        var logable = new AuditLogableImpl();
+        logable.addCustomValue("NetworkName", getNetworkName());
+        logable.addCustomValue("VnicNames", vnics.stream().map(VmNic::getName).collect(Collectors.joining(",")));
+        auditLogDirector.log(logable, AuditLogType.VNICS_OUT_OF_SYNC_ON_NETWORK_UPDATE);
     }
 
     private boolean skipHostSetupNetworks() {
@@ -331,6 +363,11 @@ public class UpdateNetworkCommand<T extends AddNetworkStoragePoolParameters> ext
             final Guid oldDataCenterId = network.getDataCenterId();
             return ValidationResult.failWith(EngineMessage.ACTION_TYPE_FAILED_DATA_CENTER_ID_CANNOT_BE_CHANGED)
                     .when(!oldDataCenterId.equals(dataCenterId));
+        }
+
+        public ValidationResult portIsolationUnchanged(Network newNetwork) {
+            return ValidationResult.failWith(EngineMessage.ACTION_TYPE_FAILED_NETWORK_PORT_ISOLATION_CANNOT_BE_CHANGED)
+                    .when(network.isPortIsolation() != newNetwork.isPortIsolation());
         }
     }
 

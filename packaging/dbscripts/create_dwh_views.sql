@@ -84,6 +84,7 @@ SELECT cluster_id AS cluster_id,
     description AS cluster_description,
     storage_pool_id AS datacenter_id,
     cpu_name,
+    count_threads_as_cores AS count_threads_as_cores,
     compatibility_version,
     _create_date AS create_date,
     _update_date AS update_date
@@ -123,7 +124,7 @@ SELECT a.vds_id AS host_id,
     b.libvirt_version,
     b.software_version AS vdsm_version,
     a.port AS vdsm_port,
-    CAST(b.cpu_threads AS SMALLINT) AS threads_per_core,
+    CAST(b.cpu_threads AS SMALLINT) AS number_of_threads,
     b.hw_manufacturer AS hardware_manufacturer,
     b.hw_product_name AS hardware_product_name,
     b.hw_version AS hardware_version,
@@ -178,7 +179,7 @@ SELECT a.vds_id AS host_id,
         ELSE b.software_version
         END AS vdsm_version,
     a.port AS vdsm_port,
-    CAST(b.cpu_threads AS SMALLINT) AS threads_per_core,
+    CAST(b.cpu_threads AS SMALLINT) AS number_of_threads,
     b.hw_manufacturer AS hardware_manufacturer,
     b.hw_product_name AS hardware_product_name,
     b.hw_version AS hardware_version,
@@ -263,7 +264,9 @@ SELECT vds_interface_statistics.id AS host_interface_id,
     vds_interface_statistics.rx_rate AS receive_rate_percent,
     vds_interface_statistics.tx_rate AS transmit_rate_percent,
     vds_interface_statistics.rx_total AS received_total_byte,
-    vds_interface_statistics.tx_total AS transmitted_total_byte
+    vds_interface_statistics.tx_total AS transmitted_total_byte,
+    vds_interface_statistics.rx_drop AS received_dropped_total_packets,
+    vds_interface_statistics.tx_drop AS transmitted_dropped_total_packets
 FROM vds_interface_statistics;
 
 CREATE OR REPLACE VIEW dwh_vm_configuration_history_view AS
@@ -389,7 +392,9 @@ SELECT vm_interface_statistics.id AS vm_interface_id,
     vm_interface_statistics.rx_rate AS receive_rate_percent,
     vm_interface_statistics.tx_rate AS transmit_rate_percent,
     vm_interface_statistics.rx_total AS received_total_byte,
-    vm_interface_statistics.tx_total AS transmitted_total_byte
+    vm_interface_statistics.tx_total AS transmitted_total_byte,
+    vm_interface_statistics.rx_drop AS received_dropped_total_packets,
+    vm_interface_statistics.tx_drop AS transmitted_dropped_total_packets
 FROM vm_interface_statistics;
 
 CREATE OR REPLACE VIEW dwh_vm_disk_configuration_history_view AS
@@ -480,8 +485,10 @@ SELECT d.disk_id AS vm_disk_id,
     cast(images.imageStatus AS SMALLINT) AS vm_disk_status,
     vm_disk_actual_size.vm_disk_actual_size_mb AS vm_disk_actual_size_mb,
     disk_image_dynamic.read_rate AS read_rate_bytes_per_second,
+    disk_image_dynamic.read_ops AS read_ops_per_second,
     disk_image_dynamic.read_latency_seconds AS read_latency_seconds,
     disk_image_dynamic.write_rate AS write_rate_bytes_per_second,
+    disk_image_dynamic.write_ops AS write_ops_per_second,
     disk_image_dynamic.write_latency_seconds AS write_latency_seconds,
     disk_image_dynamic.flush_latency_seconds AS flush_latency_seconds
 FROM images

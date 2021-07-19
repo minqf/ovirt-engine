@@ -16,12 +16,9 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.xml.bind.annotation.adapters.HexBinaryAdapter;
 
-import org.codehaus.jackson.map.ObjectMapper;
-import org.codehaus.jackson.node.ArrayNode;
-import org.codehaus.jackson.node.BooleanNode;
-import org.codehaus.jackson.node.ObjectNode;
 import org.ovirt.engine.core.branding.BrandingFilter;
 import org.ovirt.engine.core.branding.BrandingManager;
+import org.ovirt.engine.core.common.businessentities.UserProfileProperty;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigCommon;
@@ -29,11 +26,18 @@ import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.constants.SessionConstants;
 import org.ovirt.engine.core.common.interfaces.BackendLocal;
 import org.ovirt.engine.core.common.queries.GetConfigurationValueParameters;
+import org.ovirt.engine.core.common.queries.IdAndNameQueryParameters;
 import org.ovirt.engine.core.common.queries.QueryParametersBase;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
 import org.ovirt.engine.core.common.queries.QueryType;
+import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.utils.servlet.LocaleFilter;
 import org.ovirt.engine.core.utils.servlet.ServletUtils;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.BooleanNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
  * Renders the HTML host page of a GWT application.
@@ -121,8 +125,9 @@ public abstract class GwtDynamicHostPageServlet extends HttpServlet {
         DbUser loggedInUser = getLoggedInUser(engineSessionId);
         if (loggedInUser != null) {
             String ssoToken = getSsoToken(engineSessionId);
+            UserProfileProperty webAdminUserOptions = getWebAdminUserOptions(loggedInUser.getId(), engineSessionId);
             request.setAttribute(MD5Attributes.ATTR_USER_INFO.getKey(),
-                    getUserInfoObject(loggedInUser, ssoToken));
+                    getUserInfoObject(loggedInUser, ssoToken, webAdminUserOptions));
         }
 
         // Set attribute for engineRpmVersion object
@@ -156,6 +161,13 @@ public abstract class GwtDynamicHostPageServlet extends HttpServlet {
 
     private String getSsoToken(final String engineSessionId) {
         return (String) runQuery(QueryType.GetEngineSessionIdToken, new QueryParametersBase(), engineSessionId);
+    }
+
+    private UserProfileProperty getWebAdminUserOptions(final Guid userId, final String engineSessionId) {
+        return (UserProfileProperty)runQuery(
+                QueryType.GetUserProfilePropertyByNameAndUserId,
+                new IdAndNameQueryParameters(userId, "webAdmin"), //$NON-NLS-1$
+                engineSessionId);
     }
 
     protected Boolean getDisplayUncaughtUIExceptions() {
@@ -263,13 +275,19 @@ public abstract class GwtDynamicHostPageServlet extends HttpServlet {
         return (DbUser) runQuery(QueryType.GetUserBySessionId, new QueryParametersBase(), sessionId);
     }
 
-    protected ObjectNode getUserInfoObject(DbUser loggedInUser, String ssoToken) {
+    protected ObjectNode getUserInfoObject(DbUser loggedInUser,
+            String ssoToken,
+            UserProfileProperty webAdminUserOptions) {
         ObjectNode obj = createObjectNode();
         obj.put("id", loggedInUser.getId().toString()); //$NON-NLS-1$
         obj.put("userName", loggedInUser.getLoginName()); //$NON-NLS-1$
         obj.put("domain", loggedInUser.getDomain()); //$NON-NLS-1$
         obj.put("isAdmin", loggedInUser.isAdmin()); //$NON-NLS-1$
         obj.put("ssoToken", ssoToken); //$NON-NLS-1$
+        if (webAdminUserOptions != null) {
+            obj.put("userOptions", webAdminUserOptions.getContent()); //$NON-NLS-1$
+            obj.put("userOptionsId", webAdminUserOptions.getPropertyId().toString()); //$NON-NLS-1$
+        }
         return obj;
     }
 

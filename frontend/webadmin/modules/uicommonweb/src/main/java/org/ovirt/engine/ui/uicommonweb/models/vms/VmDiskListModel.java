@@ -5,25 +5,30 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.ovirt.engine.core.common.ActionUtils;
 import org.ovirt.engine.core.common.action.ActionParametersBase;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.ChangeQuotaParameters;
+import org.ovirt.engine.core.common.action.SyncDirectLunsParameters;
 import org.ovirt.engine.core.common.action.VmDiskOperationParameterBase;
+import org.ovirt.engine.core.common.businessentities.OriginType;
 import org.ovirt.engine.core.common.businessentities.StoragePool;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VMStatus;
 import org.ovirt.engine.core.common.businessentities.comparators.DiskByDiskAliasComparator;
-import org.ovirt.engine.core.common.businessentities.storage.CinderDisk;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.DiskStorageType;
 import org.ovirt.engine.core.common.businessentities.storage.DiskVmElement;
 import org.ovirt.engine.core.common.businessentities.storage.ImageStatus;
+import org.ovirt.engine.core.common.businessentities.storage.LunDisk;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeType;
 import org.ovirt.engine.core.common.queries.IdQueryParameters;
 import org.ovirt.engine.core.common.queries.QueryType;
+import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.Version;
 import org.ovirt.engine.ui.frontend.Frontend;
 import org.ovirt.engine.ui.uicommonweb.UICommand;
@@ -133,6 +138,16 @@ public class VmDiskListModel extends VmDiskListModelBase<VM> {
                 ActionUtils.canExecute(Arrays.asList(getEntity()), VM.class, ActionType.ExtendImageSize) : false;
     }
 
+    private UICommand refreshLunCommand;
+
+    public UICommand getRefreshLunCommand() {
+        return refreshLunCommand;
+    }
+
+    private void setRefreshLunCommand(UICommand value) {
+        refreshLunCommand = value;
+    }
+
     public VmDiskListModel() {
         setTitle(ConstantsManager.getInstance().getConstants().disksTitle());
         setHelpTag(HelpTag.disks);
@@ -148,6 +163,7 @@ public class VmDiskListModel extends VmDiskListModelBase<VM> {
         setMoveCommand(new UICommand("Move", this)); //$NON-NLS-1$
         setChangeQuotaCommand(new UICommand("changeQuota", this)); //$NON-NLS-1$
         getChangeQuotaCommand().setIsAvailable(false);
+        setRefreshLunCommand(new UICommand("refreshLun", this)); //$NON-NLS-1$
 
         updateActionAvailability();
     }
@@ -398,6 +414,13 @@ public class VmDiskListModel extends VmDiskListModelBase<VM> {
         setWindow(null);
     }
 
+    private void refreshLun() {
+        Set<Guid> lunIds = getSelectedItems().stream()
+                .map(disk -> ((LunDisk) disk).getLun().getDiskId())
+                .collect(Collectors.toSet());
+        Frontend.getInstance().runAction(ActionType.SyncDirectLuns, new SyncDirectLunsParameters(null, lunIds));
+    }
+
     @Override
     protected void onSelectedItemChanged() {
         super.onSelectedItemChanged();
@@ -422,7 +445,7 @@ public class VmDiskListModel extends VmDiskListModelBase<VM> {
     private void updateActionAvailability() {
         Disk disk = getSelectedItem();
 
-        getNewCommand().setIsExecutionAllowed(true);
+        getNewCommand().setIsExecutionAllowed(!isKubevirt());
 
         getAttachCommand().setIsExecutionAllowed(true);
 
@@ -439,6 +462,8 @@ public class VmDiskListModel extends VmDiskListModelBase<VM> {
         getPlugCommand().setIsExecutionAllowed(isPlugCommandAvailable(true));
 
         getUnPlugCommand().setIsExecutionAllowed(isPlugCommandAvailable(false));
+
+        getRefreshLunCommand().setIsExecutionAllowed(isRefreshLunAllowed());
     }
 
     public boolean isVmDown() {
@@ -446,14 +471,14 @@ public class VmDiskListModel extends VmDiskListModelBase<VM> {
         return vm != null && vm.getStatus() == VMStatus.Down;
     }
 
+    public boolean isKubevirt() {
+        VM vm = getEntity();
+        return vm != null && vm.getOrigin() == OriginType.KUBEVIRT;
+    }
+
     private boolean isDiskLocked(Disk disk) {
-        switch (disk.getDiskStorageType()) {
-            case IMAGE:
-                return ((DiskImage) disk).getImageStatus() == ImageStatus.LOCKED;
-            case CINDER:
-                return ((CinderDisk) disk).getImageStatus() == ImageStatus.LOCKED;
-        }
-        return false;
+        return disk.getDiskStorageType() == DiskStorageType.IMAGE &&
+                ((DiskImage) disk).getImageStatus() == ImageStatus.LOCKED;
     }
 
     private boolean isSingleDiskSelected() {
@@ -564,6 +589,14 @@ public class VmDiskListModel extends VmDiskListModelBase<VM> {
         return true;
     }
 
+    private boolean isRefreshLunAllowed() {
+        List<Disk> disks = getSelectedItems();
+        if (disks == null || disks.isEmpty()) {
+            return false;
+        }
+        return disks.stream().allMatch(disk -> disk.getDiskStorageType() == DiskStorageType.LUN);
+    }
+
     @Override
     public void executeCommand(UICommand command) {
         super.executeCommand(command);
@@ -600,6 +633,8 @@ public class VmDiskListModel extends VmDiskListModelBase<VM> {
             changeQuota();
         } else if (command.getName().equals("onChangeQuota")) { //$NON-NLS-1$
             onChangeQuota();
+        } else if (command == getRefreshLunCommand()) {
+            refreshLun();
         }
     }
 

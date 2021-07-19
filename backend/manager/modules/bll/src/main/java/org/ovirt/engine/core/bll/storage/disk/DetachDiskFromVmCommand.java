@@ -1,9 +1,11 @@
 package org.ovirt.engine.core.bll.storage.disk;
 
+import java.util.concurrent.locks.Lock;
+
 import javax.inject.Inject;
 
+import org.ovirt.engine.core.bll.NonTransactiveCommandAttribute;
 import org.ovirt.engine.core.bll.context.CommandContext;
-import org.ovirt.engine.core.bll.storage.disk.managedblock.ManagedBlockStorageCommandUtil;
 import org.ovirt.engine.core.bll.validator.VmValidator;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.action.AttachDetachVmDiskParameters;
@@ -16,12 +18,15 @@ import org.ovirt.engine.core.common.businessentities.storage.DiskStorageType;
 import org.ovirt.engine.core.common.businessentities.storage.DiskVmElement;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.vdscommands.VDSCommandType;
+import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.DiskImageDao;
 import org.ovirt.engine.core.dao.DiskVmElementDao;
 import org.ovirt.engine.core.dao.ImageDao;
 import org.ovirt.engine.core.dao.VmDeviceDao;
 import org.ovirt.engine.core.dao.VmStaticDao;
+import org.ovirt.engine.core.utils.transaction.TransactionSupport;
 
+@NonTransactiveCommandAttribute
 public class DetachDiskFromVmCommand<T extends AttachDetachVmDiskParameters> extends AbstractDiskVmCommand<T> {
 
     @Inject
@@ -36,12 +41,14 @@ public class DetachDiskFromVmCommand<T extends AttachDetachVmDiskParameters> ext
     private ImageDao imageDao;
     @Inject
     private VmStaticDao vmStaticDao;
-    @Inject
-    private ManagedBlockStorageCommandUtil managedBlockStorageCommandUtil;
 
     private Disk disk;
     private VmDevice vmDevice;
     private DiskVmElement dveFromDb;
+
+    public DetachDiskFromVmCommand(Guid commandId) {
+        super(commandId);
+    }
 
     public DetachDiskFromVmCommand(T parameters, CommandContext cmdContext) {
         super(parameters, cmdContext);
@@ -55,6 +62,10 @@ public class DetachDiskFromVmCommand<T extends AttachDetachVmDiskParameters> ext
 
         if (getVm().getStatus() != VMStatus.Up && getVm().getStatus() != VMStatus.Down) {
             return failVmStatusIllegal();
+        }
+
+        if (getDiskVmElement() == null) {
+            return failValidation(EngineMessage.ACTION_TYPE_FAILED_CANNOT_DETACH_DISK_IS_NOT_ATTACHED_TO_VM, getVmName());
         }
 
         disk = diskHandler.loadDiskFromSnapshot(getDiskVmElement().getDiskId(), getParameters().getSnapshotId());
@@ -103,25 +114,34 @@ public class DetachDiskFromVmCommand<T extends AttachDetachVmDiskParameters> ext
 
     @Override
     protected void executeVmCommand() {
-        if (diskShouldBeUnPlugged()) {
-            performPlugCommand(VDSCommandType.HotUnPlugDisk, disk, vmDevice);
+        boolean hotUnplug = diskShouldBeUnplugged();
+        Lock vmDevicesLock = getVmDevicesLock(hotUnplug);
+        vmDevicesLock.lock();
+        try {
+            if (hotUnplug) {
+                performPlugCommand(VDSCommandType.HotUnPlugDisk, disk, vmDevice);
+            }
+
+            TransactionSupport.executeInNewTransaction(() -> {
+                vmDeviceDao.remove(vmDevice.getId());
+                diskVmElementDao.remove(vmDevice.getId());
+
+                if (!disk.isDiskSnapshot() && disk.getDiskStorageType().isInternal()) {
+                    // clears snapshot ID
+                    imageDao.updateImageVmSnapshotId(((DiskImage) disk).getImageId(), null);
+                }
+
+                vmStaticDao.incrementDbGeneration(getVm().getId());
+                return null;
+            });
+
+            setSucceeded(true);
+        } finally {
+            vmDevicesLock.unlock();
         }
-
-        vmDeviceDao.remove(vmDevice.getId());
-        diskVmElementDao.remove(vmDevice.getId());
-
-        if (!disk.isDiskSnapshot() && disk.getDiskStorageType().isInternal()) {
-            // clears snapshot ID
-            imageDao.updateImageVmSnapshotId(((DiskImage) disk).getImageId(), null);
-        }
-
-        // update cached image
-        vmHandler.updateDisksFromDb(getVm());
-        vmStaticDao.incrementDbGeneration(getVm().getId());
-        setSucceeded(true);
     }
 
-    private boolean diskShouldBeUnPlugged() {
+    private boolean diskShouldBeUnplugged() {
         return Boolean.TRUE.equals(getParameters().isPlugUnPlug() && vmDevice.isPlugged()
                 && getVm().getStatus() != VMStatus.Down);
     }

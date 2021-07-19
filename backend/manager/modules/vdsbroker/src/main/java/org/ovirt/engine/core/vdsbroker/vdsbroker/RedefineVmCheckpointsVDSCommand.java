@@ -1,13 +1,16 @@
 package org.ovirt.engine.core.vdsbroker.vdsbroker;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
-import org.ovirt.engine.core.common.vdscommands.VmCheckpointsVDSParameters;
+import org.ovirt.engine.core.common.vdscommands.VmBackupVDSParameters;
+import org.ovirt.engine.core.vdsbroker.irsbroker.VmCheckpointIds;
 
-public class RedefineVmCheckpointsVDSCommand<P extends VmCheckpointsVDSParameters> extends VdsBrokerCommand<P> {
+public class RedefineVmCheckpointsVDSCommand<P extends VmBackupVDSParameters> extends VmBackupConfigVDSCommandBase<P> {
+    VmCheckpointIds vmCheckpointIds;
 
     public RedefineVmCheckpointsVDSCommand(P parameters) {
         super(parameters);
@@ -15,28 +18,39 @@ public class RedefineVmCheckpointsVDSCommand<P extends VmCheckpointsVDSParameter
 
     @Override
     protected void executeVdsBrokerCommand() {
-        status = getBroker().redefineVmCheckpoints(
-                getParameters().getVmId().toString(), createCheckpointsMap());
+        vmCheckpointIds = getBroker().redefineVmCheckpoints(
+                getParameters().getVmBackup().getVmId().toString(), createCheckpointsMap());
         proceedProxyReturnValue();
+
+        setReturnValue(vmCheckpointIds);
     }
 
-    private HashMap[] createCheckpointsMap() {
-        return getParameters().getCheckpoints().stream().map(checkpoint -> {
-            Map<String, Object> params = new HashMap<>();
-            params.put("id", checkpoint.getId().toString());
-            params.put("created", checkpoint.getCreationDate().toString());
-            params.put(VdsProperties.vm_disks, createDisksMap(checkpoint.getDisks()));
-            return params;
-        }).toArray(HashMap[]::new);
+    @Override
+    protected String getDiskBackupMode(DiskImage diskImage) {
+        // Disk backup_mode isn't needed for redefining a checkpoint
+        return null;
     }
 
-    private HashMap[] createDisksMap(List<DiskImage> disks) {
-        return disks.stream().map(diskImage -> {
-            Map<String, String> imageParams = new HashMap<>();
-            imageParams.put(VdsProperties.DomainId, diskImage.getStorageIds().get(0).toString());
-            imageParams.put(VdsProperties.ImageId, diskImage.getId().toString());
-            imageParams.put(VdsProperties.VolumeId, diskImage.getImageId().toString());
-            return imageParams;
-        }).toArray(HashMap[]::new);
+    private Collection<Map<String, Object>> createCheckpointsMap() {
+        Collection<Map<String, Object>> checkpoints = new ArrayList<>();
+        Map<String, Object> params = new HashMap<>();
+        params.put("id", getParameters().getVmBackup().getToCheckpointId().toString());
+        Map<String, Object> backupConfig = createBackupConfig();
+        // Set the time since epoch in seconds
+        backupConfig.put("creation_time", getParameters().getVmBackup().getCreationDate().getTime() / 1000L);
+
+        params.put("config", backupConfig);
+        checkpoints.add(params);
+        return checkpoints;
+    }
+
+    @Override
+    protected Object getReturnValueFromBroker() {
+        return vmCheckpointIds;
+    }
+
+    @Override
+    protected Status getReturnStatus() {
+        return vmCheckpointIds.getStatus();
     }
 }

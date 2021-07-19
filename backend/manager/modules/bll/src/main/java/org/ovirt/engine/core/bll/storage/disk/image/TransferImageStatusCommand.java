@@ -48,14 +48,24 @@ public class TransferImageStatusCommand<T extends TransferImageStatusParameters>
         }
 
         ImageTransfer updates = getParameters().getUpdates();
-        if (updates != null) {
-            if (updates.getPhase() == ImageTransferPhase.RESUMING && !entity.getPhase().isPaused()) {
-                return failValidation(EngineMessage.ACTION_TYPE_FAILED_CANNOT_RESUME_IMAGE_TRANSFER);
-            }
+        if (updates != null && entity != null && updates.getPhase() != null) {
+            ImageTransferPhase imageTransferPhaseUpdate = updates.getPhase();
 
-            if (entity != null && entity.getType() == TransferType.Download &&
-                    updates.getPhase() != null && getParameters().getUpdates().getPhase().isPaused()) {
-                return failValidation(EngineMessage.ACTION_TYPE_FAILED_CANNOT_PAUSE_IMAGE_DOWNLOAD);
+            switch (imageTransferPhaseUpdate) {
+                case RESUMING:
+                    // Can resume only a paused transfer.
+                    if (!entity.getPhase().isPaused()) {
+                        return failValidation(EngineMessage.ACTION_TYPE_FAILED_CANNOT_RESUME_IMAGE_TRANSFER);
+                    }
+                    break;
+                case PAUSED_SYSTEM:
+                case PAUSED_USER:
+                    // Can pause only an upload.
+                    // Note: should be kept correlated with any 'PAUSED_*' enum key (ImageTransferPhase:isPaused)
+                    if (entity.getType() == TransferType.Download) {
+                        return failValidation(EngineMessage.ACTION_TYPE_FAILED_CANNOT_PAUSE_IMAGE_DOWNLOAD);
+                    }
+                    break;
             }
         }
 

@@ -18,7 +18,7 @@ import javax.inject.Inject;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.ovirt.engine.core.common.businessentities.ActionGroup;
+import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.OriginType;
 import org.ovirt.engine.core.common.businessentities.QuotaEnforcementTypeEnum;
 import org.ovirt.engine.core.common.businessentities.VM;
@@ -50,11 +50,13 @@ public class VmDaoTest extends BaseDaoTestCase<VmDao> {
         VM newVm = new VM();
         newVm.setId(Guid.newGuid());
         newVm.setClusterId(FixturesTool.CLUSTER_RHEL6_ISCSI);
+        newVm.setBiosType(BiosType.Q35_SEA_BIOS);
         newVm.setVmtGuid(FixturesTool.VM_TEMPLATE_RHEL5);
 
         VmStatic newVmStatic = new VmStatic();
         newVmStatic.setName("New Virtual Machine");
         newVmStatic.setClusterId(FixturesTool.CLUSTER_RHEL6_ISCSI);
+        newVmStatic.setBiosType(BiosType.Q35_SEA_BIOS);
         newVmStatic.setVmtGuid(FixturesTool.VM_TEMPLATE_RHEL5);
     }
 
@@ -181,29 +183,6 @@ public class VmDaoTest extends BaseDaoTestCase<VmDao> {
         List<VM> result = dao.getAll();
 
         assertCorrectGetAllResult(result);
-    }
-
-    /**
-     * Ensures that getting all VMs for specific action group works as expected.
-     */
-    @Test
-    public void testGetAllForUserAndActionGroup() {
-        List<VM> result = dao.getAllForUserAndActionGroup(PRIVILEGED_USER_ID, ActionGroup.CONNECT_TO_SERIAL_CONSOLE);
-
-        assertNotNull(result);
-        assertFalse(result.isEmpty());
-        assertEquals(6, result.size());
-    }
-
-    /**
-     * Ensures that getting all VMs for unprivileged specific action group works as expected.
-     */
-    @Test
-    public void testGetAllForUnPrivilegedUserAndActionGroup() {
-        List<VM> result = dao.getAllForUserAndActionGroup(UNPRIVILEGED_USER_ID, ActionGroup.CONNECT_TO_SERIAL_CONSOLE);
-
-        assertNotNull(result);
-        assertTrue(result.isEmpty());
     }
 
     @Test
@@ -342,8 +321,8 @@ public class VmDaoTest extends BaseDaoTestCase<VmDao> {
      * Ensures that it retrieves all VMs running on the specified VDS.
      */
     @Test
-    public void testGetAllRunningForVds() {
-        Map<Guid, VM> result = dao.getAllRunningByVds(FixturesTool.VDS_RHEL6_NFS_SPM);
+    public void testGetMonitoredVmsRunningByVds() {
+        List<VM> result = dao.getMonitoredVmsRunningByVds(FixturesTool.VDS_RHEL6_NFS_SPM);
 
         assertNotNull(result);
         assertFalse(result.isEmpty());
@@ -590,6 +569,7 @@ public class VmDaoTest extends BaseDaoTestCase<VmDao> {
         VmStatic vmStatic = new VmStatic();
         vmStatic.setId(id);
         vmStatic.setClusterId(FixturesTool.CLUSTER_RHEL6_ISCSI);
+        vmStatic.setBiosType(BiosType.Q35_SEA_BIOS);
         vmStatic.setName("HostedEngine");
         vmStatic.setOrigin(OriginType.HOSTED_ENGINE);
         vmStatic.setCpuProfileId(FixturesTool.CPU_PROFILE_1);
@@ -630,9 +610,13 @@ public class VmDaoTest extends BaseDaoTestCase<VmDao> {
 
         assertNotNull(vms);
         assertThat(vms)
-                .hasSize(2)
+                .hasSize(5)
                 .extracting(VM::getId)
-                .contains(FixturesTool.VM_RHEL5_POOL_57, FixturesTool.VM_RHEL5_POOL_52);
+                .contains(FixturesTool.VM_RHEL5_POOL_57,
+                        FixturesTool.VM_RHEL5_POOL_52,
+                        FixturesTool.VM_RHEL5_POOL_50,
+                        FixturesTool.VM_RHEL5_POOL_51,
+                        FixturesTool.VM_WITH_NO_ATTACHED_DISKS);
     }
 
 }

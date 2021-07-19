@@ -14,7 +14,6 @@ import javax.ejb.Singleton;
 import javax.ejb.Startup;
 import javax.ejb.TransactionAttribute;
 import javax.ejb.TransactionAttributeType;
-import javax.enterprise.inject.Any;
 import javax.enterprise.inject.Instance;
 import javax.inject.Inject;
 import javax.interceptor.ExcludeClassInterceptors;
@@ -40,6 +39,7 @@ import org.ovirt.engine.core.bll.job.JobRepository;
 import org.ovirt.engine.core.bll.job.JobRepositoryCleanupManager;
 import org.ovirt.engine.core.bll.network.macpool.MacPoolPerCluster;
 import org.ovirt.engine.core.bll.quota.QuotaManager;
+import org.ovirt.engine.core.bll.storage.backup.DbEntityCleanupManager;
 import org.ovirt.engine.core.bll.storage.domain.IsoDomainListSynchronizer;
 import org.ovirt.engine.core.bll.utils.ThreadPoolMonitoringService;
 import org.ovirt.engine.core.common.EngineWorkingMode;
@@ -87,7 +87,6 @@ import org.ovirt.engine.core.utils.ErrorTranslatorImpl;
 import org.ovirt.engine.core.utils.OsRepositoryImpl;
 import org.ovirt.engine.core.utils.extensionsmgr.EngineExtensionsManager;
 import org.ovirt.engine.core.utils.osinfo.OsInfoPreferencesLoader;
-import org.ovirt.engine.core.utils.timer.SchedulerUtil;
 import org.ovirt.engine.core.vdsbroker.monitoring.VmMigrationProgressMonitoring;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -116,9 +115,6 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
 
     @Inject
     private ServiceLoader serviceLoader;
-    @Inject
-    @Any
-    private Instance<SchedulerUtil> taskSchedulers;
     @Inject
     private SessionDataContainer sessionDataContainer;
     @Inject
@@ -234,10 +230,6 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
         // save host that HE VM was running on prior to engine startup
         serviceLoader.load(PreviousHostedEngineHost.class);
 
-        // start task schedulers
-        for (SchedulerUtil taskScheduler : taskSchedulers) {
-            log.info("Started task scheduler {}", taskScheduler);
-        }
         // initialize CDI services
         serviceLoader.load(CacheManager.class);
         // initialize configuration utils to use DB
@@ -282,6 +274,8 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
         initJobRepository();
 
         serviceLoader.load(JobRepositoryCleanupManager.class);
+
+        serviceLoader.load(DbEntityCleanupManager.class);
 
         serviceLoader.load(AutoRecoveryManager.class);
 

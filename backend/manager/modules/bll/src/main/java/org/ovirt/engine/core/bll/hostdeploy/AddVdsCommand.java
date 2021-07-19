@@ -138,8 +138,6 @@ public class AddVdsCommand<T extends AddVdsActionParameters> extends VdsCommand<
             }
         }
 
-        completeOpenstackNetworkProviderId();
-
         TransactionSupport.executeInNewTransaction(() -> {
             addVdsStaticToDb();
             addVdsDynamicToDb();
@@ -202,7 +200,7 @@ public class AddVdsCommand<T extends AddVdsActionParameters> extends VdsCommand<
             installVdsParameters.setAuthMethod(getParameters().getAuthMethod());
             installVdsParameters.setOverrideFirewall(getParameters().getOverrideFirewall());
             installVdsParameters.setActivateHost(getParameters().getActivateHost());
-            installVdsParameters.setNetworkProviderId(getParameters().getVdsStaticData().getOpenstackNetworkProviderId());
+            installVdsParameters.setRebootHost(getParameters().getRebootHost());
             installVdsParameters
                     .setHostedEngineDeployConfiguration(getParameters().getHostedEngineDeployConfiguration());
             Map<String, String> values = new HashMap<>();
@@ -222,13 +220,6 @@ public class AddVdsCommand<T extends AddVdsActionParameters> extends VdsCommand<
                     cloneContextAndDetachFromParent()
                     .withExecutionContext(installCtx)));
             ExecutionHandler.setAsyncJob(getExecutionContext(), true);
-        }
-    }
-
-    private void completeOpenstackNetworkProviderId() {
-        if (getParameters().getVdsStaticData().getOpenstackNetworkProviderId() == null) {
-            getParameters().getVdsStaticData().setOpenstackNetworkProviderId(
-                    getCluster().getDefaultNetworkProviderId());
         }
     }
 
@@ -354,7 +345,9 @@ public class AddVdsCommand<T extends AddVdsActionParameters> extends VdsCommand<
                     && validate(validator.passwordNotEmpty(params.isPending(),
                             params.getAuthMethod(),
                             params.getPassword()))
-                    && validate(validator.supportsDeployingHostedEngine(params.getHostedEngineDeployConfiguration()));
+                    && validate(validator.supportsDeployingHostedEngine(params.getHostedEngineDeployConfiguration(),
+                            getCluster(),
+                            false));
         }
 
         if (!(returnValue
@@ -363,11 +356,6 @@ public class AddVdsCommand<T extends AddVdsActionParameters> extends VdsCommand<
                         getCluster().getCompatibilityVersion().toString(),
                         true)
                 && canConnect(params.getvds()))) {
-            return false;
-        }
-
-        if (!validateNetworkProviderConfiguration(
-                getParameters().getVdsStaticData().getOpenstackNetworkProviderId())) {
             return false;
         }
 

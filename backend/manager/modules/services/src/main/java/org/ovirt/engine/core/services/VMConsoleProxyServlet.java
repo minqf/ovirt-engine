@@ -4,10 +4,15 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.security.GeneralSecurityException;
+import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 import javax.servlet.ServletException;
@@ -25,19 +30,20 @@ import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.LoginOnBehalfParameters;
 import org.ovirt.engine.core.common.businessentities.ActionGroup;
-import org.ovirt.engine.core.common.businessentities.UserProfile;
-import org.ovirt.engine.core.common.businessentities.VDS;
-import org.ovirt.engine.core.common.businessentities.VM;
+import org.ovirt.engine.core.common.businessentities.UserSshKey;
+import org.ovirt.engine.core.common.businessentities.VdsStatic;
+import org.ovirt.engine.core.common.businessentities.VmDynamic;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.queries.GetEntitiesWithPermittedActionParameters;
-import org.ovirt.engine.core.common.queries.IdQueryParameters;
-import org.ovirt.engine.core.common.queries.QueryParametersBase;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
 import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.core.compat.Guid;
+import org.ovirt.engine.core.dao.UserProfileDao;
+import org.ovirt.engine.core.dao.VdsStaticDao;
 import org.ovirt.engine.core.utils.crypt.EngineEncryptionUtils;
 import org.ovirt.engine.core.uutils.crypto.ticket.TicketDecoder;
+import org.ovirt.engine.core.vdsbroker.ResourceManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,34 +52,30 @@ public class VMConsoleProxyServlet extends HttpServlet {
 
     @Inject
     private BackendInternal backend;
+    @Inject
+    private ResourceManager resourceManager;
+    @Inject
+    private VdsStaticDao vdsStaticDao;
+    @Inject
+    private UserProfileDao userProfileDao;
 
     private static final String VM_CONSOLE_PROXY_EKU = "1.3.6.1.4.1.2312.13.1.2.1.1";
 
     private static final Logger log = LoggerFactory.getLogger(VMConsoleProxyServlet.class);
 
-    // TODO: implmement key filtering based on input parameters
+    // TODO: implement key filtering based on input parameters
     private List<Map<String, String>> availablePublicKeys(String keyFingerPrint, String keyType, String keyContent) {
-
         List<Map<String, String>> jsonUsers = new ArrayList<>();
-        QueryParametersBase userProfileParams = new QueryParametersBase();
+        for (UserSshKey userSshKey : userProfileDao.getAllPublicSshKeys()) {
+            for (String publicKey : StringUtils.split(userSshKey.getContent(), "\n")) {
+                if (StringUtils.isNotBlank(publicKey)) {
+                    Map<String, String> jsonUser = new HashMap<>();
 
-        QueryReturnValue v = backend.runInternalQuery(QueryType.GetAllUserProfiles, userProfileParams);
+                    jsonUser.put("entityid", userSshKey.getUserId());
+                    jsonUser.put("entity", userSshKey.getLoginName());
+                    jsonUser.put("key", publicKey.trim());
 
-        if (v != null) {
-            List<UserProfile> profiles = v.getReturnValue();
-            for (UserProfile profile : profiles) {
-                if (StringUtils.isNotEmpty(profile.getSshPublicKey())) {
-                    for (String publicKey : StringUtils.split(profile.getSshPublicKey(), "\n")) {
-                        if (StringUtils.isNotEmpty(publicKey)) {
-                            Map<String, String> jsonUser = new HashMap<>();
-
-                            jsonUser.put("entityid", profile.getUserId().toString());
-                            jsonUser.put("entity", profile.getLoginName());
-                            jsonUser.put("key", publicKey.trim());
-
-                            jsonUsers.add(jsonUser);
-                        }
-                    }
+                    jsonUsers.add(jsonUser);
                 }
             }
         }
@@ -82,9 +84,6 @@ public class VMConsoleProxyServlet extends HttpServlet {
     }
 
     private List<Map<String, String>> availableConsoles(String userIdAsString) {
-
-        List<Map<String, String>> jsonVms = new ArrayList<>();
-
         Guid userGuid = null;
 
         try {
@@ -107,31 +106,48 @@ public class VMConsoleProxyServlet extends HttpServlet {
                         new GetEntitiesWithPermittedActionParameters(ActionGroup.CONNECT_TO_SERIAL_CONSOLE),
                         new EngineContext().withSessionId(engineSessionId));
                 if (retVms != null) {
-                    List<VM> vmsList = retVms.getReturnValue();
-                    for (VM vm : vmsList) {
-                        Map<String, String> jsonVm = new HashMap<>();
-                        if (vm.getRunOnVds() != null) {
-                            // TODO: avoid one query per loop. Bulk query?
-                            QueryReturnValue retValue = backend.runInternalQuery(QueryType.GetVdsByVdsId,
-                                    new IdQueryParameters(vm.getRunOnVds()));
-                            if (retValue != null && retValue.getReturnValue() != null) {
-                                VDS vds = retValue.getReturnValue();
-                                jsonVm.put("vmid", vm.getId().toString());
-                                jsonVm.put("vmname", vm.getName());
-                                jsonVm.put("host", vds.getHostName());
-                        /* there is only one serial console, no need and no way to distinguish them */
-                                jsonVm.put("console", "default");
-                                jsonVms.add(jsonVm);
-                            }
-                        }
-                    }
+                    List<VmDynamic> vms = retVms.getReturnValue();
+                    List<Guid> vdsIds = getRunOnVdsList(vms);
+                    Map<Guid, String> vdsIdToHostname = getVdsIdToHostname(vdsIds);
+                    Function<VmDynamic, SimpleEntry<VmDynamic, String>> vmToVmAndHostname = vm -> {
+                        String hostname = vdsIdToHostname.get(vm.getRunOnVds());
+                        return hostname != null ? new SimpleEntry<>(vm, hostname) : null;
+                    };
+                    return vms.stream()
+                            .map(vmToVmAndHostname)
+                            .filter(Objects::nonNull)
+                            .map(this::toJsonVm)
+                            .collect(Collectors.toList());
                 }
             } finally {
                 backend.runInternalAction(ActionType.LogoutSession, new ActionParametersBase(engineSessionId));
             }
         }
 
-        return jsonVms;
+        return Collections.emptyList();
+    }
+
+    private List<Guid> getRunOnVdsList(List<VmDynamic> vms) {
+        return vms.stream()
+                .map(VmDynamic::getRunOnVds)
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    private Map<Guid, String> getVdsIdToHostname(List<Guid> vdsIds) {
+        return vdsStaticDao.getByIds(vdsIds).stream()
+                .collect(Collectors.toMap(VdsStatic::getId, VdsStatic::getHostName));
+    }
+
+    private Map<String, String> toJsonVm(Map.Entry<VmDynamic, String> vmToHostname) {
+        Guid vmId = vmToHostname.getKey().getId();
+        Map<String, String> jsonVm = new HashMap<>();
+        jsonVm.put("vmid", vmId.toString());
+        jsonVm.put("vmname", resourceManager.getVmManager(vmId).getName());
+        jsonVm.put("host", vmToHostname.getValue());
+        /* there is only one serial console, no need and no way to distinguish them */
+        jsonVm.put("console", "default");
+        return jsonVm;
     }
 
     // Caller must ensure to close the #body to avoid resource leaking.

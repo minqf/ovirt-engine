@@ -1,7 +1,8 @@
 package org.ovirt.engine.ui.webadmin.section.main.view.tab.cluster;
 
 
-import static org.ovirt.engine.ui.uicommonweb.models.clusters.ClusterGeneralModel.CONFIGURED_CPU_VERB_PROPERTY_CHANGE;
+import static org.ovirt.engine.ui.uicommonweb.models.clusters.ClusterGeneralModel.ARCHITECTURE_PROPERTY_CHANGE;
+import static org.ovirt.engine.ui.uicommonweb.models.clusters.ClusterGeneralModel.CPU_VERB_PROPERTY_CHANGE;
 
 import org.ovirt.engine.core.common.mode.ApplicationMode;
 import org.ovirt.engine.ui.common.editor.UiCommonEditorDriver;
@@ -9,12 +10,15 @@ import org.ovirt.engine.ui.common.uicommon.model.ModelProvider;
 import org.ovirt.engine.ui.common.widget.WidgetWithInfo;
 import org.ovirt.engine.ui.common.widget.form.FormItem;
 import org.ovirt.engine.ui.common.widget.form.FormItem.DefaultValueCondition;
+import org.ovirt.engine.ui.common.widget.label.BiosTypeLabel;
 import org.ovirt.engine.ui.common.widget.label.BooleanLabel;
 import org.ovirt.engine.ui.common.widget.label.ClusterTypeLabel;
 import org.ovirt.engine.ui.common.widget.label.ResiliencePolicyLabel;
 import org.ovirt.engine.ui.common.widget.label.StringValueLabel;
+import org.ovirt.engine.ui.common.widget.renderer.BiosTypeRenderer;
 import org.ovirt.engine.ui.common.widget.uicommon.AbstractModelBoundFormWidget;
 import org.ovirt.engine.ui.uicommonweb.models.ApplicationModeHelper;
+import org.ovirt.engine.ui.uicommonweb.models.EntityModel;
 import org.ovirt.engine.ui.uicommonweb.models.clusters.ClusterGeneralModel;
 import org.ovirt.engine.ui.uicompat.PropertyChangedEventArgs;
 import org.ovirt.engine.ui.webadmin.ApplicationConstants;
@@ -39,12 +43,15 @@ public class ClusterGeneralModelForm extends AbstractModelBoundFormWidget<Cluste
     PercentLabel<Integer> memoryOverCommit;
     ResiliencePolicyLabel resiliencePolicy;
     ClusterTypeLabel clusterType;
+    BiosTypeRenderer biosTypeRenderer = new BiosTypeRenderer(AssetProvider.getConstants().autoDetect());
+    BiosTypeLabel biosType = new BiosTypeLabel(biosTypeRenderer);
     StringValueLabel noOfVolumesTotal = new StringValueLabel();
     StringValueLabel noOfVolumesUp = new StringValueLabel();
     StringValueLabel noOfVolumesDown = new StringValueLabel();
     StringValueLabel compatibilityVersion = new StringValueLabel();
     StringValueLabel emulatedMachine = new StringValueLabel();
     StringValueLabel numberOfVms = new StringValueLabel();
+    StringValueLabel clusterId = new StringValueLabel();
 
     private final Driver driver = GWT.create(Driver.class);
 
@@ -52,7 +59,7 @@ public class ClusterGeneralModelForm extends AbstractModelBoundFormWidget<Cluste
     private static final ApplicationMessages messages = AssetProvider.getMessages();
 
     public ClusterGeneralModelForm(ModelProvider<ClusterGeneralModel> modelProvider) {
-        super(modelProvider, 3, 6);
+        super(modelProvider, 3, 7);
     }
 
     /**
@@ -91,6 +98,8 @@ public class ClusterGeneralModelForm extends AbstractModelBoundFormWidget<Cluste
         formBuilder.addFormItem(new FormItem(constants.clusterType(), clusterType, 4, 0, virtSupported
                 && glusterSupported));
 
+
+        formBuilder.addFormItem(new FormItem(constants.idCluster(), clusterId, 5, 0));
         // properties for virt support
         formBuilder.addFormItem(new FormItem(constants.cpuTypeCluster(), createCpuType(), 0, 1, virtSupported)
                 .withDefaultValue(constants.notAvailableLabel(), virtServiceNotSupported));
@@ -100,9 +109,11 @@ public class ClusterGeneralModelForm extends AbstractModelBoundFormWidget<Cluste
                 .withDefaultValue(constants.notAvailableLabel(), virtServiceNotSupported));
         formBuilder.addFormItem(new FormItem(constants.resiliencePolicyCluster(), resiliencePolicy, 3, 1, virtSupported)
                 .withDefaultValue(constants.notAvailableLabel(), virtServiceNotSupported));
-        formBuilder.addFormItem(new FormItem(constants.emulatedMachine(), emulatedMachine, 4, 1, virtSupported)
+        formBuilder.addFormItem(new FormItem(constants.biosTypeGeneral(), biosType, 4, 1, virtSupported)
                 .withDefaultValue(constants.notAvailableLabel(), virtServiceNotSupported));
-        formBuilder.addFormItem(new FormItem(constants.numberOfVmsCluster(), numberOfVms, 5, 1, virtSupported)
+        formBuilder.addFormItem(new FormItem(constants.emulatedMachine(), emulatedMachine, 5, 1, virtSupported)
+                .withDefaultValue(constants.notAvailableLabel(), virtServiceNotSupported));
+        formBuilder.addFormItem(new FormItem(constants.numberOfVmsCluster(), numberOfVms, 6, 1, virtSupported)
                 .withDefaultValue(constants.notAvailableLabel(), virtServiceNotSupported));
 
         // properties for gluster support
@@ -116,6 +127,18 @@ public class ClusterGeneralModelForm extends AbstractModelBoundFormWidget<Cluste
 
     @Override
     protected void doEdit(ClusterGeneralModel model) {
+        biosTypeRenderer.setArchitectureType(getModel().getArchitecture());
+        getModel().getPropertyChangedEvent().addListener((ev, sender, args) -> {
+            if (args instanceof PropertyChangedEventArgs) {
+                String key = ((PropertyChangedEventArgs) args).propertyName;
+                if (key.equals(ARCHITECTURE_PROPERTY_CHANGE)) {
+                    biosTypeRenderer.setArchitectureType(getModel().getArchitecture());
+                    // change of the architecture changes the bios type rendering so we need to trigger the redraw
+                    getModel().onPropertyChanged(EntityModel.ENTITY);
+                }
+            }
+        });
+
         driver.edit(model);
     }
 
@@ -134,7 +157,7 @@ public class ClusterGeneralModelForm extends AbstractModelBoundFormWidget<Cluste
         getModel().getPropertyChangedEvent().addListener((ev, sender, args) -> {
             if (args instanceof PropertyChangedEventArgs) {
                 String key = ((PropertyChangedEventArgs) args).propertyName;
-                if (key.equals(CONFIGURED_CPU_VERB_PROPERTY_CHANGE)) {
+                if (key.equals(CPU_VERB_PROPERTY_CHANGE)) {
                     updateCpuTypeInfo(cpuTypeWithInfo);
                 }
             }

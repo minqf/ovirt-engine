@@ -7,10 +7,12 @@ import java.util.Map;
 import javax.inject.Inject;
 
 import org.ovirt.engine.core.bll.context.CommandContext;
+import org.ovirt.engine.core.bll.memory.MemoryDisks;
 import org.ovirt.engine.core.bll.memory.MemoryStorageHandler;
 import org.ovirt.engine.core.bll.memory.MemoryUtils;
 import org.ovirt.engine.core.bll.storage.disk.image.DisksFilter;
 import org.ovirt.engine.core.bll.tasks.CommandCoordinatorUtil;
+import org.ovirt.engine.core.bll.validator.VmValidator;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.FeatureSupported;
 import org.ovirt.engine.core.common.VdcObjectType;
@@ -91,7 +93,7 @@ public class HibernateVmCommand<T extends VmOperationParameterBase> extends VmOp
     @Override
     public Guid getStorageDomainId() {
         if (cachedStorageDomainId == null) {
-            List<DiskImage> diskDummiesForMemSize = MemoryUtils.createDiskDummies(
+            MemoryDisks diskDummiesForMemSize = MemoryUtils.createDiskDummies(
                     vmOverheadCalculator.getSnapshotMemorySizeInBytes(getVm()),
                     MemoryUtils.METADATA_SIZE_IN_BYTES);
             StorageDomain storageDomain = memoryStorageHandler.findStorageDomainForMemory(
@@ -218,6 +220,14 @@ public class HibernateVmCommand<T extends VmOperationParameterBase> extends VmOp
 
         if (getStorageDomainId() == null) {
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_NO_SUITABLE_DOMAIN_FOUND);
+        }
+        VmValidator vmValidator = new VmValidator(getVm());
+        if (!validate(vmValidator.vmNotHavingScsiPassthroughDevices())) {
+            return false;
+        }
+
+        if (!validate(vmValidator.vmNotHavingNvdimmDevices())) {
+            return false;
         }
 
         return true;

@@ -96,6 +96,7 @@ import org.ovirt.engine.core.common.businessentities.storage.DiskImageDynamic;
 import org.ovirt.engine.core.common.businessentities.storage.DiskInterface;
 import org.ovirt.engine.core.common.businessentities.storage.DiskVmElement;
 import org.ovirt.engine.core.common.businessentities.storage.LUNs;
+import org.ovirt.engine.core.common.businessentities.storage.LeaseJobStatus;
 import org.ovirt.engine.core.common.businessentities.storage.StorageType;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeType;
@@ -449,6 +450,14 @@ public class VdsBrokerObjectsBuilder {
             return (String) struct.get(VdsProperties.hash);
         }
         return null;
+    }
+
+    public String getTpmDataHash(Map<String, Object> struct) {
+        return (String) struct.get(VdsProperties.tpmHash);
+    }
+
+    public String getNvramDataHash(Map<String, Object> struct) {
+        return (String) struct.get(VdsProperties.nvramHash);
     }
 
     public VmDynamic buildVMDynamicData(Map<String, Object> struct, VDS host) {
@@ -872,6 +881,9 @@ public class VdsBrokerObjectsBuilder {
             if (sub.containsKey(VdsProperties.vm_guest_mem_free)) {
                 vm.setGuestMemoryFree(Long.parseLong(sub.get(VdsProperties.vm_guest_mem_free).toString()));
             }
+            if (sub.containsKey(VdsProperties.vm_guest_mem_unused)) {
+                vm.setGuestMemoryUnused(Long.parseLong(sub.get(VdsProperties.vm_guest_mem_unused).toString()));
+            }
         }
 
         // ------------- vm migration statistics -----------------------
@@ -1005,6 +1017,8 @@ public class VdsBrokerObjectsBuilder {
         vds.setConnectorInfo((Map<String, Object>) struct.get(VdsProperties.CONNECTOR_INFO));
         vds.setKvmEnabled(assignBoolValue(struct, VdsProperties.kvm_enabled));
         vds.setBackupEnabled(assignBoolValue(struct, VdsProperties.BACKUP_ENABLED));
+        vds.setColdBackupEnabled(assignBoolValue(struct, VdsProperties.COLD_BACKUP_ENABLED));
+        vds.setClearBitmapsEnabled(assignBoolValue(struct, VdsProperties.CLEAR_BITMAPS_ENABLED));
         if (struct.containsKey(VdsProperties.domain_versions)) { //Older VDSMs do not return that
             Set<StorageFormatType> domain_versions = Stream.of((Object[]) struct.get(VdsProperties.domain_versions))
                     .map(o -> (Integer) o)
@@ -1019,6 +1033,7 @@ public class VdsBrokerObjectsBuilder {
         vds.setTscScalingEnabled(assignBoolValue(struct, VdsProperties.TSC_SCALING));
         vds.setFipsEnabled(assignBoolValue(struct, VdsProperties.FIPS_MODE));
         vds.setBootUuid(assignStringValue(struct, VdsProperties.BOOT_UUID));
+        vds.setCdChangePdiv(assignBoolValue(struct, VdsProperties.CD_CHANGE_PDIV));
     }
 
     private void setDnsResolverConfigurationData(VDS vds, Map<String, Object> struct) {
@@ -1151,6 +1166,10 @@ public class VdsBrokerObjectsBuilder {
             if (packages.containsKey(VdsProperties.OPENVSWITCH)) {
                 Map<String, Object> ovs = (Map<String, Object>) packages.get(VdsProperties.OPENVSWITCH);
                 vds.setOvsVersion(getPackageRpmVersion(VdsProperties.OPENVSWITCH, ovs));
+            }
+            if (packages.containsKey(VdsProperties.NMSTATE)) {
+                Map<String, Object> nmstate = (Map<String, Object>) packages.get(VdsProperties.NMSTATE);
+                vds.setNmstateVersion(getPackageRpmVersion(VdsProperties.NMSTATE, nmstate));
             }
         }
     }
@@ -1468,6 +1487,22 @@ public class VdsBrokerObjectsBuilder {
                             VdsProperties.NUMA_NODE_FREE_MEM));
                     node.getNumaNodeStatistics().setMemUsagePercent(assignIntValue(item.getValue(),
                             VdsProperties.NUMA_NODE_MEM_PERCENT));
+
+                    Map<String, Map<String, Object>> hugepagesMap =
+                            (Map<String, Map<String, Object>>) item.getValue().get(VdsProperties.NUMA_NODE_HUGEPAGES);
+
+                    if (hugepagesMap == null) {
+                        continue;
+                    }
+
+                    List<HugePage> parsedHugePages = hugepagesMap.entrySet()
+                            .stream()
+                            .map(entry -> new HugePage(
+                                    Integer.parseInt(entry.getKey()),
+                                    assignIntValue(entry.getValue(), VdsProperties.NUMA_NODE_HUGEPAGES_FREE)))
+                            .collect(Collectors.toList());
+
+                    node.getNumaNodeStatistics().setHugePages(parsedHugePages);
                 }
             }
         }
@@ -1723,7 +1758,9 @@ public class VdsBrokerObjectsBuilder {
                 Guid imageGroupIdGuid = new Guid(imageGroupIdString);
                 diskData.setId(imageGroupIdGuid);
                 diskData.setReadRate(assignIntValue(disk, VdsProperties.vm_disk_read_rate));
+                diskData.setReadOps(assignLongValue(disk, VdsProperties.vm_disk_read_ops));
                 diskData.setWriteRate(assignIntValue(disk, VdsProperties.vm_disk_write_rate));
+                diskData.setWriteOps(assignLongValue(disk, VdsProperties.vm_disk_write_ops));
 
                 if (disk.containsKey(VdsProperties.disk_true_size)) {
                     Long size = assignLongValue(disk, VdsProperties.disk_true_size);
@@ -2606,8 +2643,26 @@ public class VdsBrokerObjectsBuilder {
                 device.setAddress((Map<String, String>) params.get(VdsProperties.Address));
             }
             if (params.containsKey(VdsProperties.BlockPath)) {
-                device.setBlockPath(params.get(VdsProperties.BlockPath).toString());
+                device.setBlockPath(Objects.toString(params.get(VdsProperties.BlockPath), null));
             }
+
+            Map<String, Object> specParams = new HashMap<>();
+            if (params.containsKey(VdsProperties.DEVICE_PATH)) {
+                specParams.put(VdsProperties.DEVICE_PATH, params.get(VdsProperties.DEVICE_PATH).toString());
+            }
+            if (params.containsKey(VdsProperties.NUMA_NODE)) {
+                specParams.put(VdsProperties.NUMA_NODE, params.get(VdsProperties.NUMA_NODE).toString());
+            }
+            if (params.containsKey(VdsProperties.MODE)) {
+                specParams.put(VdsProperties.MODE, params.get(VdsProperties.MODE).toString());
+            }
+            if (params.containsKey(VdsProperties.DEVICE_SIZE)) {
+                specParams.put(VdsProperties.DEVICE_SIZE, assignLongValue(params, VdsProperties.DEVICE_SIZE));
+            }
+            if (params.containsKey(VdsProperties.ALIGN_SIZE)) {
+                specParams.put(VdsProperties.ALIGN_SIZE, assignLongValue(params, VdsProperties.ALIGN_SIZE));
+            }
+            device.setSpecParams(specParams);
 
             devices.add(device);
         }
@@ -2620,6 +2675,7 @@ public class VdsBrokerObjectsBuilder {
         for (String mDevName : mDevParams.keySet()) {
             Integer availableInstances = null;
             String description = null;
+            String humanReadableName = null;
             if (mDevParams.get(mDevName) instanceof Map) {
                 Map<String, Object> mDevParam = (Map<String, Object>) mDevParams.get(mDevName);
                 if (mDevParam.containsKey(VdsProperties.MDEV_AVAILABLE_INSTANCES)) {
@@ -2632,8 +2688,11 @@ public class VdsBrokerObjectsBuilder {
                 if (mDevParam.containsKey(VdsProperties.MDEV_DESCRIPTION)) {
                     description = mDevParam.get(VdsProperties.MDEV_DESCRIPTION).toString();
                 }
+                if (mDevParam.containsKey(VdsProperties.MDEV_NAME)) {
+                    humanReadableName = mDevParam.get(VdsProperties.MDEV_NAME).toString();
+                }
             }
-            mdevs.add(new MDevType(mDevName, availableInstances, description));
+            mdevs.add(new MDevType(mDevName, humanReadableName, availableInstances, description));
         }
         return mdevs;
     }
@@ -2671,13 +2730,31 @@ public class VdsBrokerObjectsBuilder {
 
     public Double removeNotifyTimeFromVmStatusEvent(Map<String, Object> struct) {
         Object notifyTime = struct.remove(VdsProperties.notify_time);
-        if (Long.class.isInstance(notifyTime)) {
-            return ((Long) notifyTime).doubleValue();
+        // notifyTime may be an integer value or long value, depennding on how
+        // much time the host is up, and the monotonic time source used by
+        // vdsm.
+        if (Number.class.isInstance(notifyTime)) {
+            return ((Number) notifyTime).doubleValue();
         }
         return null;
     }
 
     public LeaseStatus buildLeaseStatus(Map<String, Object> struct) {
-        return new LeaseStatus(CollectionUtils.emptyListToNull(extractList(struct, "owners")));
+        List<Integer> owners = CollectionUtils.emptyListToNull(extractList(struct, "owners"));
+        LeaseStatus leaseStatus = new LeaseStatus(owners);
+
+        if (struct.get("metadata") != null) {
+            Map<String, Object> metadata = (Map<String, Object>) struct.get("metadata");
+            if (metadata != null) {
+                int generation = (Integer) metadata.computeIfAbsent("generation", key -> -1);
+                leaseStatus.setGeneration(generation);
+            }
+            if (metadata != null && metadata.get("job_status") != null) {
+                LeaseJobStatus jobStatus = LeaseJobStatus.forValue((String) metadata.get("job_status"));
+                leaseStatus.setJobStatus(jobStatus);
+            }
+        }
+
+        return leaseStatus;
     }
 }

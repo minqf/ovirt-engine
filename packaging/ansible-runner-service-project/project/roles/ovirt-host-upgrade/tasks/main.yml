@@ -15,16 +15,98 @@
     - updatecheck
     - skip_ansible_lint # E403
 
-# Ignoring empty lines and the title "Obsoleting packages"
+- name: Import oVirt host facts
+  import_role:
+    name: ovirt-host-deploy-facts
+    tasks_from: host-os.yml
+
+- name: Configure advanced virtualization
+  import_tasks: advanced-virtualization.yml
+
+# We need to check for updates after we enable new advanced virt module
+- name: Check for updated packages
+  import_role:
+    name: ovirt-host-check-upgrade
+
+- name: Prepare NGN host for upgrade
+  file:
+    path: /var/imgbased/.image-updated
+    state: absent
+  when: node_host|bool
+
+- name: Upgrade packages
+  yum:
+    name: '*'
+    state: latest
+  register: updated_packages
+  when: not node_host| bool
+  tags:
+    - skip_ansible_lint # E403
+
+- name: populate service facts
+  service_facts:
+
+- name: Stop services
+  service:
+    name: "{{ item }}"
+    state: stopped
+  loop:
+  - ovirt-ha-agent.service
+  - ovirt-ha-broker.service
+  when: "item in ansible_facts.services"
+
+## Ignoring empty lines and the title "Obsoleting packages"
 - name: Upgrade packages
   yum:
     name: "{{ item }}"
     state: latest
-    update_cache: yes
     lock_timeout: 300
+    conf_file: /tmp/yum.conf
   loop: "{{ yum_result.split('\n') }}"
   tags:
   - updatecheck
   - skip_ansible_lint # E403
   register: updated_packages
-  when: item and item != "Obsoleting"
+  when: node_host| bool
+
+- name: Start ovirt-ha-agent service
+  service:
+    name: ovirt-ha-agent
+    enabled: yes
+    state: restarted
+  when: ansible_facts.services["ovirt-ha-agent.service"] is defined
+
+- name: Check if image was updated
+  set_fact:
+    image_pkg_updated: "{{ yum_result is search('image-update') }}"
+  when: node_host|bool
+
+- name: Check if image-updated file exists
+  stat:
+    path: /var/imgbased/.image-updated
+  register: image_updated_file
+  when:
+    - node_host|bool
+    - image_pkg_updated|bool
+
+- name: Verify image was updated successfully
+  fail:
+    msg: "Node image upgrade failed"
+  when:
+    - node_host|bool
+    - image_pkg_updated|bool
+    - not image_updated_file.stat.exists
+    - host_deploy_cluster_version|float >= 4.4
+
+- name: Configure LVM filter
+  command: vdsm-tool config-lvm-filter -y
+  register: lvm_filter_result
+  when: el_ver|int >= 8
+  ignore_errors: true
+
+- name: Error configuring LVM filter
+  debug:
+    msg: "[ERROR] Cannot configure LVM filter on host, please run: vdsm-tool config-lvm-filter"
+  when:
+    - el_ver|int >= 8
+    - lvm_filter_result.rc != 0

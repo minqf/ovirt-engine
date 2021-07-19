@@ -547,7 +547,6 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
         model.setTitle(ConstantsManager.getInstance().getConstants().editTemplateTitle());
         model.setHelpTag(HelpTag.edit_template);
         model.setHashName("edit_template"); //$NON-NLS-1$
-        model.getVmType().setSelectedItem(template.getVmType());
         model.setCustomPropertiesKeysList(AsyncDataProvider.getInstance().getCustomPropertiesList());
 
         model.initialize();
@@ -557,7 +556,7 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
         model.getCommands().add(switchModeCommand);
 
 
-        UICommand onSaveCommand = UICommand.createDefaultOkUiCommand("OnSave", this); //$NON-NLS-1$
+        UICommand onSaveCommand = UICommand.createDefaultOkUiCommand("OnSaveConfirm", this); //$NON-NLS-1$
         model.getCommands().add(onSaveCommand);
 
         UICommand cancelCommand = UICommand.createCancelUiCommand("Cancel", this); //$NON-NLS-1$
@@ -654,12 +653,27 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
                 template.getTemplateVersionNumber());
     };
 
-    private void onSave() {
-        final UnitVmModel model = (UnitVmModel) getWindow();
+    private void onSaveConfirm() {
+        UnitVmModel model = (UnitVmModel) getWindow();
 
         if (!model.validate()) {
             return;
         }
+
+        Guid templateId;
+
+        if (model.getBehavior().isBlankTemplateBehavior()) {
+            templateId = ((ExistingBlankTemplateModelBehavior) model.getBehavior()).getVmTemplate().getId();
+        } else {
+            templateId = ((TemplateVmModelBehavior) model.getBehavior()).getVmTemplate().getId();
+        }
+
+
+        confirmExternalDataDeletionAndSave(model, templateId, "OnSave", m -> onSave()); //$NON-NLS-1$
+    }
+
+    private void onSave() {
+        UnitVmModel model = (UnitVmModel) getWindow();
 
         final String name = model.getName().getEntity();
 
@@ -773,8 +787,8 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
         setVmWatchdogToParams(model, parameters);
         BuilderExecutor.build(model, parameters, new UnitToGraphicsDeviceParamsBuilder());
         parameters.setSoundDeviceEnabled(model.getIsSoundcardEnabled().getEntity());
+        parameters.setTpmEnabled(model.getTpmEnabled().getEntity());
         setVmRngDeviceToParams(model, parameters);
-        parameters.setBalloonEnabled(balloonEnabled(model));
         parameters.setVirtioScsiEnabled(model.getIsVirtioScsiEnabled().getEntity());
 
         if (model.getIsHeadlessModeEnabled().getEntity()) {
@@ -860,7 +874,7 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
         boolean blankSelected = isBlankTemplateSelected();
 
         getEditCommand().setIsExecutionAllowed(items.size() == 1 && item != null
-                && item.getStatus() != VmTemplateStatus.Locked);
+                && ActionUtils.canExecute(items, VmTemplate.class, ActionType.UpdateVmTemplate));
 
         getRemoveCommand().setIsExecutionAllowed(items.size() > 0
                 && ActionUtils.canExecute(items, VmTemplate.class, ActionType.RemoveVmTemplate));
@@ -944,6 +958,8 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
             onExport();
         } else if ("OnExportOva".equals(command.getName())) { //$NON-NLS-1$
             onExportOva();
+        } else if ("OnSaveConfirm".equals(command.getName())) { //$NON-NLS-1$
+            onSaveConfirm();
         } else if ("OnSave".equals(command.getName())) { //$NON-NLS-1$
             onSave();
         } else if ("OnSaveVm".equals(command.getName())) { //$NON-NLS-1$
@@ -957,6 +973,8 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
             doExport();
         } else if ("CancelConfirmation".equals(command.getName())) { //$NON-NLS-1$
             cancelConfirmation();
+        } else if ("ConfirmAndSaveOrUpdateVM".equals(command.getName())) { //$NON-NLS-1$
+            confirmAndSaveOrUpdateVM((UnitVmModel) getWindow());
         } else if ("SaveOrUpdateVM".equals(command.getName())) { // $NON-NLS-1$
             UnitVmModel model = (UnitVmModel) getWindow();
             if (!model.validate()) {

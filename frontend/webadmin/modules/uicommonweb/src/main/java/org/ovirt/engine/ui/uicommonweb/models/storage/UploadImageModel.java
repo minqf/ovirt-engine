@@ -17,9 +17,9 @@ import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.DiskStorageType;
 import org.ovirt.engine.core.common.businessentities.storage.ImageTransfer;
 import org.ovirt.engine.core.common.businessentities.storage.ImageTransferPhase;
+import org.ovirt.engine.core.common.businessentities.storage.TransferClientType;
 import org.ovirt.engine.core.common.businessentities.storage.TransferType;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
-import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.StringHelper;
 import org.ovirt.engine.ui.frontend.Frontend;
@@ -266,12 +266,14 @@ public class UploadImageModel extends Model implements ICommandTarget {
     }
 
     public void onUpload() {
+
         if (flush()) {
             if (getProgress() != null) {
                 return;
             }
 
             if (!isResumeUpload) {
+                setConnection(createRequest(), false);
                 initiateNewUpload();
             } else {
                 initiateResumeUpload();
@@ -279,17 +281,21 @@ public class UploadImageModel extends Model implements ICommandTarget {
         }
     }
 
-    private void onTest() {
-        String imageProxyAddress = (String) AsyncDataProvider.getInstance().getConfigValuePreConverted(
-                ConfigValues.ImageProxyAddress);
-        String url = "https://" + imageProxyAddress + "/info/"; //$NON-NLS-1$ //$NON-NLS-2$
+    private void handleConnectionError(boolean isTest, Throwable ex) {
+        if (isTest) {
+            getTestResponse().getEntityChangedEvent().raise(this, EventArgs.EMPTY);
+            log.severe("Connection to ovirt-imageio-image has failed:" + ex.getMessage()); //$NON-NLS-1$
+        } else {
+            log.info("Failed to initiate ovirt-imageio session for image uploading:" + ex.getMessage()); //$NON-NLS-1$
+        }
+    }
 
-        RequestBuilder requestBuilder = new RequestBuilder(RequestBuilder.GET, url);
+    private void setConnection(RequestBuilder requestBuilder, boolean isTest) {
         try {
             requestBuilder.sendRequest(null, new RequestCallback() {
                 @Override
                 public void onError(Request request, Throwable ex) {
-                    onTestError(ex);
+                    handleConnectionError(isTest, ex);
                 }
 
                 @Override
@@ -297,18 +303,22 @@ public class UploadImageModel extends Model implements ICommandTarget {
                     try {
                         getTestResponse().setEntity(response);
                     } catch (IllegalArgumentException ex) {
-                        onTestError(ex);
+                        handleConnectionError(isTest, ex);
                     }
                 }
             });
         } catch (RequestException ex) {
-            onTestError(ex);
+            handleConnectionError(isTest, ex);
         }
     }
 
-    private void onTestError(Throwable ex) {
-        getTestResponse().getEntityChangedEvent().raise(this, EventArgs.EMPTY);
-        log.severe("Connection to ovirt-imageio-image has failed:" + ex.getMessage()); //$NON-NLS-1$
+    private void onTest() {
+        setConnection(createRequest(), true);
+    }
+
+    private RequestBuilder createRequest() {
+        String url = AsyncDataProvider.getInstance().getImageioProxyUri() + "/info/"; //$NON-NLS-1$
+        return new RequestBuilder(RequestBuilder.GET, url);
     }
 
     public boolean flush() {
@@ -389,7 +399,6 @@ public class UploadImageModel extends Model implements ICommandTarget {
     private void initiateSilentResumeUpload() {
         TransferImageStatusParameters parameters = new TransferImageStatusParameters();
         parameters.setDiskId(getDiskModel().getDisk().getId());
-        parameters.setStorageDomainId(getDiskModel().getStorageDomain().getSelectedItem().getId());
         UploadImageManager.getInstance().resumeUpload(null, parameters, getProxyLocation(),
                 new AsyncQuery<>(errorMessage -> {
                     if (errorMessage != null) {
@@ -402,8 +411,7 @@ public class UploadImageModel extends Model implements ICommandTarget {
         Disk newDisk = diskModel.getDisk();
         AddDiskParameters diskParameters = new AddDiskParameters(newDisk);
 
-        if (diskModel.getDiskStorageType().getEntity() == DiskStorageType.IMAGE ||
-                diskModel.getDiskStorageType().getEntity() == DiskStorageType.CINDER) {
+        if (diskModel.getDiskStorageType().getEntity() == DiskStorageType.IMAGE) {
             diskParameters.setStorageDomainId(getDiskModel().getStorageDomain().getSelectedItem().getId());
         }
 
@@ -413,7 +421,7 @@ public class UploadImageModel extends Model implements ICommandTarget {
         parameters.setTransferSize(imageInfoModel.getActualSize());
         parameters.setVolumeFormat(imageInfoModel.getFormat());
         parameters.setVdsId(getDiskModel().getHost().getSelectedItem().getId());
-        parameters.setTransferringViaBrowser(true);
+        parameters.setTransferClientType(TransferClientType.TRANSFER_VIA_BROWSER);
 
         return parameters;
     }

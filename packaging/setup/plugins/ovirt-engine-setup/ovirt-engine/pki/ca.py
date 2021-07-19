@@ -10,13 +10,15 @@
 """CA plugin."""
 
 
-import datetime
+import binascii
 import gettext
 import os
 import random
 import re
 
-from M2Crypto import X509
+from cryptography import x509
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
 
 from otopi import constants as otopicons
 from otopi import filetransaction
@@ -31,8 +33,45 @@ from ovirt_engine_setup import util as osetuputil
 from ovirt_engine_setup.engine import constants as oenginecons
 from ovirt_engine_setup.engine import vdcoption
 from ovirt_engine_setup.engine_common import constants as oengcommcons
+from ovirt_engine_setup.engine_common import pki_utils
 
 from ovirt_setup_lib import dialog
+
+# Shorter names...
+_fl = oenginecons.FileLocations
+_CA_TEMPLATE_IN = _fl.OVIRT_ENGINE_PKI_CA_TEMPLATE_IN
+_CERT_TEMPLATE_IN = _fl.OVIRT_ENGINE_PKI_CERT_TEMPLATE_IN
+_CA_TEMPLATE = _fl.OVIRT_ENGINE_PKI_CA_TEMPLATE
+_CERT_TEMPLATE = _fl.OVIRT_ENGINE_PKI_CERT_TEMPLATE
+_QEMU_CA_TEMPLATE = _fl.OVIRT_ENGINE_PKI_QEMU_CA_TEMPLATE
+_QEMU_CERT_TEMPLATE = _fl.OVIRT_ENGINE_PKI_QEMU_CERT_TEMPLATE
+_CA_CERT_CONF = _fl.OVIRT_ENGINE_PKI_CA_CERT_CONF
+_CERT_CONF = _fl.OVIRT_ENGINE_PKI_CERT_CONF
+_QEMU_CA_CERT_CONF = _fl.OVIRT_ENGINE_PKI_QEMU_CA_CERT_CONF
+_QEMU_CERT_CONF = _fl.OVIRT_ENGINE_PKI_QEMU_CERT_CONF
+
+# Each of these is a dictionary, where the key is the template
+# and the value is a list of files generated from it
+_ENGINE_TEMPLATES_MAP = {
+    _CA_TEMPLATE_IN: (
+        _CA_TEMPLATE,
+        _CA_CERT_CONF,
+    ),
+    _CERT_TEMPLATE_IN: (
+        _CERT_TEMPLATE,
+        _CERT_CONF,
+    ),
+}
+_QEMU_TEMPLATES_MAP = {
+    _CA_TEMPLATE_IN: (
+        _QEMU_CA_TEMPLATE,
+        _QEMU_CA_CERT_CONF,
+    ),
+    _CERT_TEMPLATE_IN: (
+        _QEMU_CERT_TEMPLATE,
+        _QEMU_CERT_CONF,
+    ),
+}
 
 
 def _(m):
@@ -89,25 +128,9 @@ class Plugin(plugin.PluginBase):
             fileList=files,
         )
 
-    def _x509_load_cert(self, f):
-        try:
-            res = X509.load_cert(f)
-        except X509.X509Error:
-            # In the past we wrote the ca cert with 'text'.
-            # This confuses newer m2crypto.
-            # Try to read it with openssl instead.
-            rc, stdout, stderr = self.execute(
-                args=(
-                    self.command.get('openssl'),
-                    'x509',
-                    '-in', f,
-                ),
-                raiseOnError=False,
-            )
-            res = X509.load_cert_string(str('\n'.join(stdout)))
-        return res
-
     def _extractPKCS12CertificateString(self, pkcs12):
+        # input: pkcs12: A PKCS#12 file name
+        # return: a string, pem-formatted x509 certificate
         res = False
         rc, stdout, stderr = self.execute(
             args=(
@@ -145,10 +168,15 @@ class Plugin(plugin.PluginBase):
         return res
 
     def _extractPKCS12Certificate(self, pkcs12):
+        # input: pkcs12: A PKCS#12 file name
+        # return: cryptography.x509.Certificate object
         res = False
         cert = self._extractPKCS12CertificateString(pkcs12)
         if cert:
-            res = X509.load_cert_string(str(cert))
+            res = x509.load_pem_x509_certificate(
+                data=cert.encode(),
+                backend=default_backend(),
+            )
         return res
 
     def _expandPKCS12(self, pkcs12, name, owner, uninstall_files):
@@ -222,11 +250,7 @@ class Plugin(plugin.PluginBase):
             (
                 os.path.join(
                     oenginecons.FileLocations.OVIRT_ENGINE_PKIKEYSDIR,
-                    name,
-                ),
-                os.path.join(
-                    oenginecons.FileLocations.OVIRT_ENGINE_PKICERTSDIR,
-                    name,
+                    '{}.p12'.format(name),
                 ),
             )
         )
@@ -263,84 +287,24 @@ class Plugin(plugin.PluginBase):
             'user': oengcommcons.SystemEnv.USER_ROOT,
             'keepKey': False,
         },
-        {
-            'name': 'imageio-proxy',
-            'extract': True,
-            'user': oengcommcons.SystemEnv.USER_ROOT,
-            'keepKey': False,
-        },
     )
 
-    def _expired(self, x509):
-        #
-        # LEGACY NOTE
-        # Since 3.0 and maybe before the CA certificate's
-        # notBefore attribute was set using timezone offset
-        # instead of Z
-        # in this case we need to reissue CA certificate.
-        #
-        return (
-            x509.get_not_before().get_datetime().tzname() is None or
-            (
-                x509.get_not_after().get_datetime().replace(tzinfo=None) -
-                datetime.datetime.utcnow() <
-                datetime.timedelta(days=365)
-            )
-        )
-
-    SAN_extension_name = 'subjectAltName'
-
-    def _has_SAN(self, x509):
-        res = False
-        try:
-            ext = x509.get_ext(self.SAN_extension_name)
-            res = True
-            self.logger.debug(
-                '%s: %s',
-                self.SAN_extension_name,
-                ext.get_value()
-            )
-        except LookupError:
-            self.logger.debug('%s is missing', self.SAN_extension_name)
-        return res
-
     def _ok_to_renew_cert(self, pkcs12, name, extract):
-        res = False
-        if os.path.exists(pkcs12):
-            x509 = self._extractPKCS12Certificate(pkcs12)
-            if x509 and (
-                self._expired(x509) or
-                not self._has_SAN(x509)
-            ):
-                if not extract:
-                    res = True
-                else:
-                    if x509.verify(
-                        self._x509_load_cert(
-                            oenginecons.FileLocations.
-                            OVIRT_ENGINE_PKI_ENGINE_CA_CERT
-                        ).get_pubkey()
-                    ):
-                        self.logger.debug(
-                            'certificate is an internal certificate'
-                        )
-
-                        # sanity check, make sure user did not manually
-                        # change cert
-                        x509x = self._x509_load_cert(
-                            os.path.join(
-                                (
-                                    oenginecons.FileLocations.
-                                    OVIRT_ENGINE_PKICERTSDIR
-                                ),
-                                '%s.cer' % name,
-                            )
-                        )
-
-                        if x509x.as_pem() == x509.as_pem():
-                            self.logger.debug('certificate is sane')
-                            res = True
-        return res
+        # input:
+        # - pkcs12: A PKCS#12 file name
+        # - name: A base name (--name param of pki-* scripts)
+        # - extract: bool. If True, we need to check the extracted cert
+        # return: bool
+        self.logger.debug("processing: '%s'", name)
+        return os.path.exists(pkcs12) and pki_utils.ok_to_renew_cert(
+            self.logger,
+            self._extractPKCS12Certificate(pkcs12),
+            pki_utils.x509_load_cert(
+                oenginecons.FileLocations.OVIRT_ENGINE_PKI_ENGINE_CA_CERT
+            ),
+            name,
+            extract,
+        )
 
     def _enrollCertificates(self, renew, uninstall_files):
         for entry in self.environment[oenginecons.PKIEnv.ENTITIES]:
@@ -395,6 +359,38 @@ class Plugin(plugin.PluginBase):
                         self.environment[entry['user']],
                         uninstall_files,
                     )
+
+    # Loop over the data in one of *_TEMPLATES_MAP - read the template,
+    # replace aia, write to outputs
+    def _update_templates(self, aia, templates_map, uninstall_files):
+        localtransaction = transaction.Transaction()
+        with localtransaction:
+            for in_template, outputs in templates_map.items():
+                if aia is not None:
+                    for output_file in outputs:
+                        localtransaction.append(
+                            filetransaction.FileTransaction(
+                                name=output_file,
+                                content=outil.processTemplate(
+                                    in_template,
+                                    {
+                                        '@AIA@': aia,
+                                    }
+                                ),
+                                modifiedList=uninstall_files,
+                            ),
+                        )
+
+    def _calculated_aia(self, ca_uri):
+        return 'http://{fqdn}:{port}{ca_uri}'.format(
+            fqdn=self.environment[
+                osetupcons.ConfigEnv.FQDN
+            ],
+            port=self.environment[
+                oengcommcons.ConfigEnv.PUBLIC_HTTP_PORT
+            ],
+            ca_uri=ca_uri,
+        )
 
     def __init__(self, context):
         super(Plugin, self).__init__(context=context)
@@ -491,7 +487,7 @@ class Plugin(plugin.PluginBase):
     )
     def _customization_upgrade(self):
         if True in [
-            self._expired(self._x509_load_cert(cert))
+            pki_utils.cert_expires(pki_utils.x509_load_cert(cert))
             for cert in self._CA_FILES
             if os.path.exists(cert)
         ] + [
@@ -514,9 +510,10 @@ class Plugin(plugin.PluginBase):
                     note=_(
                         'One or more of the certificates should be renewed, '
                         'because they expire soon, or include an invalid '
-                        'expiry date, or do not include the subjectAltName '
-                        'extension, which can cause them to be rejected by '
-                        'recent browsers and up to date hosts.\n'
+                        'expiry date, or they were created with validity '
+                        'period longer than 398 days, or do not include the '
+                        'subjectAltName extension, which can cause them to be '
+                        'rejected by recent browsers and up to date hosts.\n'
                         'See {url} for more details.\n'
                         'Renew certificates? '
                         '(@VALUES@) [@DEFAULT@]: '
@@ -623,20 +620,20 @@ class Plugin(plugin.PluginBase):
         # country in post install file. Load it from CA certificate.
         #
         if self.environment[oenginecons.PKIEnv.ORG] is None:
-            ca = self._x509_load_cert(
+            ca = pki_utils.x509_load_cert(
                 oenginecons.FileLocations.
                 OVIRT_ENGINE_PKI_ENGINE_CA_CERT
             )
             self.environment[
                 oenginecons.PKIEnv.ORG
-            ] = ca.get_subject().get_entries_by_nid(
-                X509.X509_Name.nid['O']
-            )[0].get_data().as_text()
+            ] = ca.subject.get_attributes_for_oid(
+                x509.oid.NameOID.ORGANIZATION_NAME
+            )[0].value
             self.environment[
                 oenginecons.PKIEnv.COUNTRY
-            ] = ca.get_subject().get_entries_by_nid(
-                X509.X509_Name.nid['C']
-            )[0].get_data().as_text()
+            ] = ca.subject.get_attributes_for_oid(
+                x509.oid.NameOID.COUNTRY_NAME
+            )[0].value
 
         self.logger.info(_('Upgrading CA'))
 
@@ -648,55 +645,73 @@ class Plugin(plugin.PluginBase):
         # we must preserve this approach.
         # The template may change over time, so regenerate.
         #
-        aia = None
-        template = oenginecons.FileLocations.OVIRT_ENGINE_PKI_CERT_TEMPLATE[
-            :-len('.in')
-        ]
-        if os.path.exists(template):
-            with open(template) as f:
-                PREFIX = 'caIssuers;URI:'
-                for l in f.read().splitlines():
-                    if l.startswith('authorityInfoAccess'):
-                        aia = l[l.find(PREFIX)+len(PREFIX):]
-                        break
+        def _template_aia(template):
+            aia = None
+            if os.path.exists(template):
+                with open(template) as f:
+                    PREFIX = 'caIssuers;URI:'
+                    for line in f.read().splitlines():
+                        if line.startswith('authorityInfoAccess'):
+                            aia = line[line.find(PREFIX)+len(PREFIX):]
+                            break
+            return aia
+
+        engine_aia = _template_aia(_CERT_TEMPLATE)
+        qemu_aia = _template_aia(_QEMU_CERT_TEMPLATE)
+        if qemu_aia is None:
+            qemu_aia = self._calculated_aia(
+                oenginecons.Const.ENGINE_PKI_QEMU_CA_URI
+            )
+
+        if engine_aia and 'resource=qemu-ca-certificate' in engine_aia:
+            # In the past, we had a single template for both engine and qemu
+            # CAs, and it pointed at qemu cert.
+            uninstall_info = self.environment[
+                osetupcons.CoreEnv.UNINSTALL_FILES_INFO
+            ].get(_CERT_TEMPLATE)
+            if uninstall_info and not uninstall_info.get("changed"):
+                # It was written by engine-setup and not changed since.
+                # It should be safe to replace it.
+                engine_aia = self._calculated_aia(
+                    oenginecons.Const.ENGINE_PKI_CA_URI
+                )
+                self.logger.info(_('Fixing {}'.format(_CERT_TEMPLATE)))
+                self.dialog.note(_(
+                    'This does not fix existing certificates.'
+                ))
+            else:
+                self.logger.warn(
+                    _(
+                        '{template} has wrong data, but was manually changed '
+                        'after previous engine-setup'
+                    ).format(
+                        template=_CERT_TEMPLATE,
+                    )
+                )
+                self.dialog.note(_('Not fixing it.'))
+            self.dialog.note(_(
+                'Please see also: https://bugzilla.redhat.com/1875386'
+            ))
 
         uninstall_files = []
         self._setupUninstall(uninstall_files)
-        if aia is not None:
-            localtransaction = transaction.Transaction()
-            with localtransaction:
-                for name in (
-                    oenginecons.FileLocations.OVIRT_ENGINE_PKI_CA_TEMPLATE,
-                    oenginecons.FileLocations.OVIRT_ENGINE_PKI_CERT_TEMPLATE,
-                ):
-                    localtransaction.append(
-                        filetransaction.FileTransaction(
-                            name=name[:-len('.in')],
-                            content=outil.processTemplate(
-                                name,
-                                {
-                                    '@AIA@': aia,
-                                }
-                            ),
-                            modifiedList=uninstall_files,
-                        ),
-                    )
-                    localtransaction.append(
-                        filetransaction.FileTransaction(
-                            name=name[:-len('.template.in')] + '.conf',
-                            content=outil.processTemplate(
-                                name,
-                                {
-                                    '@AIA@': aia,
-                                }
-                            ),
-                            modifiedList=uninstall_files,
-                        ),
-                    )
+        self._update_templates(
+            engine_aia,
+            _ENGINE_TEMPLATES_MAP,
+            uninstall_files,
+        )
+        self._update_templates(
+            qemu_aia,
+            _QEMU_TEMPLATES_MAP,
+            uninstall_files,
+        )
 
         if self.environment[oenginecons.PKIEnv.RENEW]:
             for ca_file in self._CA_FILES:
-                if self._expired(self._x509_load_cert(ca_file)):
+                if (
+                    os.path.exists(ca_file) and
+                    pki_utils.cert_expires(pki_utils.x509_load_cert(ca_file))
+                ):
                     self._renewed_ca_files.add(ca_file)
                     self.logger.info(_('Renewing CA: %s'), ca_file)
                     args = (
@@ -739,8 +754,25 @@ class Plugin(plugin.PluginBase):
         self._create_ca(
             oenginecons.FileLocations.OVIRT_ENGINE_PKI_ENGINE_CA_CERT,
             oenginecons.FileLocations.OVIRT_ENGINE_PKI_ENGINE_CA_KEY,
-            oenginecons.Const.ENGINE_PKI_CA_URI
+            oenginecons.Const.ENGINE_PKI_CA_URI,
+            _ENGINE_TEMPLATES_MAP,
         )
+
+        uninstall_files = []
+        self._setupUninstall(uninstall_files)
+
+        if not os.path.exists(
+            oengcommcons.FileLocations.OVIRT_ENGINE_PKI_APACHE_CA_CERT
+        ):
+            os.symlink(
+                oenginecons.FileLocations.OVIRT_ENGINE_PKI_ENGINE_CA_CERT,
+                oengcommcons.FileLocations.OVIRT_ENGINE_PKI_APACHE_CA_CERT
+            )
+            uninstall_files.append(
+                oengcommcons.FileLocations.OVIRT_ENGINE_PKI_APACHE_CA_CERT
+            )
+
+        self._enrollCertificates(False, uninstall_files)
 
     @plugin.event(
         stage=plugin.Stages.STAGE_MISC,
@@ -757,10 +789,11 @@ class Plugin(plugin.PluginBase):
             oenginecons.FileLocations.OVIRT_ENGINE_PKI_ENGINE_QEMU_CA_CERT,
             oenginecons.FileLocations.OVIRT_ENGINE_PKI_ENGINE_QEMU_CA_KEY,
             oenginecons.Const.ENGINE_PKI_QEMU_CA_URI,
+            _QEMU_TEMPLATES_MAP,
             'qemu'
         )
 
-    def _create_ca(self, ca_file, key_file, ca_uri, ou=None):
+    def _create_ca(self, ca_file, key_file, ca_uri, templates_map, ou=None):
         self._enabled = True
 
         # TODO
@@ -787,32 +820,11 @@ class Plugin(plugin.PluginBase):
 
         self.logger.info(_('Creating CA: {}').format(ca_file))
 
-        localtransaction = transaction.Transaction()
-        with localtransaction:
-            for name in (
-                oenginecons.FileLocations.OVIRT_ENGINE_PKI_CA_TEMPLATE,
-                oenginecons.FileLocations.OVIRT_ENGINE_PKI_CERT_TEMPLATE,
-            ):
-                localtransaction.append(
-                    filetransaction.FileTransaction(
-                        name=name[:-len('.in')],
-                        content=outil.processTemplate(
-                            name,
-                            {
-                                '@AIA@': 'http://%s:%s%s' % (
-                                    self.environment[
-                                        osetupcons.ConfigEnv.FQDN
-                                    ],
-                                    self.environment[
-                                        oengcommcons.ConfigEnv.PUBLIC_HTTP_PORT
-                                    ],
-                                    ca_uri,
-                                )
-                            }
-                        ),
-                        modifiedList=uninstall_files,
-                    ),
-                )
+        self._update_templates(
+            self._calculated_aia(ca_uri),
+            templates_map,
+            uninstall_files,
+        )
 
         self.execute(
             args=(
@@ -849,23 +861,8 @@ class Plugin(plugin.PluginBase):
                 ca_file,
                 key_file,
                 oenginecons.FileLocations.OVIRT_ENGINE_PKI_ENGINE_TRUST_STORE,
-                oenginecons.FileLocations.OVIRT_ENGINE_PKI_CA_CERT_CONF,
-                oenginecons.FileLocations.OVIRT_ENGINE_PKI_CERT_CONF,
             )
         )
-
-        if not os.path.exists(
-            oengcommcons.FileLocations.OVIRT_ENGINE_PKI_APACHE_CA_CERT
-        ):
-            os.symlink(
-                oenginecons.FileLocations.OVIRT_ENGINE_PKI_ENGINE_CA_CERT,
-                oengcommcons.FileLocations.OVIRT_ENGINE_PKI_APACHE_CA_CERT
-            )
-            uninstall_files.append(
-                oengcommcons.FileLocations.OVIRT_ENGINE_PKI_APACHE_CA_CERT
-            )
-
-        self._enrollCertificates(False, uninstall_files)
 
     @plugin.event(
         stage=plugin.Stages.STAGE_MISC,
@@ -899,7 +896,7 @@ class Plugin(plugin.PluginBase):
         condition=lambda self: self.environment[oenginecons.CoreEnv.ENABLE],
     )
     def _closeup(self):
-        x509 = self._x509_load_cert(
+        x509cert = pki_utils.x509_load_cert(
             oenginecons.FileLocations.OVIRT_ENGINE_PKI_ENGINE_CA_CERT,
         )
         self.dialog.note(
@@ -907,7 +904,11 @@ class Plugin(plugin.PluginBase):
                 fingerprint=re.sub(
                     r'(..)',
                     r':\1',
-                    x509.get_fingerprint(md='sha1'),
+                    binascii.b2a_hex(
+                        x509cert.fingerprint(
+                            algorithm=hashes.SHA1()
+                        )
+                    ).decode().upper()
                 )[1:],
             )
         )

@@ -8,6 +8,7 @@ import javax.validation.Valid;
 
 import org.ovirt.engine.core.common.businessentities.HostedEngineDeployConfiguration;
 import org.ovirt.engine.core.common.businessentities.Label;
+import org.ovirt.engine.core.common.businessentities.ReplaceHostConfiguration;
 import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VdsStatic;
 import org.ovirt.engine.core.common.scheduling.AffinityGroup;
@@ -24,13 +25,25 @@ public class VdsOperationActionParameters extends VdsActionParameters {
      */
     private boolean overrideFirewall = true;
     private boolean activateHost;
+    private boolean rebootHost;
     private boolean reconfigureGluster = false;
     private boolean enableSerialConsole;
     private AuthenticationMethod authMethod;
     private String networkMappings;
     private HostedEngineDeployConfiguration hostedEngineDeployConfiguration;
+    private ReplaceHostConfiguration replaceHostConfiguration;
     private List<AffinityGroup> affinityGroups;
     private List<Label> affinityLabels;
+
+    public String getFqdnBox() {
+        return fqdnBox;
+    }
+
+    public void setFqdnBox(String fqdnBox) {
+        this.fqdnBox = fqdnBox;
+    }
+
+    private String fqdnBox;
 
     public enum AuthenticationMethod {
         Password(0),
@@ -133,12 +146,28 @@ public class VdsOperationActionParameters extends VdsActionParameters {
         return activateHost;
     }
 
+    public void setRebootHost(boolean rebootHost) {
+        this.rebootHost = rebootHost;
+    }
+
+    public boolean getRebootHost() {
+        return rebootHost;
+    }
+
     public HostedEngineDeployConfiguration getHostedEngineDeployConfiguration() {
         return hostedEngineDeployConfiguration;
     }
 
     public void setHostedEngineDeployConfiguration(HostedEngineDeployConfiguration hostedEngineDeployConfiguration) {
         this.hostedEngineDeployConfiguration = hostedEngineDeployConfiguration;
+    }
+
+    public ReplaceHostConfiguration getReplaceHostConfiguration() {
+        return replaceHostConfiguration;
+    }
+
+    public void setReplaceHostConfiguration(ReplaceHostConfiguration replaceHostConfiguration) {
+        this.replaceHostConfiguration = replaceHostConfiguration;
     }
 
     public List<AffinityGroup> getAffinityGroups() {
@@ -165,3 +194,4 @@ public class VdsOperationActionParameters extends VdsActionParameters {
         this.reconfigureGluster = reconfigureGluster;
     }
 }
+

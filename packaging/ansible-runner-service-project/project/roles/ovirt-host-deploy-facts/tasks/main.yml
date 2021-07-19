@@ -1,14 +1,29 @@
 ---
-- name: Detect host operating system
-  set_fact:
-    el_ver: "{{ ansible_distribution_major_version|int
-        if ansible_distribution == 'RedHat' or ansible_distribution == 'CentOS'
-        else 0 }}"
-    fc_ver: "{{ ansible_distribution_major_version|int
-        if ansible_distribution == 'Fedora'
-        else 0 }}"
+- include_tasks: host-os.yml
 
-- name: Install Python3 for CentOS/RHEL8 hosts
+- block:
+  - name: Reset configuration of advanced virtualization module
+    shell: dnf -y module reset virt
+    tags:
+      - skip_ansible_lint # E305
+
+  - name: Find relevant advanced virtualization module version
+    set_fact:
+      virt_mod_ver: "{{ 'av' if ansible_distribution_version is version('8.4', '>=') else
+          ansible_distribution_version }}"
+
+  - name: Enable advanced virtualization module
+    shell: "dnf -y module enable virt:{{ virt_mod_ver }}"
+    tags:
+      - skip_ansible_lint # E305
+
+  when:
+    - host_deploy_origin_type != ovirt_origin_type
+    - el_ver|int >= 8
+    - not node_host|bool
+    - not vdsm_preinstalled|bool
+
+- name: Ensure Python3 is installed for CentOS/RHEL8 hosts
   yum:
     name: python3
     state: present

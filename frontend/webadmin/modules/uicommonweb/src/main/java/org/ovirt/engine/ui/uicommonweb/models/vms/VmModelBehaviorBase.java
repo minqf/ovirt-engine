@@ -11,12 +11,15 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.Function;
 
 import org.ovirt.engine.core.common.TimeZoneType;
 import org.ovirt.engine.core.common.businessentities.ActionGroup;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
+import org.ovirt.engine.core.common.businessentities.AutoPinningPolicy;
 import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.Cluster;
+import org.ovirt.engine.core.common.businessentities.DisplayType;
 import org.ovirt.engine.core.common.businessentities.GraphicsType;
 import org.ovirt.engine.core.common.businessentities.InstanceType;
 import org.ovirt.engine.core.common.businessentities.MigrationSupport;
@@ -26,7 +29,6 @@ import org.ovirt.engine.core.common.businessentities.ServerCpu;
 import org.ovirt.engine.core.common.businessentities.StorageDomain;
 import org.ovirt.engine.core.common.businessentities.StorageDomainStatus;
 import org.ovirt.engine.core.common.businessentities.StoragePool;
-import org.ovirt.engine.core.common.businessentities.UsbPolicy;
 import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VmBase;
@@ -38,7 +40,6 @@ import org.ovirt.engine.core.common.businessentities.VmType;
 import org.ovirt.engine.core.common.businessentities.comparators.DiskByDiskAliasComparator;
 import org.ovirt.engine.core.common.businessentities.comparators.NameableComparator;
 import org.ovirt.engine.core.common.businessentities.profiles.CpuProfile;
-import org.ovirt.engine.core.common.businessentities.storage.CinderDisk;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.DiskStorageType;
@@ -48,6 +49,7 @@ import org.ovirt.engine.core.common.businessentities.storage.RepoImage;
 import org.ovirt.engine.core.common.businessentities.storage.StorageType;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeType;
+import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.migration.MigrationPolicy;
 import org.ovirt.engine.core.common.queries.IdQueryParameters;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
@@ -145,6 +147,11 @@ public abstract class VmModelBehaviorBase<TModel extends UnitVmModel> {
         List<MigrationPolicy> policies = AsyncDataProvider.getInstance().getMigrationPolicies(Version.getLast());
         policies.add(0, null);
         getModel().getMigrationPolicies().setItems(policies);
+        initializeBiosType();
+    }
+
+    protected void initializeBiosType() {
+        getModel().getBiosType().setItems(AsyncDataProvider.getInstance().getBiosTypeList());
     }
 
     protected Guid findDefaultStorageDomainForVmLease(Collection<Disk> disks) {
@@ -605,9 +612,17 @@ public abstract class VmModelBehaviorBase<TModel extends UnitVmModel> {
     public void updateMaxNumOfVmCpus() {
         String version = getCompatibilityVersion().toString();
 
+        Function<Map<String, Integer>, Integer> getMaxCpus = archToLimit -> {
+            Cluster cluster = getModel().getSelectedCluster();
+            ArchitectureType architecture = cluster != null ? cluster.getArchitecture() : null;
+            return architecture != null ?
+                    archToLimit.get(architecture.getFamily().name())
+                    : archToLimit.values().stream().mapToInt(v -> v).max().orElse(1);
+        };
+
         AsyncDataProvider.getInstance().getMaxNumOfVmCpus(asyncQuery(
                 returnValue -> {
-                    maxCpus = returnValue;
+                    maxCpus = getMaxCpus.apply(returnValue);
                     postUpdateNumOfSockets2();
                 }), version);
     }
@@ -643,6 +658,10 @@ public abstract class VmModelBehaviorBase<TModel extends UnitVmModel> {
         ArrayList<DiskModel> list = new ArrayList<>();
 
         for (Disk disk : disks) {
+            if (disk.getDiskStorageType() == DiskStorageType.LUN) {
+                continue;
+            }
+
             DiskModel diskModel = new DiskModel();
             diskModel.getAlias().setEntity(disk.getDiskAlias());
             diskModel.getVolumeType().setIsAvailable(false);
@@ -660,16 +679,6 @@ public abstract class VmModelBehaviorBase<TModel extends UnitVmModel> {
                     vm.setClusterCompatibilityVersion(getCompatibilityVersion());
                     vm.setClusterBiosType(getSelectedBiosType());
                     diskModel.setVm(vm);
-                    break;
-                case CINDER:
-                    CinderDisk cinderDisk = (CinderDisk) disk;
-                    diskModel.setSize(new EntityModel<>((int) cinderDisk.getSizeInGigabytes()));
-                    ListModel volumeTypes = new ListModel();
-                    volumeTypes.setItems(new ArrayList<>(Collections.singletonList(cinderDisk.getVolumeType())), cinderDisk.getVolumeType());
-                    diskModel.setVolumeType(volumeTypes);
-                    ListModel volumeFormats = new ListModel();
-                    volumeFormats.setItems(new ArrayList<>(Collections.singletonList(cinderDisk.getVolumeFormat())), cinderDisk.getVolumeFormat());
-                    diskModel.setVolumeFormat(volumeFormats);
                     break;
                 case MANAGED_BLOCK_STORAGE:
                     ManagedBlockStorageDisk managedBlockDisk = (ManagedBlockStorageDisk) disk;
@@ -745,7 +754,6 @@ public abstract class VmModelBehaviorBase<TModel extends UnitVmModel> {
                 diskModel.getStorageDomain().setChangeProhibitionReason(
                         constants.noActiveTargetStorageDomainAvailableMsg());
             }
-            initStorageDomainForType(StorageType.CINDER, DiskStorageType.CINDER, disks, storageDomains);
             initStorageDomainForType(StorageType.MANAGED_BLOCK_STORAGE,
                     DiskStorageType.MANAGED_BLOCK_STORAGE,
                     disks,
@@ -773,7 +781,7 @@ public abstract class VmModelBehaviorBase<TModel extends UnitVmModel> {
             diskModel.getStorageDomain().setIsChangeable(false);
             diskModel.getDiskProfile().setIsChangeable(false);
             diskModel.getDiskProfile().setChangeProhibitionReason(
-                    ConstantsManager.getInstance().getConstants().notSupportedForCinderOrManagedBlockDisks());
+                    ConstantsManager.getInstance().getConstants().notSupportedForManagedBlockDisks());
         }
     }
 
@@ -832,19 +840,8 @@ public abstract class VmModelBehaviorBase<TModel extends UnitVmModel> {
         Integer osType = getModel().getOSType().getSelectedItem();
 
         if (cluster != null && osType != null) {
-            updateMemoryBalloon(getModel().getCompatibilityVersion(), osType);
+            getModel().getMemoryBalloonEnabled().setIsAvailable(true);
         }
-    }
-
-    protected void updateMemoryBalloon(Version clusterVersion, int osType) {
-        boolean isBalloonEnabled = AsyncDataProvider.getInstance().isBalloonEnabled(osType,
-                clusterVersion);
-
-        if (!isBalloonEnabled) {
-            getModel().getMemoryBalloonDeviceEnabled().setEntity(false);
-        }
-        getModel().getMemoryBalloonDeviceEnabled().setIsAvailable(isBalloonEnabled);
-
     }
 
     protected void updateCpuSharesAvailability() {
@@ -916,6 +913,11 @@ public abstract class VmModelBehaviorBase<TModel extends UnitVmModel> {
         }
     }
 
+    protected void disableCpuPinningAutoPinningConflict() {
+        getModel().getCpuPinning().setEntity("");
+        getModel().getCpuPinning().setIsChangeable(false, constants.cpuChangesConflictWithAutoPin());
+    }
+
     public void updateUseHostCpuAvailability() {
 
         boolean clusterSupportsHostCpu = getCompatibilityVersion() != null;
@@ -944,75 +946,6 @@ public abstract class VmModelBehaviorBase<TModel extends UnitVmModel> {
         return cluster != null
                 && cluster.getArchitecture() != null
                 && ArchitectureType.ppc == cluster.getArchitecture().getFamily();
-    }
-
-    public void updateHaAvailability() {
-        boolean automaticMigrationAllowed = getModel().getMigrationMode().getSelectedItem()
-                == MigrationSupport.MIGRATABLE;
-        final Collection<VDS> allowedHosts = getModel().getDefaultHost().getSelectedItems();
-        Collection<VDS> presentHosts = getModel().getDefaultHost().getItems();
-        int pinToHostSize = allowedHosts == null ? 0 : allowedHosts.size();
-        Boolean isHighlyAvailable = getModel().getIsHighlyAvailable().getEntity();
-        Boolean isAutoAssign = getModel().getIsAutoAssign().getEntity();
-
-        if (isAutoAssign == null || isHighlyAvailable == null) {
-            return;
-        }
-
-        // This is needed for the unittests to not crash..
-        if (presentHosts == null) {
-            presentHosts = new ArrayList<>();
-        }
-
-        if (!automaticMigrationAllowed
-                && !isVmHpOrPinningConfigurationEnabled()
-                && (pinToHostSize == 1
-                    || (pinToHostSize == 0 && presentHosts.size() < 2))
-                && (!isAutoAssign || presentHosts.size() < 2)
-                && !isHighlyAvailable) {
-            getModel().getIsHighlyAvailable().setChangeProhibitionReason(constants.hostNonMigratable());
-            getModel().getIsHighlyAvailable().setEntity(false);
-            isHighlyAvailable = false;
-        }
-
-        getModel().getIsHighlyAvailable().setIsChangeable(isHighlyAvailable
-                || automaticMigrationAllowed
-                || isVmHpOrPinningConfigurationEnabled()
-                || (isAutoAssign && presentHosts.size() >= 2)
-                || pinToHostSize >= 2
-                || (pinToHostSize == 0 && presentHosts.size() >= 2));
-    }
-
-    public void updateMigrationAvailability() {
-        if (getModel().getIsHighlyAvailable().getEntity() == null
-                || getModel().getDefaultHost().getItems() == null
-                || getModel().getIsAutoAssign().getEntity() == null) {
-            return;
-        }
-        final boolean haHost = getModel().getIsHighlyAvailable().getEntity();
-        final Collection<VDS> allowedHosts = getModel().getDefaultHost().getSelectedItems();
-        Collection<VDS> presentHosts = getModel().getDefaultHost().getItems();
-        int pinToHostSize = allowedHosts == null ? 0 : allowedHosts.size();
-        final boolean isAutoAssign = getModel().getIsAutoAssign().getEntity();
-
-        // This is needed for the unittests to not crash..
-        if (presentHosts == null) {
-            presentHosts = new ArrayList<>();
-        }
-
-        if (haHost
-                && !isVmHpOrPinningConfigurationEnabled()
-                && (pinToHostSize == 1
-                    || (pinToHostSize == 0 && presentHosts.size() < 2))
-                && (!isAutoAssign || presentHosts.size() < 2)) {
-            getModel().getMigrationMode().setChangeProhibitionReason(constants.hostIsHa());
-            getModel().getMigrationMode().setSelectedItem(MigrationSupport.MIGRATABLE);
-        }
-        getModel().getMigrationMode().setIsChangeable(isVmHpOrPinningConfigurationEnabled()
-                || !haHost
-                || (isAutoAssign && presentHosts.size() >= 2)
-                || pinToHostSize >= 2
-                || (pinToHostSize == 0 && presentHosts.size() >= 2));
     }
 
     public void updateCpuSharesAmountChangeability() {
@@ -1329,6 +1262,51 @@ public abstract class VmModelBehaviorBase<TModel extends UnitVmModel> {
                 }), cluster.getId());
     }
 
+    protected void updateBiosType() {
+        Cluster cluster = getModel().getSelectedCluster();
+
+        if (cluster == null) {
+            return;
+        }
+
+        if (cluster.getArchitecture().getFamily() != ArchitectureType.x86) {
+            getModel().getBiosType().setIsChangeable(false, ConstantsManager.getInstance().getMessages().biosTypeSupportedForX86Only());
+        } else {
+            getModel().getBiosType().updateChangeability(ConfigValues.BiosTypeSupported, getCompatibilityVersion());
+        }
+    }
+
+    /*
+     * Used in new vm and new vm pool to select the value from the current template
+     */
+    protected void selectBiosTypeFromTemplate() {
+        Cluster cluster = getModel().getSelectedCluster();
+
+        if (cluster == null) {
+            return;
+        }
+
+        if (!getModel().getBiosType().getIsChangable()) {
+            getModel().getBiosType().setSelectedItem(cluster.getBiosType());
+            return;
+        }
+
+        if (basedOnCustomInstanceType()) {
+            TemplateWithVersion template = getModel().getTemplateWithVersion().getSelectedItem();
+
+            if (template == null) {
+                return;
+            }
+
+            if (template.getTemplateVersion().getClusterId() != null) {
+                getModel().getBiosType().setSelectedItem(template.getTemplateVersion().getBiosType());
+                return;
+            }
+        }
+
+        getModel().getBiosType().setSelectedItem(cluster.getBiosType());
+    }
+
     /*
      * Updates the cpu model combobox after a cluster change occurs
      */
@@ -1362,6 +1340,18 @@ public abstract class VmModelBehaviorBase<TModel extends UnitVmModel> {
         }
         getModel().getCdImage().setIsChangeable(hasCd);
         getModel().getCdAttached().setEntity(hasCd);
+    }
+
+    protected void updateTpm(Guid vmId) {
+        Frontend.getInstance().runQuery(
+                QueryType.GetTpmDevices,
+                new IdQueryParameters(vmId),
+                new AsyncQuery<QueryReturnValue>(returnValue -> {
+                    List<String> tpmDevices = returnValue.getReturnValue();
+                    boolean tpmEnabled = !tpmDevices.isEmpty();
+                    getModel().getTpmEnabled().setEntity(tpmEnabled);
+                    getModel().setTpmOriginallyEnabled(tpmEnabled);
+                }));
     }
 
     protected void updateConsoleDevice(Guid vmId) {
@@ -1399,6 +1389,9 @@ public abstract class VmModelBehaviorBase<TModel extends UnitVmModel> {
 
         if (vmType == VmType.Server) {
             getModel().getIoThreadsEnabled().setEntity(true);
+            if (getModel().getDisplayType().getItems().contains(DisplayType.bochs)) {
+                getModel().getDisplayType().setSelectedItem(DisplayType.bochs);
+            }
         }
 
         // Configuration relevant only for High Performance
@@ -1406,7 +1399,7 @@ public abstract class VmModelBehaviorBase<TModel extends UnitVmModel> {
             // Console tab
             getModel().getIsHeadlessModeEnabled().setEntity(true);
             getModel().getIsConsoleDeviceEnabled().setEntity(true);
-            getModel().getUsbPolicy().setSelectedItem(UsbPolicy.DISABLED);
+            getModel().getIsUsbEnabled().setEntity(false);
             getModel().getIsSmartcardEnabled().setEntity(false);
 
             // High Availability tab
@@ -1422,7 +1415,7 @@ public abstract class VmModelBehaviorBase<TModel extends UnitVmModel> {
             }
 
             // Resource allocation tab
-            getModel().getMemoryBalloonDeviceEnabled().setEntity(false);
+            getModel().getMemoryBalloonEnabled().setEntity(false);
             getModel().getIoThreadsEnabled().setEntity(true);
             if (getModel().getMultiQueues().getIsAvailable()) {
                 getModel().getMultiQueues().setEntity(true);
@@ -1436,12 +1429,6 @@ public abstract class VmModelBehaviorBase<TModel extends UnitVmModel> {
             getModel().getMigrationMode().setSelectedItem(MigrationSupport.IMPLICITLY_NON_MIGRATABLE);
         } else {
             getModel().getMigrationMode().setSelectedItem(MigrationSupport.MIGRATABLE);
-        }
-    }
-
-    public void enableSinglePCI(boolean enabled) {
-        if (!enabled) {
-            getModel().setSingleQxlEnabled(false);
         }
     }
 
@@ -1614,6 +1601,15 @@ public abstract class VmModelBehaviorBase<TModel extends UnitVmModel> {
         }));
     }
 
+    protected void updateAutoPinning() {
+        getModel().getAutoPinningPolicy().setSelectedItem(AutoPinningPolicy.NONE);
+    }
+
+    protected boolean isAutoPinningPossible() {
+        return !getModel().getIsAutoAssign().getEntity() && getModel().getDefaultHost().getSelectedItem() != null
+                && !getModel().isVmAttachedToPool();
+    }
+
     /**
      * allows to enable numa models in all derived behaviors
      * use updateNumaEnabledHelper in each behavior that requires numa
@@ -1628,8 +1624,8 @@ public abstract class VmModelBehaviorBase<TModel extends UnitVmModel> {
         }
 
         if (getModel().getIsAutoAssign().getEntity() ||
-                getModel().getDefaultHost().getSelectedItem() == null ||
-                getModel().getDefaultHost().getSelectedItems().stream().filter(x -> !x.isNumaSupport()).count() > 0) {
+                getModel().getDefaultHost().getSelectedItems() == null ||
+                getModel().getDefaultHost().getSelectedItems().stream().anyMatch(x -> !x.isNumaSupport())) {
             enabled = false;
         }
         if (enabled) {
@@ -1665,8 +1661,10 @@ public abstract class VmModelBehaviorBase<TModel extends UnitVmModel> {
     public void updateMaxMemory() {
         final Integer memoryMb = getModel().getMemSize().getEntity();
         if (memoryMb != null) {
-            getModel().getMaxMemorySize().setEntity(
-                    VmCommonUtils.getMaxMemorySizeDefault(memoryMb));
+            int calculatedMaxMemory = VmCommonUtils.getMaxMemorySizeDefault(memoryMb);
+            int allowedMaxMemory = AsyncDataProvider.getInstance()
+                    .getMaxMaxMemorySize(getModel().getOSType().getSelectedItem(), getCompatibilityVersion());
+            getModel().getMaxMemorySize().setEntity(Math.min(calculatedMaxMemory, allowedMaxMemory));
         }
     }
 

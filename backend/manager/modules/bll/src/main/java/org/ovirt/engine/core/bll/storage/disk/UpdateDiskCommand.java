@@ -22,6 +22,8 @@ import org.ovirt.engine.core.bll.SerialChildExecutingCommand;
 import org.ovirt.engine.core.bll.ValidationResult;
 import org.ovirt.engine.core.bll.VmSlaPolicyUtils;
 import org.ovirt.engine.core.bll.context.CommandContext;
+import org.ovirt.engine.core.bll.job.ExecutionContext;
+import org.ovirt.engine.core.bll.job.ExecutionHandler;
 import org.ovirt.engine.core.bll.profiles.DiskProfileHelper;
 import org.ovirt.engine.core.bll.quota.QuotaConsumptionParameter;
 import org.ovirt.engine.core.bll.quota.QuotaStorageConsumptionParameter;
@@ -76,6 +78,8 @@ import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.errors.EngineMessage;
+import org.ovirt.engine.core.common.job.Step;
+import org.ovirt.engine.core.common.job.StepEnum;
 import org.ovirt.engine.core.common.locks.LockingGroup;
 import org.ovirt.engine.core.common.utils.Pair;
 import org.ovirt.engine.core.common.validation.group.UpdateEntity;
@@ -83,6 +87,7 @@ import org.ovirt.engine.core.common.vdscommands.SetVolumeDescriptionVDSCommandPa
 import org.ovirt.engine.core.common.vdscommands.VDSCommandType;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
+import org.ovirt.engine.core.dal.job.ExecutionMessageDirector;
 import org.ovirt.engine.core.dao.BaseDiskDao;
 import org.ovirt.engine.core.dao.DiskDao;
 import org.ovirt.engine.core.dao.DiskImageDao;
@@ -209,7 +214,11 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
 
     @Override
     protected void executeVmCommand() {
-        lockImageInDb();
+        // Locking an image in DB is required for extending disks size,
+        // which doesn't apply for LUN disks.
+        if (getOldDisk().getDiskStorageType().isInternal()) {
+            lockImageInDb();
+        }
         List<UpdateDiskParameters.Phase> phaseList = new ArrayList<>();
         ImagesHandler.setDiskAlias(getParameters().getDiskInfo(), getVm());
         if (resizeDiskImageRequested()) {
@@ -621,7 +630,7 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
             DiskImage oldDisk = (DiskImage) getOldDisk();
             DiskImage newDisk = (DiskImage) getNewDisk();
             if (!Objects.equals(oldDisk.getDiskProfileId(), newDisk.getDiskProfileId())) {
-                vmSlaPolicyUtils.refreshRunningVmsWithDiskProfile(newDisk.getDiskProfileId());
+                vmSlaPolicyUtils.refreshRunningVmsWithDiskImage(newDisk);
             }
         }
     }
@@ -662,7 +671,8 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
     }
 
     private void extendDiskImageSize() {
-        runInternalActionWithTasksContext(ActionType.ExtendImageSize, createExtendParameters());
+        runInternalAction(ActionType.ExtendImageSize, createExtendParameters(),
+                createStepsContext(StepEnum.EXTEND_IMAGE));
     }
 
     private void executeDiskExtend() {
@@ -684,7 +694,6 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
     }
 
     private void extendCinderDiskSize() {
-        lockImageInDb();
         CinderDisk newCinderDisk = (CinderDisk) getNewDisk();
         Future<ActionReturnValue> future = commandCoordinatorUtil.executeAsyncCommand(
                 ActionType.ExtendCinderDisk,
@@ -703,7 +712,6 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
     }
 
     private void extendManagedBlockDiskSize() {
-        lockImageInDb();
         ManagedBlockStorageDisk newManagedBlockDisk = (ManagedBlockStorageDisk) getNewDisk();
         Future<ActionReturnValue> future = commandCoordinatorUtil.executeAsyncCommand(
                 ActionType.ExtendManagedBlockStorageDiskSize,
@@ -725,7 +733,9 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
                 newManagedBlockDisk);
         parameters.setStorageDomainId(newManagedBlockDisk.getStorageIds().get(0));
         parameters.setParametersCurrentUser(getParameters().getParametersCurrentUser());
-        parameters.setEndProcedure(EndProcedure.COMMAND_MANAGED);
+        parameters.setEndProcedure(EndProcedure.PARENT_MANAGED);
+        parameters.setParentCommand(getActionType());
+        parameters.setParentParameters(getParameters());
         return parameters;
     }
 
@@ -738,13 +748,18 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
 
     @Override
     protected void endSuccessfully() {
-        unlockImageInDb();
-        setSucceeded(true);
+        endOperation();
     }
 
     @Override
     protected void endWithFailure() {
-        unlockImageInDb();
+        endOperation();
+    }
+
+    private void endOperation() {
+        if (getOldDisk().getDiskStorageType().isInternal()) {
+            unlockImageInDb();
+        }
         setSucceeded(true);
     }
 
@@ -774,6 +789,18 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
             jobProperties.put("diskalias", getDiskAlias());
         }
         return jobProperties;
+    }
+
+    private CommandContext createStepsContext(StepEnum step) {
+        Step addedStep = executionHandler.addSubStep(getExecutionContext(),
+                getExecutionContext().getJob().getStep(StepEnum.EXECUTING),
+                step,
+                ExecutionMessageDirector.resolveStepMessage(step, Collections.emptyMap()));
+        ExecutionContext ctx = new ExecutionContext();
+        ctx.setStep(addedStep);
+        ctx.setMonitored(true);
+        return ExecutionHandler.createDefaultContextForTasks(getContext(), null)
+                .withExecutionContext(ctx);
     }
 
     @Override
@@ -1031,13 +1058,13 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
     public void lockImageInDb() {
         final DiskImage diskImage = (DiskImage) getOldDisk();
 
-         TransactionSupport.executeInNewTransaction(() -> {
-             getCompensationContext().snapshotEntityStatus(diskImage.getImage());
-             getCompensationContext().stateChanged();
-             diskImage.setImageStatus(ImageStatus.LOCKED);
-             imagesHandler.updateImageStatus(diskImage.getImageId(), ImageStatus.LOCKED);
-             return null;
-         });
+        TransactionSupport.executeInNewTransaction(() -> {
+            getCompensationContext().snapshotEntityStatus(diskImage.getImage());
+            getCompensationContext().stateChanged();
+            diskImage.setImageStatus(ImageStatus.LOCKED);
+            imagesHandler.updateImageStatus(diskImage.getImageId(), ImageStatus.LOCKED);
+            return null;
+        });
     }
 
     public void unlockImageInDb() {

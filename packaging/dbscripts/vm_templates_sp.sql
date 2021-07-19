@@ -22,7 +22,6 @@ Create or replace FUNCTION InsertVmTemplate(v_child_count INTEGER,
  v_vmt_guid UUID,
  v_cluster_id UUID,
  v_num_of_monitors INTEGER,
- v_single_qxl_pci BOOLEAN,
  v_allow_console_reconnect BOOLEAN,
  v_status INTEGER,
  v_usb_policy INTEGER,
@@ -63,7 +62,6 @@ Create or replace FUNCTION InsertVmTemplate(v_child_count INTEGER,
  v_is_spice_copy_paste_enabled BOOLEAN,
  v_cpu_profile_id UUID,
  v_host_cpu_flags BOOLEAN,
- v_numatune_mode VARCHAR(20),
  v_is_auto_converge BOOLEAN,
  v_is_migrate_compressed BOOLEAN,
  v_is_migrate_encrypted BOOLEAN,
@@ -80,8 +78,11 @@ Create or replace FUNCTION InsertVmTemplate(v_child_count INTEGER,
  v_migration_policy_id UUID,
  v_lease_sd_id UUID,
  v_multi_queues_enabled BOOLEAN,
+ v_virtio_scsi_multi_queues_enabled BOOLEAN,
  v_use_tsc_frequency BOOLEAN,
- v_is_template_sealed BOOLEAN)
+ v_is_template_sealed BOOLEAN,
+ v_cpu_pinning VARCHAR(4000),
+ v_balloon_enabled BOOLEAN)
 
 RETURNS VOID
    AS $procedure$
@@ -116,7 +117,6 @@ BEGIN
         vm_guid,
         cluster_id,
         num_of_monitors,
-        single_qxl_pci,
         allow_console_reconnect,
         template_status,
         usb_policy,
@@ -138,7 +138,6 @@ BEGIN
         quota_id,
         migration_support,
         is_disabled,
-        dedicated_vm_for_vds,
         is_smartcard_enabled,
         is_delete_protected,
         sso_method,
@@ -158,7 +157,6 @@ BEGIN
         is_spice_copy_paste_enabled,
         cpu_profile_id,
         host_cpu_flags,
-        numatune_mode,
         is_auto_converge,
         is_migrate_compressed,
         is_migrate_encrypted,
@@ -175,8 +173,11 @@ BEGIN
         migration_policy_id,
         lease_sd_id,
         multi_queues_enabled,
+        virtio_scsi_multi_queues_enabled,
         use_tsc_frequency,
-        is_template_sealed)
+        is_template_sealed,
+        cpu_pinning,
+        balloon_enabled)
     VALUES(
         v_child_count,
         v_creation_date,
@@ -193,7 +194,6 @@ BEGIN
         v_vmt_guid,
         v_cluster_id,
         v_num_of_monitors,
-        v_single_qxl_pci,
         v_allow_console_reconnect,
         v_status,
         v_usb_policy,
@@ -215,7 +215,6 @@ BEGIN
         v_quota_id,
         v_migration_support,
         v_is_disabled,
-        v_dedicated_vm_for_vds,
         v_is_smartcard_enabled,
         v_is_delete_protected,
         v_sso_method,
@@ -235,7 +234,6 @@ BEGIN
         v_is_spice_copy_paste_enabled,
         v_cpu_profile_id,
         v_host_cpu_flags,
-        v_numatune_mode,
         v_is_auto_converge,
         v_is_migrate_compressed,
         v_is_migrate_encrypted,
@@ -252,8 +250,11 @@ BEGIN
         v_migration_policy_id,
         v_lease_sd_id,
         v_multi_queues_enabled,
+        v_virtio_scsi_multi_queues_enabled,
         v_use_tsc_frequency,
-        v_is_template_sealed);
+        v_is_template_sealed,
+        v_cpu_pinning,
+        v_balloon_enabled);
     -- perform deletion from vm_ovf_generations to ensure that no record exists when performing insert to avoid PK violation.
     DELETE FROM vm_ovf_generations gen WHERE gen.vm_guid = v_vmt_guid;
     INSERT INTO vm_ovf_generations(
@@ -292,7 +293,6 @@ Create or replace FUNCTION UpdateVmTemplate(v_child_count INTEGER,
  v_vmt_guid UUID,
  v_cluster_id UUID,
  v_num_of_monitors INTEGER,
- v_single_qxl_pci BOOLEAN,
  v_allow_console_reconnect BOOLEAN,
  v_status INTEGER,
  v_usb_policy INTEGER,
@@ -332,7 +332,6 @@ Create or replace FUNCTION UpdateVmTemplate(v_child_count INTEGER,
  v_is_spice_copy_paste_enabled BOOLEAN,
  v_cpu_profile_id UUID,
  v_host_cpu_flags BOOLEAN,
- v_numatune_mode VARCHAR(20),
  v_is_auto_converge BOOLEAN,
  v_is_migrate_compressed BOOLEAN,
  v_is_migrate_encrypted BOOLEAN,
@@ -349,8 +348,11 @@ Create or replace FUNCTION UpdateVmTemplate(v_child_count INTEGER,
  v_migration_policy_id UUID,
  v_lease_sd_id UUID,
  v_multi_queues_enabled BOOLEAN,
+ v_virtio_scsi_multi_queues_enabled BOOLEAN,
  v_use_tsc_frequency BOOLEAN,
- v_is_template_sealed BOOLEAN)
+ v_is_template_sealed BOOLEAN,
+ v_cpu_pinning VARCHAR(4000),
+ v_balloon_enabled BOOLEAN)
 RETURNS VOID
 
 	--The [vm_templates] table doesn't have a timestamp column. Optimistic concurrency logic cannot be generated
@@ -371,7 +373,6 @@ BEGIN
       os = v_os,
       cluster_id = v_cluster_id,
       num_of_monitors = v_num_of_monitors,
-      single_qxl_pci = v_single_qxl_pci,
       allow_console_reconnect = v_allow_console_reconnect,
       template_status = v_status,
       usb_policy = v_usb_policy,
@@ -392,7 +393,6 @@ BEGIN
       _update_date = CURRENT_TIMESTAMP,
       quota_id = v_quota_id,
       migration_support = v_migration_support,
-      dedicated_vm_for_vds = v_dedicated_vm_for_vds,
       is_smartcard_enabled = v_is_smartcard_enabled,
       is_delete_protected = v_is_delete_protected,
       sso_method = v_sso_method,
@@ -411,7 +411,6 @@ BEGIN
       is_spice_copy_paste_enabled = v_is_spice_copy_paste_enabled,
       cpu_profile_id = v_cpu_profile_id,
       host_cpu_flags = v_host_cpu_flags,
-      numatune_mode = v_numatune_mode,
       is_auto_converge = v_is_auto_converge,
       is_migrate_compressed = v_is_migrate_compressed,
       is_migrate_encrypted = v_is_migrate_encrypted,
@@ -428,8 +427,11 @@ BEGIN
       migration_policy_id = v_migration_policy_id,
       lease_sd_id = v_lease_sd_id,
       multi_queues_enabled = v_multi_queues_enabled,
+      virtio_scsi_multi_queues_enabled = v_virtio_scsi_multi_queues_enabled,
       use_tsc_frequency = v_use_tsc_frequency,
-      is_template_sealed = v_is_template_sealed
+      is_template_sealed = v_is_template_sealed,
+      cpu_pinning = v_cpu_pinning,
+      balloon_enabled = v_balloon_enabled
       WHERE vm_guid = v_vmt_guid
           AND entity_type = v_template_type;
 
@@ -489,7 +491,7 @@ RETURNS VOID
 BEGIN
         -- Get (and keep) a shared lock with "right to upgrade to exclusive"
         -- in order to force locking parent before children
-      SELECT   vm_guid INTO v_val
+      SELECT vm_guid INTO v_val
       FROM vm_static
       WHERE vm_guid = v_vmt_guid
       FOR UPDATE;

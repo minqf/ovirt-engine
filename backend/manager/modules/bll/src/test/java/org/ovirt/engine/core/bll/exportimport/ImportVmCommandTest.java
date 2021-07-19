@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
@@ -21,6 +22,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import javax.validation.ConstraintViolation;
 
@@ -42,6 +44,7 @@ import org.ovirt.engine.core.bll.validator.ImportValidator;
 import org.ovirt.engine.core.bll.validator.VmNicMacsUtils;
 import org.ovirt.engine.core.common.action.ImportVmParameters;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
+import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.BusinessEntitiesDefinitions;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.DisplayType;
@@ -58,6 +61,7 @@ import org.ovirt.engine.core.common.businessentities.VmDeviceGeneralType;
 import org.ovirt.engine.core.common.businessentities.VmDeviceId;
 import org.ovirt.engine.core.common.businessentities.VmTemplate;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
+import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.osinfo.OsRepository;
 import org.ovirt.engine.core.common.utils.Pair;
@@ -65,6 +69,8 @@ import org.ovirt.engine.core.common.utils.ValidationUtils;
 import org.ovirt.engine.core.common.utils.VmDeviceType;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.Version;
+import org.ovirt.engine.core.utils.MockConfigDescriptor;
+import  org.ovirt.engine.core.utils.MockedConfig;
 import org.ovirt.engine.core.utils.RandomUtils;
 import org.ovirt.engine.core.utils.RandomUtilsSeedingExtension;
 import org.ovirt.engine.core.vdsbroker.vdsbroker.CloudInitHandler;
@@ -98,6 +104,14 @@ public class ImportVmCommandTest extends BaseCommandTest {
     @Mock
     private CloudInitHandler cloudInitHandler;
 
+
+    public static Stream<MockConfigDescriptor<?>> mockConfiguration() {
+        return Stream.of(
+                MockConfigDescriptor.of(ConfigValues.PropagateDiskErrors, false),
+                MockConfigDescriptor.of(ConfigValues.BiosTypeSupported, Version.v4_6, true)
+        );
+    }
+
     @BeforeEach
     public void setUpOsRepository() {
         final int osId = 0;
@@ -106,6 +120,8 @@ public class ImportVmCommandTest extends BaseCommandTest {
         displayTypeMap.put(osId, new HashMap<>());
         displayTypeMap.get(osId).put(null, Collections.singletonList(new Pair<>(GraphicsType.SPICE, DisplayType.qxl)));
         when(osRepository.getGraphicsAndDisplays()).thenReturn(displayTypeMap);
+        when(osRepository.isQ35Supported(anyInt())).thenReturn(true);
+        when(osRepository.isSecureBootSupported(anyInt())).thenReturn(true);
     }
 
     @BeforeEach
@@ -143,10 +159,13 @@ public class ImportVmCommandTest extends BaseCommandTest {
         cluster.setStoragePoolId(cmd.getParameters().getStoragePoolId());
         cluster.setClusterId(cmd.getParameters().getClusterId());
         cluster.setCompatibilityVersion(Version.getLast());
+        cluster.setBiosType(BiosType.Q35_SEA_BIOS);
+        cluster.setArchitecture(ArchitectureType.x86_64);
         doReturn(cluster).when(cmd).getCluster();
     }
 
     @Test
+    @MockedConfig("mockConfiguration")
     public void insufficientDiskSpaceWithCollapse() {
         setupDiskSpaceTest();
         doReturn(true).when(cmd).validateImages(any());
@@ -157,6 +176,7 @@ public class ImportVmCommandTest extends BaseCommandTest {
     }
 
     @Test
+    @MockedConfig("mockConfiguration")
     public void insufficientDiskSpaceWithSnapshots() {
         setupDiskSpaceTest();
         doReturn(true).when(cmd).validateImages(any());
@@ -190,29 +210,19 @@ public class ImportVmCommandTest extends BaseCommandTest {
     private void setupCanImportPpcTest() {
         setupDiskSpaceTest();
 
+        cmd.getParameters().getVm().setBiosType(BiosType.I440FX_SEA_BIOS);
         cmd.getParameters().getVm().setClusterArch(ArchitectureType.ppc64);
         Cluster cluster = new Cluster();
         cluster.setStoragePoolId(cmd.getParameters().getStoragePoolId());
         cluster.setArchitecture(ArchitectureType.ppc64);
         cluster.setCompatibilityVersion(Version.getLast());
+        cluster.setBiosType(BiosType.I440FX_SEA_BIOS);
         doReturn(cluster).when(cmd).getCluster();
         doReturn(true).when(cmd).validateImages(any());
     }
 
     @Test
-    public void refuseBalloonOnPPC() {
-        setupCanImportPpcTest();
-
-        addBalloonToVm(cmd.getVmFromExportDomain(null));
-        when(osRepository.isBalloonEnabled(cmd.getParameters().getVm().getVmOsId(), cmd.getCluster().getCompatibilityVersion())).thenReturn(false);
-
-        assertFalse(cmd.validate());
-        assertTrue(cmd.getReturnValue()
-                .getValidationMessages()
-                .contains(EngineMessage.BALLOON_REQUESTED_ON_NOT_SUPPORTED_ARCH.toString()));
-    }
-
-    @Test
+    @MockedConfig("mockConfiguration")
     public void refuseSoundDeviceOnPPC() {
         setupCanImportPpcTest();
 
@@ -226,27 +236,7 @@ public class ImportVmCommandTest extends BaseCommandTest {
     }
 
     @Test
-    public void acceptBalloon() {
-        setupDiskSpaceTest();
-
-        addBalloonToVm(cmd.getParameters().getVm());
-
-        cmd.getParameters().getVm().setClusterArch(ArchitectureType.x86_64);
-        Cluster cluster = new Cluster();
-        cluster.setId(Guid.newGuid());
-        cluster.setStoragePoolId(cmd.getParameters().getStoragePoolId());
-        cluster.setArchitecture(ArchitectureType.x86_64);
-        cluster.setCompatibilityVersion(Version.getLast());
-        doReturn(cluster).when(cmd).getCluster();
-        cmd.setClusterId(cluster.getId());
-        cmd.getParameters().setClusterId(cluster.getId());
-        osRepository.getGraphicsAndDisplays().get(0).put(Version.getLast(),
-                Collections.singletonList(new Pair<>(GraphicsType.SPICE, DisplayType.qxl)));
-        when(osRepository.isBalloonEnabled(cmd.getParameters().getVm().getVmOsId(), cluster.getCompatibilityVersion())).thenReturn(true);
-        assertTrue(cmd.validateBallonDevice());
-    }
-
-    @Test
+    @MockedConfig("mockConfiguration")
     public void lowThresholdStorageSpace() {
         setupDiskSpaceTest();
         doReturn(true).when(cmd).validateImages(any());
@@ -274,6 +264,7 @@ public class ImportVmCommandTest extends BaseCommandTest {
         vm.setName("testVm");
         Guid clusterId = Guid.newGuid();
         vm.setClusterId(clusterId);
+        vm.setBiosType(BiosType.Q35_SEA_BIOS);
         vm.setClusterCompatibilityVersion(Version.getLast());
         vm.setClusterCompatibilityVersionOrigin(Version.getLast());
         Guid spId = Guid.newGuid();
@@ -301,6 +292,7 @@ public class ImportVmCommandTest extends BaseCommandTest {
         v.setImages(new ArrayList<>(Arrays.asList(baseImage, activeImage)));
         v.setSnapshots(new ArrayList<>(Arrays.asList(baseSnapshot, activeSnapshot)));
         v.setClusterId(Guid.Empty);
+        v.setBiosType(BiosType.Q35_SEA_BIOS);
 
         return v;
     }
@@ -318,7 +310,7 @@ public class ImportVmCommandTest extends BaseCommandTest {
         v.setSnapshots(new ArrayList<>(Collections.singletonList(activeSnapshot)));
         v.setDiskMap(Collections.singletonMap(activeImage.getId(), activeImage));
         v.setClusterId(Guid.Empty);
-
+        v.setBiosType(BiosType.Q35_SEA_BIOS);
         return v;
     }
 
@@ -406,6 +398,7 @@ public class ImportVmCommandTest extends BaseCommandTest {
      * Checking that managed device are sync with the new Guids of disk
      */
     @Test
+    @MockedConfig("mockConfiguration")
     public void testManagedDeviceSyncWithNewDiskId() {
         cmd.init();
         List<DiskImage> diskList = new ArrayList<>();
@@ -451,6 +444,7 @@ public class ImportVmCommandTest extends BaseCommandTest {
     /* Test import images with empty Guid is failing */
 
     @Test
+    @MockedConfig("mockConfiguration")
     public void testEmptyGuidFails() {
         DiskImage diskImage = cmd.getParameters().getVm().getImages().get(0);
         diskImage.setVmSnapshotId(Guid.Empty);

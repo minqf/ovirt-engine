@@ -146,7 +146,16 @@ public class ImportVmTemplateCommand<T extends ImportVmTemplateParameters> exten
     protected void initImportClonedTemplateDisks() {
         for (DiskImage image : getImages()) {
             // Update the virtual size with value queried from 'qemu-img info'
-            updateDiskSizeByQcowImageInfo(image);
+            // If the image is import from an export domain, we have to query it on
+            // the export domain and not on the target domain.
+            // If we import from a Storage Domain, we'll need to use the image's Storage
+            // Domain ID and not the target domain's.
+            if (!getParameters().isImagesExistOnTargetStorageDomain()) {
+                updateDiskSizeByQcowImageInfo(image);
+            } else {
+                updateDiskSizeByQcowImageInfo(image, image.getStorageIds().get(0));
+            }
+
             if (getParameters().isImportAsNewEntity()) {
                 generateNewDiskId(image);
                 updateManagedDeviceMap(image, getVmTemplate().getManagedDeviceMap());
@@ -260,7 +269,11 @@ public class ImportVmTemplateCommand<T extends ImportVmTemplateParameters> exten
     }
 
     private void updateDiskSizeByQcowImageInfo(DiskImage diskImage) {
-        QemuImageInfo qemuImageInfo = getQemuImageInfo(diskImage, getParameters().getSourceDomainId());
+        updateDiskSizeByQcowImageInfo(diskImage, getParameters().getSourceDomainId());
+    }
+
+    protected void updateDiskSizeByQcowImageInfo(DiskImage diskImage, Guid storageId) {
+        QemuImageInfo qemuImageInfo = getQemuImageInfo(diskImage, storageId);
         if (qemuImageInfo != null) {
             diskImage.setSize(qemuImageInfo.getSize());
         }

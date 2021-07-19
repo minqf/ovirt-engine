@@ -2,12 +2,14 @@ package org.ovirt.engine.ui.webadmin.section.main.view.popup.host;
 
 import org.ovirt.engine.core.common.action.VdsOperationActionParameters.AuthenticationMethod;
 import org.ovirt.engine.core.common.businessentities.HostedEngineDeployConfiguration;
+import org.ovirt.engine.core.common.businessentities.ReplaceHostConfiguration;
 import org.ovirt.engine.core.common.businessentities.VDSStatus;
 import org.ovirt.engine.core.compat.RpmVersion;
 import org.ovirt.engine.ui.common.editor.UiCommonEditorDriver;
 import org.ovirt.engine.ui.common.idhandler.WithElementId;
 import org.ovirt.engine.ui.common.view.popup.AbstractModelBoundPopupView;
 import org.ovirt.engine.ui.common.widget.Align;
+import org.ovirt.engine.ui.common.widget.dialog.InfoIcon;
 import org.ovirt.engine.ui.common.widget.dialog.SimpleDialogPanel;
 import org.ovirt.engine.ui.common.widget.dialog.tab.DialogTab;
 import org.ovirt.engine.ui.common.widget.dialog.tab.DialogTabPanel;
@@ -17,9 +19,11 @@ import org.ovirt.engine.ui.common.widget.editor.generic.StringEntityModelLabelEd
 import org.ovirt.engine.ui.common.widget.editor.generic.StringEntityModelPasswordBoxEditor;
 import org.ovirt.engine.ui.common.widget.editor.generic.StringEntityModelTextAreaLabelEditor;
 import org.ovirt.engine.ui.common.widget.editor.generic.StringEntityModelTextBoxEditor;
+import org.ovirt.engine.ui.common.widget.renderer.EnumRenderer;
 import org.ovirt.engine.ui.common.widget.renderer.NullSafeRenderer;
 import org.ovirt.engine.ui.uicommonweb.models.hosts.InstallModel;
 import org.ovirt.engine.ui.webadmin.ApplicationConstants;
+import org.ovirt.engine.ui.webadmin.ApplicationTemplates;
 import org.ovirt.engine.ui.webadmin.gin.AssetProvider;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.host.HostInstallPopupPresenterWidget;
 
@@ -79,6 +83,15 @@ public class HostInstallPopupView extends AbstractModelBoundPopupView<InstallMod
     @WithElementId("activateHostAfterInstall")
     EntityModelCheckBoxEditor activateHostAfterInstallEditor;
 
+    @UiField(provided = true)
+    @Ignore
+    InfoIcon hostRebootInfoIcon;
+
+    @UiField(provided = true)
+    @Path(value = "rebootHostAfterInstall.entity")
+    @WithElementId("rebootHostAfterInstall")
+    EntityModelCheckBoxEditor rebootHostAfterInstallEditor;
+
     @UiField
     @Ignore
     Label authLabel;
@@ -98,6 +111,11 @@ public class HostInstallPopupView extends AbstractModelBoundPopupView<InstallMod
     @WithElementId("userName")
     StringEntityModelTextBoxEditor userNameEditor;
 
+    @UiField
+    @Path(value = "fqdnBox.entity")
+    @WithElementId("fqdnBox")
+    StringEntityModelTextBoxEditor fqdnEditor;
+
     @UiField(provided = true)
     @Path(value = "publicKey.entity")
     @WithElementId("publicKey")
@@ -106,6 +124,10 @@ public class HostInstallPopupView extends AbstractModelBoundPopupView<InstallMod
     @UiField
     @Path(value = "hostedEngineHostModel.selectedItem")
     ListModelListBoxEditor<HostedEngineDeployConfiguration.Action> hostedEngineDeployActionsEditor;
+
+    @UiField
+    @Path(value = "replaceHostModel.selectedItem")
+    ListModelListBoxEditor<ReplaceHostConfiguration.Action> replaceHostEditor;
 
     @UiField
     @Ignore
@@ -119,14 +141,20 @@ public class HostInstallPopupView extends AbstractModelBoundPopupView<InstallMod
     @Ignore
     DialogTab hostedEngineTab;
 
+    @UiField
+    @Ignore
+    DialogTab replaceHostTab;
+
     private final Driver driver = GWT.create(Driver.class);
 
     private static final ApplicationConstants constants = AssetProvider.getConstants();
+    private static final ApplicationTemplates templates = AssetProvider.getTemplates();
 
     @Inject
     public HostInstallPopupView(EventBus eventBus) {
         super(eventBus);
         initEditors();
+        initInfoIcon();
         initWidget(ViewUiBinder.uiBinder.createAndBindUi(this));
         hideLabels();
         localize();
@@ -137,6 +165,11 @@ public class HostInstallPopupView extends AbstractModelBoundPopupView<InstallMod
     private void hideLabels() {
         passwordEditor.hideLabel();
         publicKeyEditor.hideLabel();
+    }
+
+    private void initInfoIcon() {
+        hostRebootInfoIcon =
+                new InfoIcon(templates.italicText(constants.rebootHostAfterInstallLabelHelpMessage()));
     }
 
     void initEditors() {
@@ -152,8 +185,10 @@ public class HostInstallPopupView extends AbstractModelBoundPopupView<InstallMod
         rbPublicKey = new RadioButton("1"); //$NON-NLS-1$
         publicKeyEditor = new StringEntityModelTextAreaLabelEditor();
         activateHostAfterInstallEditor = new EntityModelCheckBoxEditor(Align.RIGHT);
+        rebootHostAfterInstallEditor = new EntityModelCheckBoxEditor(Align.RIGHT);
         overrideIpTablesEditor = new EntityModelCheckBoxEditor(Align.RIGHT);
         reconfigureGlusterEditor = new EntityModelCheckBoxEditor(Align.RIGHT);
+        replaceHostEditor = new ListModelListBoxEditor<>(new EnumRenderer<ReplaceHostConfiguration.Action>());
     }
 
     void localize() {
@@ -161,9 +196,11 @@ public class HostInstallPopupView extends AbstractModelBoundPopupView<InstallMod
         isoEditor.setLabel(constants.hostInstallIsoLabel());
         overrideIpTablesEditor.setLabel(constants.hostInstallOverrideIpTablesLabel());
         activateHostAfterInstallEditor.setLabel(constants.activateHostAfterInstallLabel());
+        rebootHostAfterInstallEditor.setLabel(constants.rebootHostAfterInstallLabel());
         reconfigureGlusterEditor.setLabel(constants.reconfigureGlusterLabel());
         authLabel.setText(constants.hostPopupAuthLabel());
         userNameEditor.setLabel(constants.hostPopupUsernameLabel());
+        fqdnEditor.setLabel(constants.hostPopupFqdnLabel());
         publicKeyEditor.setTitle(constants.publicKeyUsage());
     }
 
@@ -180,11 +217,13 @@ public class HostInstallPopupView extends AbstractModelBoundPopupView<InstallMod
                 }
             }
         });
+
         boolean installedFailed = model.getVds().getStatus() == VDSStatus.InstallFailed;
         model.setAuthenticationMethod(installedFailed ? AuthenticationMethod.Password: AuthenticationMethod.PublicKey);
         displayPasswordField(installedFailed);
         rbPassword.setValue(installedFailed);
         rbPublicKey.setValue(!installedFailed);
+
 
         rbPassword.addValueChangeHandler(event -> {
             model.setAuthenticationMethod(AuthenticationMethod.Password);
@@ -208,6 +247,7 @@ public class HostInstallPopupView extends AbstractModelBoundPopupView<InstallMod
             publicKeyEditor.getElement().getStyle().setVisibility(Visibility.VISIBLE);
         }
     }
+
 
     @Override
     public InstallModel flush() {

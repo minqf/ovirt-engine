@@ -78,13 +78,15 @@ CREATE OR REPLACE FUNCTION UpdateImageUploads(
     v_imaged_ticket_id UUID,
     v_proxy_uri VARCHAR,
     v_daemon_uri VARCHAR,
-    v_signed_ticket VARCHAR,
     v_bytes_sent BIGINT,
     v_bytes_total BIGINT,
     v_client_inactivity_timeout INTEGER,
+    v_timeout_policy VARCHAR(10),
     v_image_format INTEGER,
     v_backend INTEGER,
-    v_backup_id UUID
+    v_backup_id UUID,
+    v_client_type INTEGER,
+    v_shallow BOOLEAN
     )
 RETURNS VOID
 AS $PROCEDURE$
@@ -102,13 +104,15 @@ BEGIN
         imaged_ticket_id = v_imaged_ticket_id,
         proxy_uri = v_proxy_uri,
         daemon_uri = v_daemon_uri,
-        signed_ticket = v_signed_ticket,
         bytes_sent = v_bytes_sent,
         bytes_total = v_bytes_total,
         client_inactivity_timeout = v_client_inactivity_timeout,
+        timeout_policy = v_timeout_policy,
         image_format = v_image_format,
         backend = v_backend,
-        backup_id = v_backup_id
+        backup_id = v_backup_id,
+        client_type = v_client_type,
+        shallow = v_shallow
     WHERE command_id = v_command_id;
 END;$PROCEDURE$
 LANGUAGE plpgsql;
@@ -138,13 +142,15 @@ CREATE OR REPLACE FUNCTION InsertImageUploads(
     v_imaged_ticket_id UUID,
     v_proxy_uri VARCHAR,
     v_daemon_uri VARCHAR,
-    v_signed_ticket VARCHAR,
     v_bytes_sent BIGINT,
     v_bytes_total BIGINT,
     v_client_inactivity_timeout INTEGER,
+    v_timeout_policy VARCHAR(10),
     v_image_format INTEGER,
     v_backend INTEGER,
-    v_backup_id UUID
+    v_backup_id UUID,
+    v_client_type INTEGER,
+    v_shallow BOOLEAN
     )
 RETURNS VOID
 AS $PROCEDURE$
@@ -162,13 +168,15 @@ BEGIN
         imaged_ticket_id,
         proxy_uri,
         daemon_uri,
-        signed_ticket,
         bytes_sent,
         bytes_total,
         client_inactivity_timeout,
+        timeout_policy,
         image_format,
         backend,
-        backup_id
+        backup_id,
+        client_type,
+        shallow
         )
     VALUES (
         v_command_id,
@@ -183,14 +191,40 @@ BEGIN
         v_imaged_ticket_id,
         v_proxy_uri,
         v_daemon_uri,
-        v_signed_ticket,
         v_bytes_sent,
         v_bytes_total,
         v_client_inactivity_timeout,
+        v_timeout_policy,
         v_image_format,
         v_backend,
-        v_backup_id
+        v_backup_id,
+        v_client_type,
+        v_shallow
         );
 END;$PROCEDURE$
 LANGUAGE plpgsql;
 
+
+-----------------------------------------------------------
+-- Cleanup image transfer entities by last updated time and phase
+-----------------------------------------------------------
+CREATE OR REPLACE FUNCTION DeleteCompletedImageTransfersOlderThanDate (
+    v_succeeded_end_time TIMESTAMP WITH TIME ZONE,
+    v_failed_end_time TIMESTAMP WITH TIME ZONE
+    )
+RETURNS VOID AS $PROCEDURE$
+BEGIN
+    DELETE
+    FROM image_transfers
+    WHERE (
+            (
+                last_updated < v_succeeded_end_time
+                AND phase = 9
+                )
+            OR (
+                last_updated < v_failed_end_time
+                AND phase = 10
+                )
+            );
+END;$PROCEDURE$
+LANGUAGE plpgsql;

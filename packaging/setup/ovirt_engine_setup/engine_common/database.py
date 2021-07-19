@@ -44,7 +44,7 @@ PG_CONF_MSG = _(
     "'{pg_host}':\n"
     "{keys}\n"
     "postgresql.conf is usually in /var/lib/pgsql/data, "
-    "/var/opt/rh/rh-postgresql10/lib/pgsql/data, or "
+    " or "
     "somewhere under /etc/postgresql* . You have to restart PostgreSQL "
     "after making these changes."
 )
@@ -266,7 +266,7 @@ class Statement(base.Base):
                         break
                     ret.append(dict(zip(cols, entry)))
 
-        except:
+        except Exception:
             if _connection is not None:
                 _connection.rollback()
             raise
@@ -799,64 +799,34 @@ class OvirtUtils(base.Base):
         return backupFile
 
     _IGNORED_ERRORS = (
-        # TODO: verify and get rid of all the '.*'s
-
-        '.*language "plpgsql" already exists',
-        ' *Command was: CREATE PROCEDURAL LANGUAGE plpgsql;',
-        '.*must be owner of language plpgsql',
-        # psql
-        'ERROR:  must be owner of extension plpgsql',
-        # pg_restore
-        (
-            'pg_restore: \[archiver \(db\)\] could not execute query: ERROR:  '
-            'must be owner of extension plpgsql'
-        ),
-        (
-            'pg_restore: \[archiver \(db\)\] could not execute query: ERROR:  '
-            'must be owner of extension uuid-ossp'
-        ),
-
+        'language "plpgsql" already exists',
+        'must be owner of language plpgsql',
+        'must be owner of extension plpgsql',
+        'must be owner of extension uuid-ossp',
         # older versions of dwh used uuid-ossp, which requires
         # special privs, is not used anymore, and emits the following
         # errors for normal users.
-        '.*permission denied for language c',
-        '.*function public.uuid_generate_v1() does not exist',
-        '.*function public.uuid_generate_v1mc() does not exist',
-        '.*function public.uuid_generate_v3(uuid, text) does not exist',
-        '.*function public.uuid_generate_v4() does not exist',
-        '.*function public.uuid_generate_v5(uuid, text) does not exist',
-        '.*function public.uuid_nil() does not exist',
-        '.*function public.uuid_ns_dns() does not exist',
-        '.*function public.uuid_ns_oid() does not exist',
-        '.*function public.uuid_ns_url() does not exist',
-        '.*function public.uuid_ns_x500() does not exist',
-
-        # Other stuff, added because if we want to support other
-        # formats etc we must explicitely filter all existing output
-        # and not just ERRORs.
-        'pg_restore: \[archiver \(db\)\] Error while PROCESSING TOC:',
-        '    Command was: COMMENT ON EXTENSION',
-        (
-            'pg_restore: \[archiver \(db\)\] Error from TOC entry \d+'
-            '; 0 0 COMMENT EXTENSION plpgsql'
-        ),
-        # Extensions with names containing special characters like dash need
-        # to be surrounded with double quotes.
-        (
-            'pg_restore: \[archiver \(db\)\] Error from TOC entry \d+'
-            '; 0 0 COMMENT EXTENSION "uuid-ossp"'
-        ),
-        (
-            'pg_restore: \[archiver \(db\)\] Error from TOC entry \d+'
-            '; \d+ \d+ PROCEDURAL LANGUAGE plpgsql'
-        ),
-        'pg_restore: WARNING:',
-        'WARNING: ',
-        'DETAIL:  ',
+        'permission denied for language c',
+        'function public.uuid_generate_v1() does not exist',
+        'function public.uuid_generate_v1mc() does not exist',
+        'function public.uuid_generate_v3(uuid, text) does not exist',
+        'function public.uuid_generate_v4() does not exist',
+        'function public.uuid_generate_v5(uuid, text) does not exist',
+        'function public.uuid_nil() does not exist',
+        'function public.uuid_ns_dns() does not exist',
+        'function public.uuid_ns_oid() does not exist',
+        'function public.uuid_ns_url() does not exist',
+        'function public.uuid_ns_x500() does not exist',
+        # This happens because we do some GRANTs for grafana's user on dwh db,
+        # but dwh db user has no right to do them itself:
+        'must be member of role "postgres"',
     )
 
     _RE_IGNORED_ERRORS = re.compile(
-        pattern='|'.join(_IGNORED_ERRORS),
+        pattern='|'.join([
+            '.*ERROR: *{}'.format(err)
+            for err in _IGNORED_ERRORS
+        ])
     )
 
     def restore(
@@ -920,7 +890,16 @@ class OvirtUtils(base.Base):
                 stdin.close()
 
         rc = res['result'][-1]['rc']
-        stderr = res['result'][-1]['stderr'].splitlines()
+        stderr = res[
+            'result'
+        ][
+            -1
+        ][
+            'stderr'
+        ].decode(
+            'utf-8',
+            'replace'
+        ).splitlines()
 
         self.logger.debug('db restore rc %s stderr %s', rc, stderr)
 
@@ -928,8 +907,10 @@ class OvirtUtils(base.Base):
         # Do something different for psql/pg_restore?
         if stderr:
             errors = [
-                l for l in stderr
-                if l and not self._RE_IGNORED_ERRORS.match(l)
+                line for line in stderr
+                if line and
+                'ERROR:' in line and
+                not self._RE_IGNORED_ERRORS.match(line)
             ]
             if errors:
                 self.logger.error(
@@ -1169,8 +1150,8 @@ class OvirtUtils(base.Base):
             key = item['key']
             if item['needed_on_create']:
                 edit_params[key] = item['expected']
-        for l in content:
-            m = RE_KEY_VALUE.match(l)
+        for line in content:
+            m = RE_KEY_VALUE.match(line)
             if m is not None:
                 for item in [
                     i for i in self._pg_conf_info()
@@ -1199,6 +1180,7 @@ class OvirtUtils(base.Base):
         show_create_msg=False,
         note=None,
         credsfile=None,
+        validateconf=True,
     ):
         interactive = None in (
             _ind_env(self, DEK.HOST),
@@ -1389,29 +1371,29 @@ class OvirtUtils(base.Base):
             self.environment[
                 self._dbenvkeys[DEK.NEW_DATABASE]
             ] = self.isNewDatabase()
-        except:
+        except Exception:
             self.logger.debug('database connection failed', exc_info=True)
 
         try:
             self.environment[
                 self._dbenvkeys[DEK.NEED_DBMSUPGRADE]
             ] = self.checkDBMSUpgrade()
-        except:
+        except Exception:
             self.logger.debug('database version check failed', exc_info=True)
 
-        if not _ind_env(self, DEK.NEW_DATABASE):
-                invalid_config_items = self.validateDbConf(name, dbenv)
-                if (
-                    invalid_config_items and
-                    DEK.INVALID_CONFIG_ITEMS in self._dbenvkeys
-                ):
-                    # If DEK.INVALID_CONFIG_ITEMS is not in self._dbenvkeys,
-                    # it probably means that this component is not interested
-                    # in invalid items. This can be removed once all components
-                    # add it, currently dwh.
-                    self.environment[
-                        self._dbenvkeys[DEK.INVALID_CONFIG_ITEMS]
-                    ] = invalid_config_items
+        if not _ind_env(self, DEK.NEW_DATABASE) and validateconf:
+            invalid_config_items = self.validateDbConf(name, dbenv)
+            if (
+                invalid_config_items and
+                DEK.INVALID_CONFIG_ITEMS in self._dbenvkeys
+            ):
+                # If DEK.INVALID_CONFIG_ITEMS is not in self._dbenvkeys,
+                # it probably means that this component is not interested
+                # in invalid items. This can be removed once all components
+                # add it, currently dwh.
+                self.environment[
+                    self._dbenvkeys[DEK.INVALID_CONFIG_ITEMS]
+                ] = invalid_config_items
 
     def replaced_localhost(self, replacement=None):
         return (
@@ -1495,8 +1477,8 @@ class OvirtUtils(base.Base):
             raiseOnError=False,
         )
         if rc == 0:
-            for l in stdout:
-                for k, v in RE_KEY_VALUE_MULTIPLE.findall(l):
+            for line in stdout:
+                for k, v in RE_KEY_VALUE_MULTIPLE.findall(line):
                     if k == 'PGDATA':
                         return v
         raise RuntimeError(_('Unable to detect PGDATA location'))
@@ -1583,17 +1565,9 @@ class OvirtUtils(base.Base):
         # Only fail if the command succeded but didn't include the expected
         # line. This way it should also work in developer mode, also probably
         # if selinux is disabled or permissive.
-        if rc == 0 and '/var/opt/rh/rh-postgresql10 = /var' not in stdout:
+        if rc == 0 and '/var/lib/pgsql = /var' not in stdout:
             self.logger.error(_(
                 'SELinux file context rules for PostgreSQL are missing\n'
-            ))
-            self.dialog.note(_(
-                'SELinux file context rules for PostgreSQL are missing.\n'
-                'For more information, see: '
-                'https://bugzilla.redhat.com/1518599 .\n'
-                'You can try fixing this by running this command:\n\n'
-                '# yum reinstall rh-postgresql10-runtime\n\n'
-                'Then you can try running Setup again.\n'
             ))
             raise RuntimeError(_(
                 'SELinux file context rules for PostgreSQL are missing'

@@ -1,7 +1,9 @@
 package org.ovirt.engine.ui.common.auth;
 
+import org.ovirt.engine.core.common.businessentities.UserProfileProperty;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.compat.Guid;
+import org.ovirt.engine.ui.frontend.WebAdminSettings;
 
 import com.google.gwt.core.client.JavaScriptObject;
 
@@ -33,6 +35,14 @@ public final class AutoLoginData extends JavaScriptObject {
         return this.isAdmin;
     }-*/;
 
+    private native String getUserOptions() /*-{
+        return this.userOptions;
+    }-*/;
+
+    private native String getUserOptionsId() /*-{
+        return this.userOptionsId;
+    }-*/;
+
     public DbUser getDbUser() {
         DbUser user = new DbUser();
         user.setId(Guid.createGuidFromStringDefaultEmpty(getId()));
@@ -40,6 +50,19 @@ public final class AutoLoginData extends JavaScriptObject {
         user.setLoginName(getUserName());
         user.setAdmin(isAdmin());
         return user;
+    }
+
+    public UserProfileProperty getWebAdminUserOption() {
+        if(getUserOptions() == null || getUserOptionsId() == null) {
+            return WebAdminSettings.defaultSettings().getOriginalUserOptions();
+        }
+        return UserProfileProperty.builder()
+                .withName(WebAdminSettings.WEB_ADMIN)
+                .withUserId(Guid.createGuidFromStringDefaultEmpty(getId()))
+                .withPropertyId(Guid.createGuidFromStringDefaultEmpty(getUserOptionsId()))
+                .withTypeJson()
+                .withContent(getUserOptions())
+                .build();
     }
 
     public native String getEngineSessionId() /*-{

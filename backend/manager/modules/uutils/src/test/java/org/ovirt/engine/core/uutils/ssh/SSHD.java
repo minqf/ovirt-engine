@@ -1,7 +1,6 @@
 package org.ovirt.engine.core.uutils.ssh;
 
 import java.io.IOException;
-import java.security.GeneralSecurityException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
@@ -16,6 +15,7 @@ import org.apache.sshd.server.SshServer;
 import org.apache.sshd.server.auth.password.PasswordAuthenticator;
 import org.apache.sshd.server.auth.pubkey.PublickeyAuthenticator;
 import org.apache.sshd.server.session.ServerSession;
+import org.apache.sshd.server.shell.ProcessShellCommandFactory;
 import org.apache.sshd.server.shell.ProcessShellFactory;
 
 public class SSHD {
@@ -52,7 +52,7 @@ public class SSHD {
 
     static class MyKeyPairProvider implements KeyPairProvider {
         private static final Iterable<String> KEY_TYPES =
-                Collections.unmodifiableList(Collections.singletonList(SSH_RSA));
+                Collections.singletonList(SSH_RSA);
         KeyPair keyPair;
 
         public MyKeyPairProvider(KeyPair keyPair) {
@@ -65,7 +65,7 @@ public class SSHD {
         }
 
         @Override
-        public Iterable<KeyPair> loadKeys(SessionContext session) throws IOException, GeneralSecurityException {
+        public Iterable<KeyPair> loadKeys(SessionContext session) {
             List<KeyPair> ret = new LinkedList<>();
             ret.add(keyPair);
             return ret;
@@ -93,12 +93,15 @@ public class SSHD {
                         "/bin/sh",
                         "-i"));
         sshd.setCommandFactory(
-                command -> new ProcessShellFactory(
-                        new String[] {
-                                "/bin/sh",
-                                "-c",
-                                command
-                        }).create());
+                (channelSession, command) -> new ProcessShellCommandFactory()
+                        .createCommand(
+                                channelSession,
+                                String.join(" ",
+                                        new String[] {
+                                                "/bin/sh",
+                                                "-c",
+                                                command
+                                        })));
     }
 
     public int getPort() {

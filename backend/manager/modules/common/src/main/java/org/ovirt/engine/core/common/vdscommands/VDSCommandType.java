@@ -9,7 +9,10 @@ public enum VDSCommandType {
     Create("org.ovirt.engine.core.vdsbroker"),
     CreateBroker("org.ovirt.engine.core.vdsbroker.vdsbroker"),
     DestroyVm("org.ovirt.engine.core.vdsbroker"),
-    RebootVm("org.ovirt.engine.core.vdsbroker.vdsbroker"),
+    RebootVm("org.ovirt.engine.core.vdsbroker"),
+    RebootVmBroker("org.ovirt.engine.core.vdsbroker.vdsbroker"),
+    ResetVm("org.ovirt.engine.core.vdsbroker"),
+    ResetVmBroker("org.ovirt.engine.core.vdsbroker.vdsbroker"),
     Hibernate("org.ovirt.engine.core.vdsbroker"),
     HibernateBroker("org.ovirt.engine.core.vdsbroker.vdsbroker"),
     Resume("org.ovirt.engine.core.vdsbroker"),
@@ -51,7 +54,6 @@ public enum VDSCommandType {
     GetVmsInfo("org.ovirt.engine.core.vdsbroker.irsbroker"),
     HSMGetStorageDomainInfo("org.ovirt.engine.core.vdsbroker.vdsbroker"),
     HSMGetStorageDomainsList("org.ovirt.engine.core.vdsbroker.vdsbroker"),
-    CreateImage("org.ovirt.engine.core.vdsbroker.irsbroker"),
     PrepareImage("org.ovirt.engine.core.vdsbroker.vdsbroker"),
     SetVolumeLegality("org.ovirt.engine.core.vdsbroker.irsbroker"),
     TeardownImage("org.ovirt.engine.core.vdsbroker.vdsbroker"),
@@ -143,6 +145,7 @@ public enum VDSCommandType {
     GetImageTicket("org.ovirt.engine.core.vdsbroker.vdsbroker"),
     VerifyUntrustedVolume("org.ovirt.engine.core.vdsbroker.vdsbroker"),
     MeasureVolume("org.ovirt.engine.core.vdsbroker.vdsbroker"),
+    SwitchMasterStorageDomain("org.ovirt.engine.core.vdsbroker.irsbroker"),
 
     // Gluster VDS commands
     CreateGlusterVolume("org.ovirt.engine.core.vdsbroker.gluster"),
@@ -228,6 +231,7 @@ public enum VDSCommandType {
     GetAllVmStats("org.ovirt.engine.core.vdsbroker.vdsbroker"),  // get a list of VMs with full data and statistics
     HostDevListByCaps("org.ovirt.engine.core.vdsbroker"),        // get all host devices with passthrough information
     Destroy("org.ovirt.engine.core.vdsbroker.vdsbroker"),        // Clean a DOWN VM from the vms list
+    GetVmExternalData("org.ovirt.engine.core.vdsbroker.vdsbroker"),
     SetDestroyOnReboot("org.ovirt.engine.core.vdsbroker.vdsbroker"),
     HostDevChangeNumVfs("org.ovirt.engine.core.vdsbroker.vdsbroker"),
     RegisterLibvirtSecrets("org.ovirt.engine.core.vdsbroker.vdsbroker"),
@@ -239,6 +243,10 @@ public enum VDSCommandType {
     GetVmLeaseInfo("org.ovirt.engine.core.vdsbroker.vdsbroker"),
     HotPlugLease("org.ovirt.engine.core.vdsbroker.vdsbroker"),
     HotUnplugLease("org.ovirt.engine.core.vdsbroker.vdsbroker"),
+    AddExternalLease("org.ovirt.engine.core.vdsbroker.vdsbroker"),
+    RemoveExternalLease("org.ovirt.engine.core.vdsbroker.vdsbroker"),
+    GetLeaseStatus("org.ovirt.engine.core.vdsbroker.vdsbroker"),
+    FenceLeaseJob("org.ovirt.engine.core.vdsbroker.vdsbroker"),
 
     // Cold merge related commands
     PrepareMerge("org.ovirt.engine.core.vdsbroker.irsbroker"),
@@ -250,6 +258,10 @@ public enum VDSCommandType {
     GetVmBackupInfo("org.ovirt.engine.core.vdsbroker.vdsbroker"),
     RedefineVmCheckpoints("org.ovirt.engine.core.vdsbroker.vdsbroker"),
     DeleteVmCheckpoints("org.ovirt.engine.core.vdsbroker.vdsbroker"),
+    ListVmCheckpoints("org.ovirt.engine.core.vdsbroker.vdsbroker"),
+    AddVolumeBitmap("org.ovirt.engine.core.vdsbroker.vdsbroker"),
+    RemoveVolumeBitmap("org.ovirt.engine.core.vdsbroker.vdsbroker"),
+    ClearVolumeBitmaps("org.ovirt.engine.core.vdsbroker.vdsbroker"),
     StartNbdServer("org.ovirt.engine.core.vdsbroker.vdsbroker"),
     StopNbdServer("org.ovirt.engine.core.vdsbroker.vdsbroker"),
 

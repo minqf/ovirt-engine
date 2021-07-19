@@ -65,7 +65,7 @@ class FileLocations(object):
     OVIRT_ENGINE_SYSCTL = os.path.join(
         SYSCONFDIR,
         'sysctl.d',
-        'ovirt-postgresql.conf',
+        'ovirt-engine.conf',
     )
     OVIRT_ENGINE_PKI_APACHE_CA_CERT = os.path.join(
         OVIRT_ENGINE_PKIDIR,
@@ -158,6 +158,7 @@ class Stages(object):
         'osetup.db.owners.connections.customized'
     DB_CREDENTIALS_AVAILABLE_EARLY = 'osetup.db.connection.credentials.early'
     DB_CREDENTIALS_AVAILABLE_LATE = 'osetup.db.connection.credentials.late'
+    DB_CREDENTIALS_WRITTEN = 'osetup.db.connection.credentials.written'
     DB_CONNECTION_AVAILABLE = 'osetup.db.connection.available'
     DB_SCHEMA = 'osetup.db.schema'
     DB_UPGRADEDBMS_ENGINE = 'osetup.db.upgrade.dbms.engine'
@@ -189,7 +190,9 @@ class Stages(object):
 @util.export
 @util.codegen
 class Const(object):
-    HTTPD_SSL_PROTOCOLS = 'all -SSLv3 -TLSv1'
+    # Enable only TLSv1.2 protocol. More information at
+    # https://httpd.apache.org/docs/current/mod/mod_ssl.html#sslprotocol
+    HTTPD_SSL_PROTOCOLS = '-all +TLSv1.2'
 
 
 @util.export

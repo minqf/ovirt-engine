@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.stream.Stream;
@@ -170,7 +171,6 @@ public class VmMapperTest extends
         assertEquals(model.isSetDisplay(), transform.isSetDisplay());
         assertEquals(model.getDisplay().getType(), transform.getDisplay().getType());
         assertEquals(model.getDisplay().getMonitors(), transform.getDisplay().getMonitors());
-        assertEquals(model.getDisplay().isSingleQxlPci(), transform.getDisplay().isSingleQxlPci());
         assertEquals(model.getDisplay().isAllowOverride(), transform.getDisplay().isAllowOverride());
         // few hosts in Placement Policy, but unordered
         List<Host> modelHostsList = model.getPlacementPolicy().getHosts().getHosts();
@@ -229,7 +229,7 @@ public class VmMapperTest extends
     @Test
     public void testUpdateHostPinningPolicy() {
         final VmStatic vmTemplate = new VmStatic();
-        vmTemplate.setDedicatedVmForVdsList(Guid.newGuid());
+        vmTemplate.setDedicatedVmForVdsList(Collections.singletonList(Guid.newGuid()));
         final Vm vm = new Vm();
         vm.setPlacementPolicy(createPlacementPolicy(Guid.newGuid(), Guid.newGuid()));
         final VmStatic mappedVm = VmMapper.map(vm, vmTemplate);

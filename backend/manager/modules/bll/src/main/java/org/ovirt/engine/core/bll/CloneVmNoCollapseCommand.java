@@ -2,19 +2,19 @@ package org.ovirt.engine.core.bll;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import javax.enterprise.inject.Instance;
-import javax.enterprise.inject.Typed;
 import javax.inject.Inject;
 
 import org.ovirt.engine.core.bll.context.CommandContext;
+import org.ovirt.engine.core.bll.job.ExecutionContext;
+import org.ovirt.engine.core.bll.job.ExecutionHandler;
 import org.ovirt.engine.core.bll.snapshots.SnapshotVmConfigurationHelper;
 import org.ovirt.engine.core.bll.snapshots.SnapshotsManager;
 import org.ovirt.engine.core.bll.storage.disk.image.ImagesHandler;
-import org.ovirt.engine.core.bll.tasks.interfaces.CommandCallback;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
@@ -23,18 +23,24 @@ import org.ovirt.engine.core.common.action.MoveOrCopyImageGroupParameters;
 import org.ovirt.engine.core.common.asynctasks.EntityInfo;
 import org.ovirt.engine.core.common.businessentities.Snapshot;
 import org.ovirt.engine.core.common.businessentities.VM;
+import org.ovirt.engine.core.common.businessentities.VMStatus;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.ImageOperation;
 import org.ovirt.engine.core.common.businessentities.storage.ImageStatus;
+import org.ovirt.engine.core.common.errors.EngineException;
+import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.job.Job;
+import org.ovirt.engine.core.common.job.Step;
+import org.ovirt.engine.core.common.job.StepEnum;
 import org.ovirt.engine.core.compat.Guid;
+import org.ovirt.engine.core.dal.job.ExecutionMessageDirector;
 import org.ovirt.engine.core.dao.ImageDao;
 import org.ovirt.engine.core.dao.SnapshotDao;
 import org.ovirt.engine.core.utils.transaction.TransactionSupport;
 
 @DisableInPrepareMode
 @NonTransactiveCommandAttribute(forceCompensation = true)
-public class CloneVmNoCollapseCommand<T extends CloneVmParameters> extends CloneVmCommand<T> implements SerialChildExecutingCommand {
+public class CloneVmNoCollapseCommand<T extends CloneVmParameters> extends CloneVmCommand<T> {
 
     @Inject
     private ImagesHandler imagesHandler;
@@ -51,16 +57,26 @@ public class CloneVmNoCollapseCommand<T extends CloneVmParameters> extends Clone
     @Inject
     private ImageDao imageDao;
 
-    @Inject
-    @Typed(SerialChildCommandsExecutionCallback.class)
-    private Instance<SerialChildCommandsExecutionCallback> callbackProvider;
-
     protected CloneVmNoCollapseCommand(T params, CommandContext commandContext) {
         super(params, commandContext);
     }
 
     public CloneVmNoCollapseCommand(Guid commandId) {
         super(commandId);
+    }
+
+    @Override
+    protected void init() {
+        super.init();
+        setCompensationContext(createDefaultCompensationContext());
+    }
+
+    @Override
+    protected boolean validate() {
+        if (!(getSourceVmFromDb().getStatus() == VMStatus.Suspended || getSourceVmFromDb().isDown())) {
+            return failValidation(EngineMessage.ACTION_TYPE_FAILED_VM_IS_NOT_DOWN);
+        }
+        return super.validate();
     }
 
     @Override
@@ -75,17 +91,31 @@ public class CloneVmNoCollapseCommand<T extends CloneVmParameters> extends Clone
         super.attachDisks();
     }
 
+    private CommandContext createStepsContext() {
+        Step addedStep = executionHandler.addSubStep(getExecutionContext(),
+                getExecutionContext().getJob().getStep(StepEnum.EXECUTING),
+                StepEnum.COPY_IMAGE,
+                ExecutionMessageDirector.resolveStepMessage(StepEnum.COPY_IMAGE, Collections.emptyMap()));
+        ExecutionContext ctx = new ExecutionContext();
+        ctx.setStep(addedStep);
+        ctx.setMonitored(true);
+        return ExecutionHandler.createInternalJobContext(getContext(), null)
+                .withExecutionContext(ctx);
+    }
+
     @Override
-    protected void executeVmCommand() {
-        Collection<DiskImage> vmDisks = super.getAdjustedDiskImagesFromConfiguration();
+    protected void copyDisks() {
+        Collection<DiskImage> vmDisks = super.getSourceDisks();
 
         for (DiskImage diskImage : vmDisks) {
             MoveOrCopyImageGroupParameters copyParams = createCopyParams(diskImage);
 
-            ActionReturnValue returnValue = runInternalAction(ActionType.CopyImageGroup, copyParams);
+            ActionReturnValue returnValue =
+                    runInternalAction(ActionType.CopyImageGroup, copyParams, createStepsContext());
+
             if (!returnValue.getSucceeded()) {
-                setSucceeded(false);
-                return;
+                log.error("Failed to copy image group");
+                throw new EngineException(returnValue.getFault().getError(), returnValue.getFault().getMessage());
             }
 
             getParameters().getSrcDiskIdToTargetDiskIdMapping()
@@ -97,19 +127,7 @@ public class CloneVmNoCollapseCommand<T extends CloneVmParameters> extends Clone
     }
 
     @Override
-    public boolean performNextOperation(int completedChildCount) {
-        if (getParameters().getStage() == CloneVmParameters.CloneVmStage.COPY_DISKS) {
-            super.executeVmCommand();
-            createDestSnapshots();
-            getParameters().setStage(CloneVmParameters.CloneVmStage.CREATE_SNAPSHOTS);
-            persistCommandIfNeeded();
-            return true;
-        }
-
-        return false;
-    }
-
-    private void createDestSnapshots() {
+    protected void createDestSnapshots() {
         TransactionSupport.executeInNewTransaction(() -> {
             Map<Guid, DiskImage> oldToNewImageMap = getParameters()
                     .getSrcToDstChainMap()
@@ -128,6 +146,7 @@ public class CloneVmNoCollapseCommand<T extends CloneVmParameters> extends Clone
 
     private void addSnapshotToDB(Map<Guid, DiskImage> oldToNewImageMap, Snapshot snapshot) {
         VM oldVm = snapshotVmConfigurationHelper.getVmFromConfiguration(snapshot);
+        oldVm.setClusterArch(getVm().getClusterArch());
 
         List<DiskImage> newDiskImages = oldVm.getDiskList()
                 .stream()
@@ -146,6 +165,7 @@ public class CloneVmNoCollapseCommand<T extends CloneVmParameters> extends Clone
                 snapshot.getType(),
                 initClonedVm(oldVm),
                 true,
+                null,
                 null,
                 null,
                 snapshot.getCreationDate(),
@@ -217,11 +237,6 @@ public class CloneVmNoCollapseCommand<T extends CloneVmParameters> extends Clone
     }
 
     @Override
-    public CommandCallback getCallback() {
-        return callbackProvider.get();
-    }
-
-    @Override
     protected void unlockEntities() {
         TransactionSupport.executeInNewTransaction(() -> {
             getParameters().getSrcToDstChainMap()
@@ -247,5 +262,19 @@ public class CloneVmNoCollapseCommand<T extends CloneVmParameters> extends Clone
     protected void endWithFailure() {
         getReturnValue().setEndActionTryAgain(false);
         super.endWithFailure();
+    }
+
+    @Override
+    protected void removeVmImages() {
+        TransactionSupport.executeInNewTransaction(() -> {
+            getParameters()
+                    .getSrcToDstChainMap()
+                    .values()
+                    .stream()
+                    .flatMap(m -> m.values().stream())
+                    .forEach(diskImage -> imagesHandler.removeDiskImage(diskImage,
+                            getParameters().getNewVmGuid()));
+            return null;
+        });
     }
 }

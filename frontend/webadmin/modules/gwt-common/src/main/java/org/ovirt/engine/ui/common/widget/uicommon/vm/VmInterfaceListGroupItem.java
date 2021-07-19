@@ -1,5 +1,6 @@
 package org.ovirt.engine.ui.common.widget.uicommon.vm;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.StringJoiner;
@@ -23,26 +24,36 @@ import org.ovirt.engine.ui.common.CommonApplicationMessages;
 import org.ovirt.engine.ui.common.CommonApplicationTemplates;
 import org.ovirt.engine.ui.common.css.PatternflyConstants;
 import org.ovirt.engine.ui.common.gin.AssetProvider;
+import org.ovirt.engine.ui.common.widget.action.ActionButtonDefinition;
+import org.ovirt.engine.ui.common.widget.action.ContextMenuPanelPopup;
 import org.ovirt.engine.ui.common.widget.listgroup.ExpandableListViewItem;
 import org.ovirt.engine.ui.common.widget.listgroup.PatternflyListViewItem;
 import org.ovirt.engine.ui.common.widget.renderer.RxTxRateRenderer;
 import org.ovirt.engine.ui.common.widget.renderer.RxTxTotalRenderer;
 import org.ovirt.engine.ui.common.widget.tooltip.WidgetTooltip;
 import org.ovirt.engine.ui.common.widget.uicommon.network.NetworkIcon;
+import org.ovirt.engine.ui.uicompat.ConstantsManager;
+import org.ovirt.engine.ui.uicompat.UIConstants;
 
 import com.google.gwt.dom.client.DListElement;
 import com.google.gwt.dom.client.Document;
 import com.google.gwt.dom.client.Style;
+import com.google.gwt.event.dom.client.ContextMenuEvent;
+import com.google.gwt.event.dom.client.ContextMenuHandler;
 import com.google.gwt.safehtml.shared.SafeHtml;
+import com.google.gwt.safehtml.shared.SafeHtmlBuilder;
 import com.google.gwt.safehtml.shared.SafeHtmlUtils;
 import com.google.gwt.user.client.ui.FlowPanel;
 import com.google.gwt.user.client.ui.IsWidget;
+import com.google.gwt.user.client.ui.MenuItem;
 
 public class VmInterfaceListGroupItem extends PatternflyListViewItem<VmNetworkInterface> {
 
     private static final String COMMA_DELIMITER = ", "; // $NON-NLS-1$
     private static final String DANGER = "text-danger"; // $NON-NLS-1$
+    private static final String WARNING = "text-warning"; // $NON-NLS-1$
     private static final String ROTATE_270 = "fa-rotate-270"; //$NON-NLS-1$
+    private static final String FA_STACK_4X = "fa-stack-4x"; //$NON-NLS-1$
     private static final String DL_HORIZONTAL = "dl-horizontal"; // $NON-NLS-1$
     private static final String NETWORK_DATA_ROW = "network-data-row"; // $NON-NLS-1$
     private static final String VM_NIC_OVERFLOW = "vm-nic-overflow"; // $NON-NLS-1$
@@ -51,18 +62,23 @@ public class VmInterfaceListGroupItem extends PatternflyListViewItem<VmNetworkIn
     private static final String VM_NIC_INFO_COLUMN = "vm-nic-info-column"; // $NON-NLS-1$
     private static final String VM_NIC_INFO_ROW = "vm-nic-info-row"; // $NON-NLS-1$
     private static final String NETWORK_LIST_ITEM = "network-list-item"; // $NON-NLS-1$
+    private static final String ELEMENT_ID = "id"; //$NON-NLS-1$
 
     private static final CommonApplicationConstants constants = AssetProvider.getConstants();
     private static final CommonApplicationTemplates templates = AssetProvider.getTemplates();
     private static final CommonApplicationMessages messages = AssetProvider.getMessages();
+    private static final UIConstants uiConstants = ConstantsManager.getInstance().getConstants();
+    private static final ContextMenuPanelPopup popup = new ContextMenuPanelPopup(true);
 
     private ExpandableListViewItem infoExpand;
     private final List<VmGuestAgentInterface> allGuestAgentData;
     private Container detailedInfoContainer;
     protected FlowPanel expansionLinkContainer = new FlowPanel();
+    private ContextMenuHandler contextMenuHandler;
 
     public VmInterfaceListGroupItem(VmNetworkInterface networkInterface, List<VmGuestAgentInterface> allGuestAgentData,
-            List<VmNicFilterParameter> networkFilterParameters) {
+                                    List<VmNicFilterParameter> networkFilterParameters,
+                                    List<ActionButtonDefinition<?, VmNetworkInterface>> actionButtons) {
         super(networkInterface.getName(), networkInterface);
         applyVmInterfaceSpecificStyles();
         this.allGuestAgentData = allGuestAgentData;
@@ -72,6 +88,41 @@ public class VmInterfaceListGroupItem extends PatternflyListViewItem<VmNetworkIn
         infoExpand.setDetails(infoContainer);
         listGroupItem.add(infoContainer);
 
+        populatePopupMenu(actionButtons);
+        listGroupItem.addDomHandler(showContextMenu(), ContextMenuEvent.getType());
+    }
+
+    private ContextMenuHandler showContextMenu() {
+        if (contextMenuHandler == null) {
+            contextMenuHandler = event -> {
+                event.preventDefault();
+                event.stopPropagation();
+                popup.asPopupPanel().setPopupPosition(event.getNativeEvent().getClientX(), event.getNativeEvent().getClientY());
+                popup.asPopupPanel().show();
+            };
+        }
+        return contextMenuHandler;
+    }
+
+    @Override
+    public void onUnload() {
+        super.onUnload();
+        contextMenuHandler = null;
+    }
+
+    private void populatePopupMenu(List<ActionButtonDefinition<?, VmNetworkInterface>> actionButtons) {
+        if (popup.getMenuBar().isEmpty() && actionButtons != null) {
+            actionButtons.forEach(button -> {
+                final MenuItem menuItem = new MenuItem(button.getText(), () -> {
+                    popup.asPopupPanel().hide();
+                    button.onClick(null, null);
+                });
+                menuItem.setEnabled(button.isEnabled(null, null));
+                // Update button whenever its definition gets re-initialized
+                button.addInitializeHandler(event -> menuItem.setEnabled(button.isEnabled(null, null)));
+                popup.getMenuBar().addItem(menuItem);
+            });
+        }
     }
 
     private void applyVmInterfaceSpecificStyles() {
@@ -155,6 +206,11 @@ public class VmInterfaceListGroupItem extends PatternflyListViewItem<VmNetworkIn
                 SafeHtmlUtils.fromString(findGuestAgentDataForInterface(networkInterface).getInterfaceName() != null ?
                         findGuestAgentDataForInterface(networkInterface).getInterfaceName()
                         : constants.unAvailablePropertyLabel()), dl);
+        if (!StringHelper.isNullOrEmpty(networkInterface.getFailoverVnicProfileName())) {
+            addDetailItem(SafeHtmlUtils.fromSafeConstant(uiConstants.failoverVnicProfile()),
+                    SafeHtmlUtils.fromString(networkInterface.getFailoverVnicProfileName()), dl);
+        }
+
         column.getElement().appendChild(dl);
         content.add(column);
     }
@@ -217,11 +273,15 @@ public class VmInterfaceListGroupItem extends PatternflyListViewItem<VmNetworkIn
         return networkInterface != null ? networkInterface.isPlugged() : false;
     }
 
+    private boolean isCardSynced(VmNetworkInterface networkInterface) {
+        return networkInterface != null && networkInterface.isSynced();
+    }
+
     @Override
     protected IsWidget createBodyPanel(SafeHtml header, VmNetworkInterface networkInterface) {
         checkBoxPanel.add(createExpandIconPanel());
         iconPanel.add(createLinkStatusPanel(isInterfaceUp(networkInterface)));
-        iconPanel.add(createCardPluggedStatusPanel(isCardPlugged(networkInterface)));
+        iconPanel.add(createCardPluggedStatusPanel(networkInterface));
         iconPanel.add(new NetworkIcon());
         descriptionHeaderPanel.getElement().setInnerSafeHtml(header);
         return bodyPanel;
@@ -345,32 +405,45 @@ public class VmInterfaceListGroupItem extends PatternflyListViewItem<VmNetworkIn
         return infoExpand;
     }
 
-    private IsWidget createCardPluggedStatusPanel(boolean isPlugged) {
+    private IsWidget createCardPluggedStatusPanel(VmNetworkInterface vmNetworkInterface) {
         Span linkStatusPanel = new Span();
         Span icon = new Span();
         icon.addStyleName(Styles.ICON_STACK);
-        Italic plugItalic = new Italic();
-        plugItalic.addStyleName(Styles.FONT_AWESOME_BASE);
-        plugItalic.addStyleName(Styles.ICON_STACK_TOP);
-        plugItalic.addStyleName(ROTATE_270);
-        plugItalic.addStyleName(IconType.PLUG.getCssName());
+        Italic plugItalic = italicWithStyles(
+            Styles.FONT_AWESOME_BASE, Styles.ICON_STACK_TOP, ROTATE_270, IconType.PLUG.getCssName()
+        );
         icon.add(plugItalic);
-        if (!isPlugged) {
-            Italic unplugged = new Italic();
-            unplugged.addStyleName(Styles.FONT_AWESOME_BASE);
-            unplugged.addStyleName(Styles.ICON_STACK_TOP);
-            unplugged.addStyleName(DANGER);
-            unplugged.addStyleName(IconType.BAN.getCssName());
+        SafeHtmlBuilder tooltipText = new SafeHtmlBuilder();
+        if(isCardPlugged(vmNetworkInterface)) {
+            tooltipText.appendHtmlConstant(constants.pluggedNetworkInterface());
+        } else {
+            Italic unplugged = italicWithStyles(
+                Styles.FONT_AWESOME_BASE, Styles.ICON_STACK_TOP, DANGER, IconType.BAN.getCssName()
+            );
             icon.add(unplugged);
+            tooltipText.appendHtmlConstant(constants.unpluggedNetworkInterface());
+        }
+        if (!isCardSynced(vmNetworkInterface)) {
+            Italic outOfSync = italicWithStyles(
+                Styles.FONT_AWESOME_BASE, FA_STACK_4X, WARNING, Styles.PULL_RIGHT, IconType.WARNING.getCssName()
+            );
+            icon.add(outOfSync);
+            tooltipText.appendHtmlConstant(constants.lineBreak());
+            tooltipText.appendHtmlConstant(constants.configChangesPending());
         }
         linkStatusPanel.add(icon);
         linkStatusPanel.addStyleName(DOUBLE_SIZE);
         linkStatusPanel.addStyleName(STATUS_ICON);
 
-        String tooltipText = isPlugged ? constants.pluggedNetworkInterface() : constants.unpluggedNetworkInterface();
         WidgetTooltip tooltip = new WidgetTooltip(linkStatusPanel);
-        tooltip.setHtml(SafeHtmlUtils.fromString(tooltipText));
+        tooltip.setHtml(tooltipText.toSafeHtml());
         return tooltip;
+    }
+
+    private Italic italicWithStyles(String... styles) {
+        Italic italic = new Italic();
+        Arrays.stream(styles).forEach(italic::addStyleName);
+        return italic;
     }
 
     @Override

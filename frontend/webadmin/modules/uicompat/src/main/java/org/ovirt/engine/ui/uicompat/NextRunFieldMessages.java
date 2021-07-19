@@ -24,6 +24,8 @@ public interface NextRunFieldMessages extends ConstantsWithLookup {
 
     String usbPolicy();
 
+    String smartcardEnabled();
+
     String defaultBootSequence();
 
     String cpuShares();
@@ -76,13 +78,13 @@ public interface NextRunFieldMessages extends ConstantsWithLookup {
 
     String multiQueuesEnabled();
 
+    String virtioScsiMultiQueuesEnabled();
+
     String kernelUrl();
 
     String kernelParams();
 
     String initrdUrl();
-
-    String singleQxlPci();
 
     // Devices
 
@@ -99,4 +101,6 @@ public interface NextRunFieldMessages extends ConstantsWithLookup {
     String virtioscsi();
 
     String graphicsProtocol();
+
+    String interfaces();
 }

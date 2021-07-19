@@ -78,6 +78,7 @@ public class BackendInstanceTypeResource
         }
         model.getVirtioScsi().setEnabled(!VmHelper.getVirtioScsiControllersForEntity(this, entity.getId()).isEmpty());
         model.setSoundcardEnabled(!VmHelper.getSoundDevicesForEntity(this, entity.getId()).isEmpty());
+        model.setTpmEnabled(!VmHelper.getTpmDevicesForEntity(this, entity.getId()).isEmpty());
         setRngDevice(model);
         return model;
     }
@@ -88,7 +89,6 @@ public class BackendInstanceTypeResource
     }
 
     protected InstanceType deprecatedPopulate(InstanceType model, org.ovirt.engine.core.common.businessentities.InstanceType entity) {
-        MemoryPolicyHelper.setupMemoryBalloon(model, this);
         return model;
     }
 
@@ -144,12 +144,11 @@ public class BackendInstanceTypeResource
                     updateParams.setVirtioScsiEnabled(incoming.getVirtioScsi().isEnabled());
                 }
             }
+            if (incoming.isSetTpmEnabled()) {
+                updateParams.setTpmEnabled(incoming.isTpmEnabled());
+            }
 
             DisplayHelper.setGraphicsToParams(incoming.getDisplay(), updateParams);
-
-            if (incoming.isSetMemoryPolicy() && incoming.getMemoryPolicy().isSetBallooning()) {
-                updateParams.setBalloonEnabled(incoming.getMemoryPolicy().isBallooning());
-            }
 
             return getMapper(modelType, UpdateVmTemplateParameters.class).map(incoming, updateParams);
         }

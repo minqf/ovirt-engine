@@ -21,11 +21,13 @@ import org.ovirt.engine.core.common.action.ChangeVMClusterParameters;
 import org.ovirt.engine.core.common.action.CloneVmParameters;
 import org.ovirt.engine.core.common.action.ExportVmToOvaParameters;
 import org.ovirt.engine.core.common.action.MoveOrCopyParameters;
+import org.ovirt.engine.core.common.action.RebootVmParameters;
 import org.ovirt.engine.core.common.action.RemoveVmParameters;
 import org.ovirt.engine.core.common.action.RunVmParams;
 import org.ovirt.engine.core.common.action.ShutdownVmParameters;
 import org.ovirt.engine.core.common.action.StopVmParameters;
 import org.ovirt.engine.core.common.action.StopVmTypeEnum;
+import org.ovirt.engine.core.common.action.VmInterfacesModifyParameters;
 import org.ovirt.engine.core.common.action.VmManagementParametersBase;
 import org.ovirt.engine.core.common.action.VmOperationParameterBase;
 import org.ovirt.engine.core.common.businessentities.DisplayType;
@@ -95,6 +97,7 @@ import org.ovirt.engine.ui.uicompat.ConstantsManager;
 import org.ovirt.engine.ui.uicompat.Event;
 import org.ovirt.engine.ui.uicompat.EventArgs;
 import org.ovirt.engine.ui.uicompat.ICancelable;
+import org.ovirt.engine.ui.uicompat.IFrontendActionAsyncCallback;
 import org.ovirt.engine.ui.uicompat.ObservableCollection;
 import org.ovirt.engine.ui.uicompat.PropertyChangedEventArgs;
 import org.ovirt.engine.ui.uicompat.UIConstants;
@@ -140,6 +143,7 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
     private static final String SHUTDOWN = "Shutdown"; //$NON-NLS-1$
     private static final String STOP     = "Stop"; //$NON-NLS-1$
     private static final String REBOOT   = "Reboot"; //$NON-NLS-1$
+    private static final String RESET    = "Reset"; //$NON-NLS-1$
 
     public UICommand getNewVmCommand() {
         return newVMCommand;
@@ -218,6 +222,16 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
 
     public void setRebootCommand(UICommand value) {
         privateRebootCommand = value;
+    }
+
+    private UICommand privateResetCommand;
+
+    public UICommand getResetCommand() {
+        return privateResetCommand;
+    }
+
+    public void setResetCommand(UICommand value) {
+        privateResetCommand = value;
     }
 
     private UICommand privateCancelMigrateCommand;
@@ -522,6 +536,7 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
         setStopCommand(new UICommand("Stop", this)); //$NON-NLS-1$
         setShutdownCommand(new UICommand("Shutdown", this)); //$NON-NLS-1$
         setRebootCommand(new UICommand("Reboot", this)); //$NON-NLS-1$
+        setResetCommand(new UICommand("Reset", this)); //$NON-NLS-1$
         setEditConsoleCommand(new UICommand("EditConsoleCommand", this)); //$NON-NLS-1$
         setConsoleConnectCommand(new UICommand("ConsoleConnectCommand", this)); //$NON-NLS-1$
         setCancelMigrateCommand(new UICommand("CancelMigration", this)); //$NON-NLS-1$
@@ -767,7 +782,6 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
 
     private void vmInitLoaded(VM vm) {
         UnitVmModel model = new UnitVmModel(new ExistingVmModelBehavior(vm), this);
-        model.getVmType().setSelectedItem(vm.getVmType());
         model.setVmAttachedToPool(vm.getVmPoolId() != null);
         model.setIsAdvancedModeLocalStorageKey(IS_ADVANCED_MODEL_LOCAL_STORAGE_KEY);
         setWindow(model);
@@ -1410,6 +1424,9 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
         } else if (actionName.equals(REBOOT)) {
             model.setHelpTag(HelpTag.reboot_virtual_machine);
             model.setHashName("reboot_virtual_machine"); //$NON-NLS-1$
+        } else if (actionName.equals(RESET)) {
+            model.setHelpTag(HelpTag.reset_virtual_machine);
+            model.setHashName("reset_virtual_machine"); //$NON-NLS-1$
         }
 
         model.setMessage(message);
@@ -1500,7 +1517,18 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
     }
 
     private void onReboot() {
-        onPowerAction(ActionType.RebootVm, vm -> new VmOperationParameterBase(vm.getId()));
+        onPowerAction(ActionType.RebootVm, vm -> new RebootVmParameters(vm.getId()));
+    }
+
+    private void reset() {
+        UIConstants constants = ConstantsManager.getInstance().getConstants();
+        powerAction(RESET,
+                constants.resetVirtualMachinesTitle(),
+                constants.areYouSureYouWantToResetTheFollowingVirtualMachinesMsg());
+    }
+
+    private void onReset() {
+        onPowerAction(ActionType.ResetVm, vm -> new VmOperationParameterBase(vm.getId()));
     }
 
     private void pause() {
@@ -1794,12 +1822,18 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
 
         CloneVmParameters parameters = getCloneVmParameters(vm, vm.getName(), true);
         parameters.setDiskInfoDestinationMap(model.getDisksAllocationModel().getImageToDestinationDomainMap());
+        List<VmInterfacesModifyParameters.VnicWithProfile> vnicsWithProfiles =
+                model.getNicsWithLogicalNetworks().getItems().stream()
+                    .map(vnic -> new VmInterfacesModifyParameters.VnicWithProfile(
+                            vnic.getNetworkInterface(), vnic.getSelectedItem()))
+                    .collect(Collectors.toList());
+        parameters.setVnicsWithProfiles(vnicsWithProfiles);
 
-        Frontend.getInstance()
-                .runAction(ActionType.CloneVm,
-                        parameters,
-                        new UnitVmModelNetworkAsyncCallback(model, defaultNetworkCreatingManager, null),
-                        this);
+        IFrontendActionAsyncCallback callback = result -> {
+            model.stopProgress();
+            cancel();
+        };
+        Frontend.getInstance().runAction(ActionType.CloneVm, parameters, callback, this);
     }
 
     private boolean isHeadlessModeChanged(VM source, VmManagementParametersBase updateVmParameters) {
@@ -1870,8 +1904,8 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
 
         setVmWatchdogToParams(model, params);
         params.setSoundDeviceEnabled(model.getIsSoundcardEnabled().getEntity());
+        params.setTpmEnabled(model.getTpmEnabled().getEntity());
         params.setConsoleEnabled(model.getIsConsoleDeviceEnabled().getEntity());
-        params.setBalloonEnabled(balloonEnabled(model));
         params.setVirtioScsiEnabled(model.getIsVirtioScsiEnabled().getEntity());
         params.setUpdateNuma(model.isNumaChanged());
         params.setAffinityGroups(model.getAffinityGroupList().getSelectedItems());
@@ -1879,6 +1913,7 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
         if (model.getIsHeadlessModeEnabled().getEntity()) {
             params.getVmStaticData().setDefaultDisplayType(DisplayType.none);
         }
+        params.setAutoPinningPolicy(model.getAutoPinningPolicy().getSelectedItem());
         BuilderExecutor.build(
                 new Pair<>((UnitVmModel) getWindow(), getSelectedItem()),
                 params,
@@ -1952,12 +1987,13 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
     }
 
     private void updateActionsAvailability() {
-        List items = getSelectedItems() != null && getSelectedItem() != null ? getSelectedItemsWithStatusForExclusiveLock() : new ArrayList();
+        List<VmWithStatusForExclusiveLock> items = getSelectedItems() != null && getSelectedItem() != null ? getSelectedItemsWithStatusForExclusiveLock() : new ArrayList<>();
 
         boolean singleVmSelected = items.size() == 1;
         boolean vmsSelected = items.size() > 0;
 
-        getEditCommand().setIsExecutionAllowed(isEditCommandExecutionAllowed(items));
+        getEditCommand().setIsExecutionAllowed(singleVmSelected
+                && ActionUtils.canExecute(items, VmWithStatusForExclusiveLock.class, ActionType.UpdateVm));
         getRemoveCommand().setIsExecutionAllowed(vmsSelected && isRemovalEnabled()
                 && ActionUtils.canExecutePartially(items, VmWithStatusForExclusiveLock.class, ActionType.RemoveVm));
         getRunCommand().setIsExecutionAllowed(vmsSelected
@@ -1971,6 +2007,8 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
         getStopCommand().setIsExecutionAllowed(vmsSelected
                 && ActionUtils.canExecutePartially(items, VmWithStatusForExclusiveLock.class, ActionType.StopVm));
         getRebootCommand().setIsExecutionAllowed(AsyncDataProvider.getInstance().isRebootCommandExecutionAllowed(items));
+        getResetCommand().setIsExecutionAllowed(vmsSelected
+                && ActionUtils.canExecutePartially(items, VmWithStatusForExclusiveLock.class, ActionType.ResetVm));
         getCancelMigrateCommand().setIsExecutionAllowed(vmsSelected
                 && ActionUtils.canExecutePartially(items, VmWithStatusForExclusiveLock.class, ActionType.CancelMigrateVm));
         getNewTemplateCommand().setIsExecutionAllowed(singleVmSelected
@@ -1980,7 +2018,7 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
         getExportCommand().setIsExecutionAllowed(vmsSelected
                 && ActionUtils.canExecute(items, VmWithStatusForExclusiveLock.class, ActionType.ExportVm));
         getExportOvaCommand().setIsExecutionAllowed(vmsSelected
-                && ActionUtils.canExecute(items, VmWithStatusForExclusiveLock.class, ActionType.ExportVmToOva));
+                && ActionUtils.canExecute(items, VmWithStatusForExclusiveLock.class, ActionType.CreateSnapshotForVm));
         getCreateSnapshotCommand().setIsExecutionAllowed(singleVmSelected
                 && !getSelectedItem().isStateless() && !getSelectedItem().isPreviewSnapshot()
                 && ActionUtils.canExecute(items, VmWithStatusForExclusiveLock.class, ActionType.CreateSnapshotForVm));
@@ -1988,9 +2026,11 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
                 && ActionUtils.canExecute(items, VmWithStatusForExclusiveLock.class, ActionType.ChangeDisk));
         getChangeCdCommand().setIsExecutionAllowed(singleVmSelected
                 && ActionUtils.canExecute(items, VmWithStatusForExclusiveLock.class, ActionType.ChangeDisk));
-        getAssignTagsCommand().setIsExecutionAllowed(vmsSelected);
+        getAssignTagsCommand().setIsExecutionAllowed(vmsSelected
+                && items.stream().allMatch(VM::isManaged));
 
-        getGuideCommand().setIsExecutionAllowed(getGuideContext() != null || singleVmSelected);
+        getGuideCommand().setIsExecutionAllowed(getGuideContext() != null || singleVmSelected
+                && items.get(0).isManaged());
 
         getConsoleConnectCommand().setIsExecutionAllowed(isConsoleCommandsExecutionAllowed());
         getEditConsoleCommand().setIsExecutionAllowed(singleVmSelected && isConsoleEditEnabled());
@@ -2041,19 +2081,6 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
                 .anyMatch(VmConsoles::canConnectToConsole);
     }
 
-    /**
-     * Return true if and only if one element is selected.
-     */
-    private boolean isEditCommandExecutionAllowed(List items) {
-        if (items == null) {
-            return false;
-        }
-        if (items.size() != 1) {
-            return false;
-        }
-        return true;
-    }
-
     @Override
     public void eventRaised(Event ev, Object sender, EventArgs args) {
         super.eventRaised(ev, sender, args);
@@ -2091,6 +2118,8 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
             shutdown();
         } else if (command == getRebootCommand()) {
             reboot();
+        } else if (command == getResetCommand()) {
+            reset();
         } else if (command == getNewTemplateCommand()) {
             newTemplate();
         } else if (command == getRunOnceCommand()) {
@@ -2144,6 +2173,8 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
             onStop();
         } else if ("OnReboot".equals(command.getName())) { //$NON-NLS-1$
             onReboot();
+        } else if ("OnReset".equals(command.getName())) { //$NON-NLS-1$
+            onReset();
         } else if ("OnChangeCD".equals(command.getName())) { //$NON-NLS-1$
             onChangeCD();
         } else if (command.getName().equals("closeVncInfo") || // $NON-NLS-1$
@@ -2154,12 +2185,14 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
             if (!model.validate()) {
                 return;
             }
-            updateExistingVm(model.getApplyLater().getEntity());
+            updateExistingVm(!model.isAnythingPluggable() || model.getApplyLater().getEntity());
             cancelConfirmation();
         } else if ("ClearCpuPinning".equals(command.getName())) { // $NON-NLS-1$
             clearCpuPinning();
         } else if (CMD_CONFIGURE_VMS_TO_IMPORT.equals(command.getName())) {
             onConfigureVmsToImport();
+        } else if ("ConfirmAndSaveOrUpdateVM".equals(command.getName())) { //$NON-NLS-1$
+            confirmAndSaveOrUpdateVM((UnitVmModel) getWindow());
         } else if ("SaveOrUpdateVM".equals(command.getName())) { // $NON-NLS-1$
             UnitVmModel model = (UnitVmModel) getWindow();
             if (!model.validate()) {

@@ -31,6 +31,7 @@ import org.ovirt.engine.api.resource.StatisticsResource;
 import org.ovirt.engine.api.resource.VmApplicationsResource;
 import org.ovirt.engine.api.resource.VmBackupsResource;
 import org.ovirt.engine.api.resource.VmCdromsResource;
+import org.ovirt.engine.api.resource.VmCheckpointsResource;
 import org.ovirt.engine.api.resource.VmDisksResource;
 import org.ovirt.engine.api.resource.VmGraphicsConsolesResource;
 import org.ovirt.engine.api.resource.VmHostDevicesResource;
@@ -60,6 +61,7 @@ import org.ovirt.engine.core.common.action.MigrateMultipleVmsParameters;
 import org.ovirt.engine.core.common.action.MigrateVmParameters;
 import org.ovirt.engine.core.common.action.MigrateVmToServerParameters;
 import org.ovirt.engine.core.common.action.MoveOrCopyParameters;
+import org.ovirt.engine.core.common.action.RebootVmParameters;
 import org.ovirt.engine.core.common.action.RemoveVmFromPoolParameters;
 import org.ovirt.engine.core.common.action.RemoveVmParameters;
 import org.ovirt.engine.core.common.action.RestoreAllSnapshotsParameters;
@@ -72,6 +74,7 @@ import org.ovirt.engine.core.common.action.StopVmTypeEnum;
 import org.ovirt.engine.core.common.action.TryBackToAllSnapshotsOfVmParameters;
 import org.ovirt.engine.core.common.action.VmManagementParametersBase;
 import org.ovirt.engine.core.common.action.VmOperationParameterBase;
+import org.ovirt.engine.core.common.businessentities.AutoPinningPolicy;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.GraphicsType;
 import org.ovirt.engine.core.common.businessentities.HaMaintenanceMode;
@@ -135,6 +138,22 @@ public class BackendVmResource
             vm.setHost(null);
             vm.setPlacementPolicy(null);
         }
+    }
+
+    @Override
+    public Response autoPinCpuAndNumaNodes(Action action) {
+        VmManagementParametersBase params = new VmManagementParametersBase(getEntity(
+                org.ovirt.engine.core.common.businessentities.VM.class,
+                QueryType.GetVmByVmId,
+                new IdQueryParameters(guid), "VM: id=" + guid));
+        if (action.isOptimizeCpuSettings() == null) {
+            params.setAutoPinningPolicy(AutoPinningPolicy.PIN);
+        } else {
+            params.setAutoPinningPolicy(
+                    action.isOptimizeCpuSettings() ? AutoPinningPolicy.RESIZE_AND_PIN : AutoPinningPolicy.PIN);
+        }
+
+        return performAction(ActionType.UpdateVm, params);
     }
 
     @Override
@@ -224,6 +243,11 @@ public class BackendVmResource
     @Override
     public VmBackupsResource getBackupsResource() {
         return inject(new BackendVmBackupsResource(guid));
+    }
+
+    @Override
+    public VmCheckpointsResource getCheckpointsResource() {
+        return inject(new BackendVmCheckpointsResource(guid));
     }
 
     public VmDisksResource getDisksResource() {
@@ -322,15 +346,24 @@ public class BackendVmResource
     public Response shutdown(Action action) {
         // REVISIT add waitBeforeShutdown Action paramater
         // to api schema before next sub-milestone
+        boolean forceStop = action.isSetForce() ? action.isForce() : false;
         String reason = action.getReason();
         return doAction(ActionType.ShutdownVm,
-                        new ShutdownVmParameters(guid, true, reason),
+                        new ShutdownVmParameters(guid, true, reason, forceStop),
                         action);
     }
 
     @Override
     public Response reboot(Action action) {
+        boolean forceStop = action.isSetForce() ? action.isForce() : false;
         return doAction(ActionType.RebootVm,
+                        new RebootVmParameters(guid, forceStop),
+                        action);
+    }
+
+    @Override
+    public Response reset(Action action) {
+        return doAction(ActionType.ResetVm,
                         new VmOperationParameterBase(guid),
                         action);
     }
@@ -504,8 +537,9 @@ public class BackendVmResource
     @Override
     public Response stop(Action action) {
         String reason = action.getReason();
+        boolean forceStop = action.isSetForce() ? action.isForce() : false;
         return doAction(ActionType.StopVm,
-                        new StopVmParameters(guid, StopVmTypeEnum.NORMAL, reason),
+                        new StopVmParameters(guid, StopVmTypeEnum.NORMAL, reason, forceStop),
                         action);
     }
 
@@ -598,6 +632,7 @@ public class BackendVmResource
         BackendVmDeviceHelper.setVirtioScsiController(this, model);
         BackendVmDeviceHelper.setSoundcard(this, model);
         BackendVmDeviceHelper.setRngDevice(this, model);
+        BackendVmDeviceHelper.setTpmDevice(this, model);
         parent.setVmOvfConfiguration(model, entity);
         return model;
     }
@@ -610,7 +645,6 @@ public class BackendVmResource
         }
         BackendVmDeviceHelper.setPayload(this, model);
         BackendVmDeviceHelper.setCertificateInfo(this, model);
-        MemoryPolicyHelper.setupMemoryBalloon(model, this);
         return model;
     }
 
@@ -636,6 +670,10 @@ public class BackendVmResource
 
             VmManagementParametersBase params = new VmManagementParametersBase(updated);
 
+            if (incoming.isSetNumaTuneMode()) {
+                params.setUpdateNuma(true);
+            }
+
             params.setApplyChangesLater(isNextRunRequested());
             params.setMemoryHotUnplugEnabled(true);
 
@@ -645,9 +683,6 @@ public class BackendVmResource
                 } else {
                     params.setClearPayload(true);
                 }
-            }
-            if (incoming.isSetMemoryPolicy() && incoming.getMemoryPolicy().isSetBallooning()) {
-               params.setBalloonEnabled(incoming.getMemoryPolicy().isBallooning());
             }
             if (incoming.isSetConsole() && incoming.getConsole().isSetEnabled()) {
                 params.setConsoleEnabled(incoming.getConsole().isEnabled());
@@ -663,6 +698,9 @@ public class BackendVmResource
             if (incoming.isSetRngDevice()) {
                 params.setUpdateRngDevice(true);
                 params.setRngDevice(RngDeviceMapper.map(incoming.getRngDevice(), null));
+            }
+            if (incoming.isSetTpmEnabled()) {
+                params.setTpmEnabled(incoming.isTpmEnabled());
             }
 
             DisplayHelper.setGraphicsToParams(incoming.getDisplay(), params);

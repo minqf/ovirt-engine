@@ -3,11 +3,13 @@ package org.ovirt.engine.ui.uicommonweb.models.templates;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.AddVmParameters;
 import org.ovirt.engine.core.common.action.VmManagementParametersBase;
+import org.ovirt.engine.core.common.businessentities.AutoPinningPolicy;
 import org.ovirt.engine.core.common.businessentities.DisplayType;
 import org.ovirt.engine.core.common.businessentities.StorageDomain;
 import org.ovirt.engine.core.common.businessentities.StorageDomainStatus;
@@ -20,6 +22,7 @@ import org.ovirt.engine.core.common.businessentities.VmWatchdog;
 import org.ovirt.engine.core.common.businessentities.VmWatchdogType;
 import org.ovirt.engine.core.common.businessentities.storage.DiskVmElement;
 import org.ovirt.engine.core.common.queries.GetAllFromExportDomainQueryParameters;
+import org.ovirt.engine.core.common.queries.IdQueryParameters;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
 import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.core.compat.Guid;
@@ -41,7 +44,6 @@ import org.ovirt.engine.ui.uicommonweb.models.Model;
 import org.ovirt.engine.ui.uicommonweb.models.TabName;
 import org.ovirt.engine.ui.uicommonweb.models.vms.AbstractDiskModel;
 import org.ovirt.engine.ui.uicommonweb.models.vms.AttachDiskModel;
-import org.ovirt.engine.ui.uicommonweb.models.vms.BalloonEnabled;
 import org.ovirt.engine.ui.uicommonweb.models.vms.ExportOvaModel;
 import org.ovirt.engine.ui.uicommonweb.models.vms.ExportVmModel;
 import org.ovirt.engine.ui.uicommonweb.models.vms.HasDiskWindow;
@@ -361,8 +363,67 @@ public abstract class VmBaseListModel<E, T> extends ListWithSimpleDetailsModel<E
         if (getcurrentVm().getVmType() == VmType.HighPerformance) {
             displayHighPerformanceConfirmationPopup();
         } else {
-            saveOrUpdateVM(model);
+            confirmAndSaveOrUpdateVM(model);
         }
+    }
+
+    private void confirmTpm(final UnitVmModel model, Guid vmId, String okCommandName, Consumer<UnitVmModel> saveCommand,
+            List<String> messages) {
+        if (model.getTpmOriginallyEnabled() && !model.getTpmEnabled().getEntity()) {
+            Frontend.getInstance().runQuery(QueryType.HasTpmData, new IdQueryParameters(vmId),
+                    new AsyncQuery<>((AsyncCallback<QueryReturnValue>) returnValue -> {
+                        if ((Boolean) returnValue.getReturnValue()) {
+                            messages.add(ConstantsManager.getInstance().getConstants().confirmTpmDataRemovalMessage());
+                        }
+                        confirmNvram(model, vmId, okCommandName, saveCommand, messages);
+                    }));
+        } else {
+            confirmNvram(model, vmId, okCommandName, saveCommand, messages);
+        }
+    }
+
+    private void confirmNvram(final UnitVmModel model, Guid vmId, String okCommandName,
+            Consumer<UnitVmModel> saveCommand, List<String> messages) {
+        if (model.getSecureBootOriginallyEnabled() && !model.secureBootEnabled()) {
+            Frontend.getInstance().runQuery(QueryType.HasNvramData, new IdQueryParameters(vmId),
+                    new AsyncQuery<>((AsyncCallback<QueryReturnValue>) returnValue -> {
+                        if ((Boolean) returnValue.getReturnValue()) {
+                            messages.add(
+                                    ConstantsManager.getInstance().getConstants().confirmNvramDataRemovalMessage());
+                        }
+                        confirmAndSave(model, vmId, okCommandName, saveCommand, messages);
+                    }));
+        } else {
+            confirmAndSave(model, vmId, okCommandName, saveCommand, messages);
+        }
+    }
+
+    private void confirmAndSave(final UnitVmModel model, Guid vmId, String okCommandName,
+            Consumer<UnitVmModel> saveCommand, List<String> messages) {
+        if (!messages.isEmpty()) {
+            ConfirmationModel confirmModel = new ConfirmationModel();
+            confirmModel.setTitle(ConstantsManager.getInstance().getConstants().confirmExternalDataRemovalTitle());
+            confirmModel.setMessage(String.join("\n\n", messages)); //$NON-NLS-1$
+            confirmModel.getCommands().add(UICommand.createOkUiCommand(okCommandName, this));
+            confirmModel.getCommands().add(UICommand.createDefaultCancelUiCommand("CancelConfirmation", this)); //$NON-NLS-1$
+            setConfirmWindow(null);
+            setConfirmWindow(confirmModel);
+        } else {
+            saveCommand.accept(model);
+        }
+    }
+
+    protected void confirmExternalDataDeletionAndSave(final UnitVmModel model, Guid vmId, String okCommandName,
+            Consumer<UnitVmModel> saveCommand) {
+        if (vmId != null) {
+            confirmTpm(model, vmId, okCommandName, saveCommand, new ArrayList<>(2));
+        } else {
+            saveCommand.accept(model);
+        }
+    }
+
+    protected void confirmAndSaveOrUpdateVM(final UnitVmModel model) {
+        confirmExternalDataDeletionAndSave(model, getcurrentVm().getId(), "SaveOrUpdateVM", this::saveOrUpdateVM); // $NON-NLS-1$
     }
 
     protected void saveOrUpdateVM(final UnitVmModel model) {
@@ -450,9 +511,9 @@ public abstract class VmBaseListModel<E, T> extends ListWithSimpleDetailsModel<E
         AddVmParameters parameters = new AddVmParameters(vm);
         parameters.setDiskInfoDestinationMap(model.getDisksAllocationModel().getImageToDestinationDomainMap());
         parameters.setConsoleEnabled(model.getIsConsoleDeviceEnabled().getEntity());
-        parameters.setBalloonEnabled(balloonEnabled(model));
         parameters.setCopyTemplatePermissions(model.getCopyPermissions().getEntity());
         parameters.setSoundDeviceEnabled(model.getIsSoundcardEnabled().getEntity());
+        parameters.setTpmEnabled(model.getTpmEnabled().getEntity());
         parameters.setVirtioScsiEnabled(model.getIsVirtioScsiEnabled().getEntity());
         parameters.setVmLargeIcon(IconUtils.filterPredefinedIcons(model.getIcon().getEntity().getIcon()));
         parameters.setAffinityGroups(model.getAffinityGroupList().getSelectedItems());
@@ -462,6 +523,7 @@ public abstract class VmBaseListModel<E, T> extends ListWithSimpleDetailsModel<E
         if (model.getIsHeadlessModeEnabled().getEntity()) {
             parameters.getVmStaticData().setDefaultDisplayType(DisplayType.none);
         }
+        parameters.setAutoPinningPolicy(model.getAutoPinningPolicy().getSelectedItem());
         BuilderExecutor.build(model, parameters, new UnitToGraphicsDeviceParamsBuilder());
         if (!StringHelper.isNullOrEmpty(model.getVmId().getEntity())) {
             parameters.setVmId(new Guid(model.getVmId().getEntity()));
@@ -475,7 +537,7 @@ public abstract class VmBaseListModel<E, T> extends ListWithSimpleDetailsModel<E
 
     private void addVm(UnitVmModel model, AddVmParameters parameters, VM vm) {
         if (!model.getSelectedCluster().isManaged()) {
-            addVmOnUnmanagedCluster(model, parameters, vm);
+            addVmToKubevirt(model, parameters, vm);
             return;
         }
         Frontend.getInstance().runAction(
@@ -485,7 +547,7 @@ public abstract class VmBaseListModel<E, T> extends ListWithSimpleDetailsModel<E
                         this);
     }
 
-    private void addVmOnUnmanagedCluster(UnitVmModel model, AddVmParameters parameters, VM vm) {
+    private void addVmToKubevirt(UnitVmModel model, AddVmParameters parameters, VM vm) {
         InstanceImagesModel instanceImagesModel = model.getInstanceImages();
         List<DiskVmElement> disksToAttach = new ArrayList<>();
         instanceImagesModel.getItems().forEach(instanceImageLineModel -> {
@@ -502,16 +564,13 @@ public abstract class VmBaseListModel<E, T> extends ListWithSimpleDetailsModel<E
         });
         parameters.setDisksToAttach(disksToAttach);
 
-        Frontend.getInstance().runAction(
-                model.getProvisioning().getEntity() ? ActionType.AddVmFromTemplate : ActionType.AddVm,
+        Frontend.getInstance()
+                .runAction(
+                        ActionType.AddVmToKubevirt,
                         parameters,
                         result -> {
-                            ActionReturnValue retVal = result.getReturnValue();
-                            VmBaseListModel<?, ?> state = (VmBaseListModel<?, ?>) result.getState();
-                            state.stopProgress();
-                            if (retVal != null && retVal.getSucceeded()) {
-                                cancel();
-                            }
+                            model.stopProgress();
+                            cancel();
                         },
                         this);
     }
@@ -553,10 +612,6 @@ public abstract class VmBaseListModel<E, T> extends ListWithSimpleDetailsModel<E
         BuilderExecutor.build(model, vm.getStaticData(),
                 new FullUnitToVmBaseBuilder());
         BuilderExecutor.build(model, vm, new VmSpecificUnitToVmBuilder());
-    }
-
-    protected boolean balloonEnabled(UnitVmModel model) {
-        return BalloonEnabled.balloonEnabled(model);
     }
 
     protected void setVmWatchdogToParams(final UnitVmModel model, VmManagementParametersBase updateVmParams) {
@@ -633,17 +688,26 @@ public abstract class VmBaseListModel<E, T> extends ListWithSimpleDetailsModel<E
 
         VmHighPerformanceConfigurationModel confirmModel = new VmHighPerformanceConfigurationModel();
 
-        // Handle CPU Pinning topology
-        final boolean isVmAssignedToSpecificHosts = !model.getIsAutoAssign().getEntity();
-        final boolean isVmCpuPinningSet = model.getCpuPinning().getIsChangable()
-                && model.getCpuPinning().getEntity() != null && !model.getCpuPinning().getEntity().isEmpty();
-        confirmModel.addRecommendationForCpuPinning(isVmAssignedToSpecificHosts, isVmCpuPinningSet);
+        if (model.getAutoPinningPolicy().getSelectedItem() == AutoPinningPolicy.NONE) {
+            // Handle CPU Pinning topology
+            final boolean isVmAssignedToSpecificHosts = !model.getIsAutoAssign().getEntity();
+            final boolean isVmCpuPinningSet =
+                    model.getCpuPinning().getIsChangable()
+                            && model.getCpuPinning().getEntity() != null
+                            && !model.getCpuPinning().getEntity().isEmpty();
+            confirmModel.addRecommendationForCpuPinning(isVmAssignedToSpecificHosts, isVmCpuPinningSet);
 
-        // Handle NUMA
-        final boolean isVmVirtNumaSet = model.getNumaEnabled().getEntity() && model.getNumaNodeCount().getEntity() > 0;
-        final boolean isVmVirtNumaPinned = model.getVmNumaNodes() != null && !model.getVmNumaNodes().isEmpty()
-                && model.getVmNumaNodes().stream().filter(x -> !x.getVdsNumaNodeList().isEmpty()).count() > 0;
-        confirmModel.addRecommendationForVirtNumaSetAndPinned(isVmVirtNumaSet, isVmVirtNumaPinned);
+            // Handle NUMA
+            final boolean isVmVirtNumaSet =
+                    model.getNumaEnabled().getEntity() && model.getNumaNodeCount().getEntity() > 0;
+            final boolean isVmVirtNumaPinned =
+                    model.getVmNumaNodes() != null
+                            && !model.getVmNumaNodes().isEmpty()
+                            && model.getVmNumaNodes().stream()
+                            .filter(x -> !x.getVdsNumaNodeList().isEmpty())
+                            .count() > 0;
+            confirmModel.addRecommendationForVirtNumaSetAndPinned(isVmVirtNumaSet, isVmVirtNumaPinned);
+        }
 
         // Handle Huge Pages
         KeyValueModel keyValue = model.getCustomPropertySheet();
@@ -659,7 +723,7 @@ public abstract class VmBaseListModel<E, T> extends ListWithSimpleDetailsModel<E
             confirmModel.setHelpTag(HelpTag.configuration_changes_for_high_performance_vm);
             confirmModel.setHashName("configuration_changes_for_high_performance_vm"); //$NON-NLS-1$
 
-            confirmModel.getCommands().add(new UICommand("SaveOrUpdateVM", VmBaseListModel.this) //$NON-NLS-1$
+            confirmModel.getCommands().add(new UICommand("ConfirmAndSaveOrUpdateVM", VmBaseListModel.this) //$NON-NLS-1$
                     .setTitle(ConstantsManager.getInstance().getConstants().ok())
                     .setIsDefault(true));
 
@@ -669,7 +733,7 @@ public abstract class VmBaseListModel<E, T> extends ListWithSimpleDetailsModel<E
             setConfirmWindow(null);
             setConfirmWindow(confirmModel);
          } else {
-            saveOrUpdateVM(model);
+            confirmAndSaveOrUpdateVM(model);
          }
     }
 }

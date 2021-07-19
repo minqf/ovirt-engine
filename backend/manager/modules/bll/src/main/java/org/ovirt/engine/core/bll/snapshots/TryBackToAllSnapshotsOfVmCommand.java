@@ -215,7 +215,7 @@ public class TryBackToAllSnapshotsOfVmCommand<T extends TryBackToAllSnapshotsOfV
         getSnapshotsManager().attemptToRestoreVmConfigurationFromSnapshot(getVm(),
                 getDstSnapshot(),
                 snapshotDao.getId(getVm().getId(), SnapshotType.ACTIVE),
-                getImagesToPreview(),
+                getFilteredImagesToPreview(),
                 getCompensationContext(),
                 getCurrentUser(),
                 new VmInterfaceManager(getMacPool()),
@@ -275,6 +275,7 @@ public class TryBackToAllSnapshotsOfVmCommand<T extends TryBackToAllSnapshotsOfV
                     SnapshotType.PREVIEW,
                     getVm(),
                     true,
+                    null,
                     previousActiveSnapshot.getMemoryDiskId(),
                     previousActiveSnapshot.getMetadataDiskId(),
                     null,
@@ -730,5 +731,15 @@ public class TryBackToAllSnapshotsOfVmCommand<T extends TryBackToAllSnapshotsOfV
     @Override
     public CommandCallback getCallback() {
         return getParameters().isUseCinderCommandCallback() ? callbackProvider.get() : null;
+    }
+
+    private List<DiskImage> getFilteredImagesToPreview() {
+        List<DiskImage> images = getImagesToPreview();
+        List<DiskImage> imagesToExclude = diskImageDao.getAttachedDiskSnapshotsToVm(getVmId(), Boolean.TRUE);
+        Set<Guid> excludeIds = imagesToExclude.stream().map(DiskImage::getId).collect(Collectors.toSet());
+
+        return images.stream()
+                .filter(image -> !excludeIds.contains(image.getId()))
+                .collect(Collectors.toList());
     }
 }

@@ -176,21 +176,45 @@ class FileLocations(object):
         OVIRT_ENGINE_PKIDIR,
         '.truststore',
     )
-    OVIRT_ENGINE_PKI_CA_TEMPLATE = os.path.join(
+    OVIRT_ENGINE_PKI_CA_TEMPLATE_IN = os.path.join(
         OVIRT_ENGINE_PKIDIR,
         'cacert.template.in',
     )
-    OVIRT_ENGINE_PKI_CERT_TEMPLATE = os.path.join(
+    OVIRT_ENGINE_PKI_CERT_TEMPLATE_IN = os.path.join(
         OVIRT_ENGINE_PKIDIR,
         'cert.template.in',
+    )
+    OVIRT_ENGINE_PKI_CA_TEMPLATE = os.path.join(
+        OVIRT_ENGINE_PKIDIR,
+        'cacert.template',
+    )
+    OVIRT_ENGINE_PKI_QEMU_CA_TEMPLATE = os.path.join(
+        OVIRT_ENGINE_PKIDIR,
+        'qemu-cacert.template',
+    )
+    OVIRT_ENGINE_PKI_CERT_TEMPLATE = os.path.join(
+        OVIRT_ENGINE_PKIDIR,
+        'cert.template',
+    )
+    OVIRT_ENGINE_PKI_QEMU_CERT_TEMPLATE = os.path.join(
+        OVIRT_ENGINE_PKIDIR,
+        'qemu-cert.template',
     )
     OVIRT_ENGINE_PKI_CA_CERT_CONF = os.path.join(
         OVIRT_ENGINE_PKIDIR,
         'cacert.conf',
     )
+    OVIRT_ENGINE_PKI_QEMU_CA_CERT_CONF = os.path.join(
+        OVIRT_ENGINE_PKIDIR,
+        'qemu-cacert.conf',
+    )
     OVIRT_ENGINE_PKI_CERT_CONF = os.path.join(
         OVIRT_ENGINE_PKIDIR,
         'cert.conf',
+    )
+    OVIRT_ENGINE_PKI_QEMU_CERT_CONF = os.path.join(
+        OVIRT_ENGINE_PKIDIR,
+        'qemu-cert.conf',
     )
     OVIRT_ENGINE_PKI_ENGINE_CA_KEY = os.path.join(
         OVIRT_ENGINE_PKIPRIVATEDIR,
@@ -406,6 +430,9 @@ class Stages(object):
     SYSTEM_NFS_CONFIG_AVAILABLE = 'osetup.system.nfs.available'
 
     CONFIG_ISO_DOMAIN_AVAILABLE = 'osetup.config.iso_domain.available'
+
+    CONFIG_EXTENSIONS_UPGRADE = 'osetup.config.extensions.upgrade'
+
     CONFIG_AAA_ADMIN_USER_SETUP = 'osetup.config.aaa.adminuser.setup'
 
     CORE_ENABLE = 'osetup.engine.core.enable'

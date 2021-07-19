@@ -20,6 +20,7 @@ import java.util.ResourceBundle;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.common.utils.ToStringBuilder;
 import org.ovirt.engine.core.utils.servlet.LocaleFilter;
 import org.slf4j.Logger;
@@ -30,12 +31,11 @@ import org.slf4j.LoggerFactory;
  * several things that are important to a theme:
  * <ul>
  *  <li>The path to the theme</li>
- *  <li>The name of the style sheet associated with the theme</li>
+ *  <li>The names of the style sheets associated with the theme</li>
+ *  <li>The names of the static javascript assets associated with the theme</li>
  * </ul>
  */
 public class BrandingTheme {
-
-    private Locale DEFAULT_US_LOCALE = Locale.US;
 
     /**
      * The logger.
@@ -68,6 +68,11 @@ public class BrandingTheme {
     private static final String VERSION_KEY = "version"; //$NON-NLS-1$
 
     /**
+     * The key used to read the welcome page preamble template.
+     */
+    private static final String PREAMBLE_TEMPLATE_KEY = "welcome_preamble"; //$NON-NLS-1$
+
+    /**
      * The key used to read the welcome page template.
      */
     private static final String TEMPLATE_KEY = "welcome"; //$NON-NLS-1$
@@ -94,9 +99,14 @@ public class BrandingTheme {
     private static final String CSS_POST_FIX = "_css"; //$NON-NLS-1$
 
     /**
-     * Css file reference pattern.
+     * Post fix for denoting javascript files.
      */
-    private static final Pattern CSS_REF_PATTERN = Pattern.compile("^\\{(.*)}$"); //$NON-NLS-1$
+    private static final String JS_POST_FIX = "_js"; //$NON-NLS-1$
+
+    /**
+     * Css and Javascript file reference pattern.
+     */
+    private static final Pattern REF_PATTERN = Pattern.compile("^\\{(.*)}$"); //$NON-NLS-1$
 
     private static final String[] TEMPLATE_REPLACE_VALUES = {"true", "false"}; //$NON-NLS-1$ //$NON-NLS-2$
 
@@ -207,6 +217,42 @@ public class BrandingTheme {
     }
 
     /**
+     * Get the static javascript resources for this theme for this {@code ApplicationType}.
+     * @param applicationName The application name for which to get the javascript resources
+     * @return A {@code List} of filenames
+     */
+    public List<String> getThemeJavascripts(String applicationName) {
+        String inputJsFiles = brandingProperties.getProperty(applicationName + JS_POST_FIX);
+        if (inputJsFiles == null) {
+            log.debug("Theme '{}' has no property defined for key '{}'", //$NON-NLS-1$
+                    getPath(), applicationName + JS_POST_FIX);
+            return null;
+        }
+
+        // comma-delimited list
+        List<String> inputJsList = Arrays.asList(inputJsFiles.split("\\s*,\\s*")); //$NON-NLS-1$
+
+        // list containing expanded "{applicationName}" references
+        List<String> expandedJsList = new ArrayList<>();
+
+        for (String jsFileOrRef : inputJsList) {
+            if (StringUtils.isBlank(jsFileOrRef)) {
+                continue;
+            }
+
+            Matcher refMatcher = REF_PATTERN.matcher(jsFileOrRef);
+            if (refMatcher.matches()) {
+                List<String> refExpanded = getThemeJavascripts(refMatcher.group(1));
+                expandedJsList.addAll(refExpanded);
+            } else {
+                expandedJsList.add(jsFileOrRef);
+            }
+        }
+
+        return expandedJsList;
+    }
+
+    /**
      * Get the css resources for this theme for this {@code ApplicationType}.
      * @param applicationName The application name for which to get the css resources
      * @return A {@code List} of filenames
@@ -214,7 +260,7 @@ public class BrandingTheme {
     public List<String> getThemeStylesheets(String applicationName) {
         String inputCssFiles = brandingProperties.getProperty(applicationName + CSS_POST_FIX);
         if (inputCssFiles == null) {
-            log.warn("Theme '{}' has no property defined for key '{}'", //$NON-NLS-1$
+            log.debug("Theme '{}' has no property defined for key '{}'", //$NON-NLS-1$
                     getPath(), applicationName + CSS_POST_FIX);
             return null;
         }
@@ -226,7 +272,11 @@ public class BrandingTheme {
         List<String> expandedCssList = new ArrayList<>();
 
         for (String cssFileOrRef : inputCssList) {
-            Matcher refMatcher = CSS_REF_PATTERN.matcher(cssFileOrRef);
+          if (StringUtils.isBlank(cssFileOrRef)) {
+              continue;
+          }
+
+          Matcher refMatcher = REF_PATTERN.matcher(cssFileOrRef);
             if (refMatcher.matches()) {
                 List<String> refExpanded = getThemeStylesheets(refMatcher.group(1));
                 expandedCssList.addAll(refExpanded);
@@ -279,11 +329,15 @@ public class BrandingTheme {
         String lastProcessedBundle = null;
         try {
             File themeDirectory = new File(filePath);
-            URLClassLoader urlLoader = new URLClassLoader(
-                    new URL[] {
-                            themeDirectory.toURI().toURL() });
+            URLClassLoader urlLoader = new URLClassLoader(new URL[] { themeDirectory.toURI().toURL() });
             final String messageFileNames = brandingProperties.getProperty(name);
-            if (messageFileNames != null) {
+            if (messageFileNames == null) {
+                log.warn("Theme '{}' has no property defined for key '{}'", //$NON-NLS-1$
+                        this.getPath(),
+                        name);
+            } else if (StringUtils.isBlank(messageFileNames)) {
+                log.debug("Theme '{}' does not extend key '{}'", this.getPath(), name); //$NON-NLS-1$
+            } else {
                 //The values can be a comma separated list of file names, split them and load each of them.
                 for (String fileName: messageFileNames.split(",")) {
                     fileName = lastProcessedBundle = fileName.trim();
@@ -292,10 +346,6 @@ public class BrandingTheme {
                             : messageFileNames;
                     result.add(ResourceBundle.getBundle(bundleName, locale, urlLoader));
                 }
-            } else {
-                log.warn("Theme '{}' has no property defined for key '{}'", //$NON-NLS-1$
-                        this.getPath(),
-                        name);
             }
         } catch (IOException e) {
             // Unable to load messages resource bundle.
@@ -318,16 +368,15 @@ public class BrandingTheme {
      * @return The raw template string.
      */
     public String getWelcomePageSectionTemplate() {
-        String result = "";
-        try {
-            final String templateFileName = filePath + "/" + brandingProperties.getProperty(TEMPLATE_KEY); //$NON-NLS-1$
-            result = readTemplateFile(templateFileName);
-        } catch (IOException ioe) {
-            log.error("Unable to load welcome template", ioe); //$NON-NLS-1$
-        } catch (NullPointerException e) {
-            log.error("Unable to locate welcome template key in branding properties", e); //$NON-NLS-1$
-        }
-        return result;
+        return readTemplateFile(TEMPLATE_KEY);
+    }
+
+    /**
+     * Return the raw welcome preamble template as a string.
+     * @return The raw template string.
+     */
+    public String getWelcomePreambleTemplate() {
+        return readTemplateFile(PREAMBLE_TEMPLATE_KEY);
     }
 
     /**
@@ -335,26 +384,34 @@ public class BrandingTheme {
      * If a line starts with '#' it is considered a comment and will not end up in the output.
      * @param fileName The name of the file to read.
      * @return The contents of the file as a string.
-     * @throws IOException if unable to read the template file.
      */
-    private String readTemplateFile(final String fileName) throws IOException {
-        StringBuilder templateBuilder = new StringBuilder();
-
-        try (
-            InputStream in = new FileInputStream(fileName);
-            Reader reader = new InputStreamReader(in, StandardCharsets.UTF_8);
-            BufferedReader bufferedReader= new BufferedReader(reader);
-        ){
-            String currentLine;
-            while ((currentLine = bufferedReader.readLine()) != null) {
-                if (!currentLine.startsWith("#")) { // # is comment.
-                    templateBuilder.append(currentLine);
-                    templateBuilder.append("\n"); //$NON-NLS-1$
-                }
-            }
+    private String readTemplateFile(final String templateKey) {
+        String templateKeyValue = brandingProperties.getProperty(templateKey);
+        if (StringUtils.isBlank(templateKeyValue)) {
+            return "";
         }
 
-        return templateBuilder.toString();
+        try {
+            String templateFileName = filePath + "/" + templateKeyValue; //$NON-NLS-1$
+            StringBuilder templateBuilder = new StringBuilder();
+            try (
+                InputStream in = new FileInputStream(templateFileName);
+                Reader reader = new InputStreamReader(in, StandardCharsets.UTF_8);
+                BufferedReader bufferedReader= new BufferedReader(reader);
+            ){
+                String currentLine;
+                while ((currentLine = bufferedReader.readLine()) != null) {
+                    if (!currentLine.startsWith("#")) { // # is comment.
+                        templateBuilder.append(currentLine);
+                        templateBuilder.append("\n"); //$NON-NLS-1$
+                    }
+                }
+            }
+            return templateBuilder.toString();
+        } catch (IOException ioe) {
+            log.error("Unable to load template {}={}", templateKey, templateKeyValue, ioe); //$NON-NLS-1$
+            return "";
+        }
     }
 
     /**

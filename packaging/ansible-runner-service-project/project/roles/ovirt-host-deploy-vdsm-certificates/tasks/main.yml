@@ -31,6 +31,7 @@
     copy:
       content: "{{ item.stdout }}"
       dest: "{{ ovirt_pki_dir }}/{{ item.item.item.req_dir }}/{{ ovirt_vds_hostname }}.req"
+      mode: 0644
     loop: '{{ csrs.results }}'
     delegate_to: localhost
 
@@ -40,7 +41,7 @@
        "--name={{ ovirt_vds_hostname }}"
        "--subject=/O={{ ovirt_organizationname }}/CN={{ ovirt_vds_hostname }}{{ item.ou }}"
        "--san={{ ovirt_san }}"
-       "--days={{ ovirt_vdscertificatevalidityinyears | int * 365 }}"
+       "--days={{ ovirt_vds_certificate_validity_in_days }}"
        "--timeout={{ ovirt_signcerttimeoutinseconds }}"
        "--ca-file={{ item.ca_file }}"
        "--cert-dir={{ item.cert_dir }}"
@@ -93,6 +94,8 @@
       content: "{{ ovirt_qemu_ca_cert }}"
       dest: "{{ ovirt_vdsm_trust_store }}/{{ ovirt_qemu_ca_file }}"
       owner: 'root'
+      group: 'kvm'
+      mode: 0644
 
   - name: Add vdsm cert files
     copy:
@@ -109,12 +112,20 @@
     loop_control:
       loop_var: filedest
 
-  - name: Add QEMU cert file
+  - name: Add QEMU server cert file
     copy:
       src: "{{ ovirt_pki_dir }}/certs-qemu/{{ ovirt_vds_hostname }}.cer"
       dest: "{{ ovirt_vdsm_trust_store }}/{{ ovirt_qemu_cert_file }}"
       owner: 'root'
+      group: 'kvm'
       remote_src: no
+      mode: preserve
+
+  - name: Add QEMU client cert file link
+    file:
+      src: "{{ ovirt_qemu_cert_file | basename }}"
+      dest: "{{ ovirt_vdsm_trust_store }}/{{ ovirt_qemu_client_cert_file }}"
+      state: link
 
   - name: Set vdsm key path
     set_fact:
@@ -139,7 +150,7 @@
     set_fact:
       qemukey_path: "{{ vdsmkeys.results[1].path  }}"
 
-  - name: Add QEMU key file
+  - name: Add QEMU server key file
     copy:
       src: "{{ qemukey_path }}"
       dest: "{{ ovirt_vdsm_trust_store }}/{{ ovirt_qemu_key_file }}"
@@ -147,6 +158,12 @@
       group: 'qemu'
       mode: 0440
       remote_src: yes
+
+  - name: Add QEMU client key file link
+    file:
+      src: "{{ ovirt_qemu_key_file | basename }}"
+      dest: "{{ ovirt_vdsm_trust_store }}/{{ ovirt_qemu_client_key_file }}"
+      state: link
 
   always:
     - name: Remove temp file

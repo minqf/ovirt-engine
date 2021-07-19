@@ -115,17 +115,10 @@ public interface OsRepository {
      */
     int getVramMultiplier(int osId);
 
-    /**
-     * @return map (osId -> compatibility version -> Boolean) that indicates balloon disabled for all OSs and
-     * compatibility versions
+     /**
+      * @return Multiplier to apply in `vgamem' video RAM parameter computation.  Defaults to 1 if unspecified.
      */
-    Map<Integer, Map<Version, Boolean>> getBalloonSupportMap();
-
-    /**
-     * Checks if is recommended enable the OS balloon.
-     * @return an boolean
-     */
-    boolean isBalloonEnabled(int osId, Version version);
+    int getVgamemMultiplier(int osId);
 
     /**
      * Checks if that OS network devices support hotplug.
@@ -246,8 +239,6 @@ public interface OsRepository {
      */
     Map<ArchitectureType, Integer> getDefaultOSes();
 
-    boolean isSingleQxlDeviceEnabled(int osId);
-
     /**
      * Checks if is recommended enable the HyperV optimizations
      * @return an boolean
@@ -307,4 +298,40 @@ public interface OsRepository {
      * Checks if the operating system requires special memory block when hot-plugging memory
      */
     boolean requiresHotPlugSpecialBlock(int osId, Version version);
+
+    /**
+     * Checks if the operation system requires legacy virtio support
+     * @param osId operation system id
+     * @param chipset the VM's chipset
+     */
+    boolean requiresLegacyVirtio(int osId, ChipsetType chipset);
+
+    /**
+     * Checks if the operation system requires a channel for ovirt guest agent support.
+     * @param osId operation system id
+     */
+    boolean requiresOvirtGuestAgentChannel(int osId);
+
+    /**
+     * @return a map from OS id to TPM-allowed Booleans
+     */
+    Map<Integer, Boolean> getTpmAllowedMap();
+
+    /**
+     * Checks if the operating system supports virtual TPM.
+     * @param osId operation system id
+     */
+    boolean isTpmAllowed(int osId);
+
+    /**
+     * Checks if the operating system supports Q35 chipset
+     * @param osId operation system id
+     */
+    boolean isQ35Supported(int osId);
+
+    /**
+     * Checks if the operating system supports SecureBoot
+     * @param osId operation system id
+     */
+    boolean isSecureBootSupported(int osId);
 }

@@ -137,7 +137,8 @@ public class RunVmCommandTest extends BaseCommandTest {
 
     public static Stream<MockConfigDescriptor<?>> mockConfiguration() {
         return Stream.of(
-                MockConfigDescriptor.of(ConfigValues.BiosTypeSupported, Version.getLast(), true)
+                MockConfigDescriptor.of(ConfigValues.BiosTypeSupported, Version.getLast(), true),
+                MockConfigDescriptor.of(ConfigValues.PropagateDiskErrors, false)
         );
     }
     /**
@@ -311,6 +312,7 @@ public class RunVmCommandTest extends BaseCommandTest {
     private VM mockVm() {
         VM vm = new VM();
         vm.setStatus(VMStatus.Down);
+        vm.setClusterCompatibilityVersion(Version.getLast());
         when(vmDao.get(command.getParameters().getVmId())).thenReturn(vm);
         command.setCluster(new Cluster());
         // Avoid referencing the unmockable static VmHandler.updateCurrentCd
@@ -321,6 +323,7 @@ public class RunVmCommandTest extends BaseCommandTest {
     }
 
     @BeforeEach
+    @MockedConfig("mockConfiguration")
     public void setUp() {
         mockCpuFlagsManagerHandler();
         when(osRepository.isWindows(anyInt())).thenReturn(false);
@@ -348,6 +351,7 @@ public class RunVmCommandTest extends BaseCommandTest {
         doReturn(true).when(command).checkRngDeviceClusterCompatibility();
         doReturn(true).when(command).checkPayload(any());
         doReturn(ValidationResult.VALID).when(command).checkDisksInBackupStorage();
+        doReturn(false).when(command).isVmDuringBackup();
         doNothing().when(command).checkVmLeaseStorageDomain();
         Cluster cluster = new Cluster();
         cluster.setArchitecture(ArchitectureType.x86_64);

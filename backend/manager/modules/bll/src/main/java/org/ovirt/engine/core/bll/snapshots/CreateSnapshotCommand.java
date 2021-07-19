@@ -18,8 +18,8 @@ import org.ovirt.engine.core.bll.tasks.CommandCoordinatorUtil;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.ActionParametersBase;
 import org.ovirt.engine.core.common.action.ActionType;
+import org.ovirt.engine.core.common.action.CreateSnapshotParameters;
 import org.ovirt.engine.core.common.action.DestroyImageParameters;
-import org.ovirt.engine.core.common.action.ImagesActionsParametersBase;
 import org.ovirt.engine.core.common.asynctasks.AsyncTaskType;
 import org.ovirt.engine.core.common.businessentities.StorageDomain;
 import org.ovirt.engine.core.common.businessentities.VM;
@@ -46,7 +46,7 @@ import org.ovirt.engine.core.utils.transaction.TransactionSupport;
 
 @InternalCommandAttribute
 @NonTransactiveCommandAttribute
-public class CreateSnapshotCommand<T extends ImagesActionsParametersBase> extends BaseImagesCommand<T> {
+public class CreateSnapshotCommand<T extends CreateSnapshotParameters> extends BaseImagesCommand<T> {
 
     @Inject
     private ImageDao imageDao;
@@ -118,18 +118,7 @@ public class CreateSnapshotCommand<T extends ImagesActionsParametersBase> extend
             VDSReturnValue vdsReturnValue =
                     runVdsCommand(
                             VDSCommandType.CreateVolume,
-                            new CreateVolumeVDSCommandParameters(getStoragePoolId(),
-                                    getDestinationStorageDomainId(),
-                                    getImageGroupId(),
-                                    getImage().getImageId(),
-                                    getDiskImage().getSize(),
-                                    newDiskImage.getVolumeType(),
-                                    newDiskImage.getVolumeFormat(),
-                                    getDiskImage().getId(),
-                                    getDestinationImageId(),
-                                    "",
-                                    getStoragePool().getCompatibilityVersion(),
-                                    getDiskImage().getContentType()));
+                            getCreateVDSCommandParameters());
 
             if (vdsReturnValue != null && vdsReturnValue.getSucceeded()) {
                 getParameters().setVdsmTaskIds(new ArrayList<>());
@@ -156,6 +145,30 @@ public class CreateSnapshotCommand<T extends ImagesActionsParametersBase> extend
         }
 
         return false;
+    }
+
+    private CreateVolumeVDSCommandParameters getCreateVDSCommandParameters() {
+        CreateVolumeVDSCommandParameters parameters = new CreateVolumeVDSCommandParameters(getStoragePoolId(),
+                getDestinationStorageDomainId(),
+                getImageGroupId(),
+                getImage().getImageId(),
+                getDiskImage().getSize(),
+                newDiskImage.getVolumeType(),
+                newDiskImage.getVolumeFormat(),
+                getDiskImage().getId(),
+                getDestinationImageId(),
+                "",
+                getStoragePool().getCompatibilityVersion(),
+                getDiskImage().getContentType());
+        if (getParameters().getInitialSizeInBytes() != null) {
+            parameters.setImageInitialSizeInBytes(getParameters().getInitialSizeInBytes());
+        }
+
+        if (imagesHandler.shouldUseDiskBitmaps(getStoragePool().getCompatibilityVersion(), getDiskImage())
+                && !getParameters().isLiveSnapshot()) {
+            parameters.setShouldAddBitmaps(true);
+        }
+        return parameters;
     }
 
     @Override
@@ -214,25 +227,20 @@ public class CreateSnapshotCommand<T extends ImagesActionsParametersBase> extend
     }
 
     private boolean isSnapshotUsed(VM vm) {
-        if (vm.isRunning()) {
+        if (vm.isRunningOrPaused()) {
             Set<Guid> volumeChain = imagesHandler.getVolumeChain(vm.getId(),
                     vm.getRunOnVds(),
                     getDiskImage());
 
-            if (volumeChain == null) {
-                log.warn("Could not retrieve chain, skipping deletion");
-                return true;
-            }
-
-            if (volumeChain.contains(getDiskImage().getImageId())) {
-                log.warn("Image '{}' appears to be in use by VM '{}', skipping deletion",
-                        getDiskImage().getImageId(),
-                        vm.getId());
-                return true;
+            if (volumeChain != null && !volumeChain.contains(getDiskImage().getImageId())) {
+                return false;
+            } else {
+                log.warn("Can not get image chain or image '{}' is still in the chain, skipping deletion",
+                        getDiskImage().getImageId());
             }
         }
 
-        return false;
+        return true;
     }
 
     protected DestroyImageParameters buildDestroyImageParameters(Guid imageGroupId, List<Guid> imageList) {

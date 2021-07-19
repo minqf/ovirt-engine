@@ -6,6 +6,7 @@ import static org.ovirt.engine.api.restapi.types.IntegerMapper.mapNullToMinusOne
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.api.model.Bios;
@@ -17,6 +18,7 @@ import org.ovirt.engine.api.model.Cpu;
 import org.ovirt.engine.api.model.CpuMode;
 import org.ovirt.engine.api.model.CpuProfile;
 import org.ovirt.engine.api.model.CpuTopology;
+import org.ovirt.engine.api.model.CpuTune;
 import org.ovirt.engine.api.model.CustomProperties;
 import org.ovirt.engine.api.model.DisplayDisconnectAction;
 import org.ovirt.engine.api.model.Domain;
@@ -30,6 +32,8 @@ import org.ovirt.engine.api.model.Quota;
 import org.ovirt.engine.api.model.TimeZone;
 import org.ovirt.engine.api.model.Usb;
 import org.ovirt.engine.api.model.UsbType;
+import org.ovirt.engine.api.model.VcpuPin;
+import org.ovirt.engine.api.model.VcpuPins;
 import org.ovirt.engine.api.model.VmAffinity;
 import org.ovirt.engine.api.model.VmBase;
 import org.ovirt.engine.api.model.VmPlacementPolicy;
@@ -89,9 +93,6 @@ public class VmBaseMapper {
             }
             if (model.getDisplay().isSetMonitors()) {
                 entity.setNumOfMonitors(model.getDisplay().getMonitors());
-            }
-            if (model.getDisplay().isSetSingleQxlPci()) {
-                entity.setSingleQxlPci(model.getDisplay().isSingleQxlPci());
             }
             if (model.getDisplay().isSetSmartcardEnabled()) {
                 entity.setSmartcardEnabled(model.getDisplay().isSmartcardEnabled());
@@ -153,6 +154,9 @@ public class VmBaseMapper {
                 }
             }
             entity.setDedicatedVmForVdsList(new LinkedList<>(hostGuidsSet));
+        }
+        if (model.isSetMemoryPolicy() && model.getMemoryPolicy().isSetBallooning()) {
+            entity.setBalloonEnabled(model.getMemoryPolicy().isBallooning());
         }
     }
 
@@ -283,8 +287,15 @@ public class VmBaseMapper {
             entity.setMultiQueuesEnabled(model.isMultiQueuesEnabled());
         }
 
+        if (model.isSetVirtioScsiMultiQueuesEnabled()) {
+            entity.setVirtioScsiMultiQueuesEnabled(model.isVirtioScsiMultiQueuesEnabled());
+        }
+
         if (model.isSetCpu() && model.getCpu().isSetMode()) {
             entity.setUseHostCpuFlags(model.getCpu().getMode() == CpuMode.HOST_PASSTHROUGH);
+        }
+        if (model.isSetCpu() && model.getCpu().isSetCpuTune()) {
+            entity.setCpuPinning(cpuTuneToString(model.getCpu().getCpuTune()));
         }
     }
 
@@ -343,6 +354,7 @@ public class VmBaseMapper {
         MemoryPolicy policy = new MemoryPolicy();
         policy.setGuaranteed((long)entity.getMinAllocatedMem() * (long)BYTES_PER_MB);
         policy.setMax((long)entity.getMaxMemorySizeMb() * (long)BYTES_PER_MB);
+        policy.setBallooning(entity.isBalloonEnabled());
         model.setMemoryPolicy(policy);
 
         if (entity.getCustomCompatibilityVersion() != null) {
@@ -461,9 +473,12 @@ public class VmBaseMapper {
 
         model.setMultiQueuesEnabled(entity.isMultiQueuesEnabled());
 
+        model.setVirtioScsiMultiQueuesEnabled(entity.isVirtioScsiMultiQueuesEnabled());
+
         if(entity.isUseHostCpuFlags()) {
             model.getCpu().setMode(CpuMode.HOST_PASSTHROUGH);
         }
+        model.getCpu().setCpuTune(stringToCpuTune(entity.getCpuPinning()));
     }
 
     @Mapping(from = DisplayDisconnectAction.class, to = ConsoleDisconnectAction.class)
@@ -618,8 +633,6 @@ public class VmBaseMapper {
             return null;
         }
         switch (biosType) {
-            case CLUSTER_DEFAULT:
-                return org.ovirt.engine.core.common.businessentities.BiosType.CLUSTER_DEFAULT;
             case I440FX_SEA_BIOS:
                 return org.ovirt.engine.core.common.businessentities.BiosType.I440FX_SEA_BIOS;
             case Q35_SEA_BIOS:
@@ -639,8 +652,6 @@ public class VmBaseMapper {
             return null;
         }
         switch (biosType) {
-            case CLUSTER_DEFAULT:
-                return BiosType.CLUSTER_DEFAULT;
             case I440FX_SEA_BIOS:
                 return BiosType.I440FX_SEA_BIOS;
             case Q35_SEA_BIOS:
@@ -654,4 +665,49 @@ public class VmBaseMapper {
         }
     }
 
+    static String cpuTuneToString(final CpuTune tune) {
+        if (tune.getVcpuPins() == null) {
+            return "";
+        }
+        return tune.getVcpuPins().getVcpuPins().stream()
+                .map(pin -> String.join("#", pin.getVcpu().toString(), pin.getCpuSet()))
+                .collect(Collectors.joining("_"));
+    }
+
+    /**
+     * Maps the stringified CPU-pinning to the API format.
+     */
+    static CpuTune stringToCpuTune(String cpuPinning) {
+        if(cpuPinning == null || cpuPinning.equals("")) {
+            return null;
+        }
+        final CpuTune cpuTune = new CpuTune();
+        VcpuPins pins = new VcpuPins();
+        for(String strCpu : cpuPinning.split("_")) {
+            VcpuPin pin = stringToVCpupin(strCpu);
+            pins.getVcpuPins().add(pin);
+        }
+        cpuTune.setVcpuPins(pins);
+
+        return cpuTune;
+    }
+
+    static VcpuPin stringToVCpupin(final String strCpu) {
+        final String[] strPin = strCpu.split("#");
+        if (strPin.length != 2) {
+            throw new IllegalArgumentException("Bad format: " + strCpu);
+        }
+        final VcpuPin pin = new VcpuPin();
+        try {
+            pin.setVcpu(Integer.parseInt(strPin[0]));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Bad format: " + strCpu, e);
+        }
+        if (strPin[1].matches("\\^?(\\d+(\\-\\d+)?)(,\\^?((\\d+(\\-\\d+)?)))*")) {
+            pin.setCpuSet(strPin[1]);
+        } else {
+            throw new IllegalArgumentException("Bad format: " + strPin[1]);
+        }
+        return pin;
+    }
 }

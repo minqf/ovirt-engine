@@ -25,6 +25,7 @@ import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.scheduling.PerHostMessages;
 import org.ovirt.engine.core.compat.Guid;
+import org.ovirt.engine.core.compat.Version;
 import org.ovirt.engine.core.dao.HostDeviceDao;
 
 @ExtendWith(MockitoExtension.class)
@@ -36,6 +37,8 @@ public class MDevicePolicyUnitTest {
     private static final String MDEV_NAME_2 = "aa";
 
     private static final String MDEV_NAME_3 = "aaa";
+
+    private static final String NODISPLAY = "nodisplay";
 
     private static final String MDEV_NAME_NON_EXISTING = "bbb";
 
@@ -60,6 +63,7 @@ public class MDevicePolicyUnitTest {
     @BeforeEach
     public void setUp() {
         vm = new VM();
+        vm.setCustomCompatibilityVersion(Version.v4_4);
 
         vdsWithNoMdevs = new VDS();
         vdsWithNoMdevs.setId(Guid.newGuid());
@@ -125,6 +129,17 @@ public class MDevicePolicyUnitTest {
         assertThat(result.contains(vdsWithMixedMdevs));
     }
 
+    @Test
+    public void noDisplay() {
+        vm.setCustomProperties(String.format("key=value;mdev_type=%s,%s,%s;key2=value", NODISPLAY, MDEV_NAME_1, MDEV_NAME_3));
+
+        List<VDS> result = filter();
+
+        assertEquals(2, result.size());
+        assertThat(result.contains(vdsWithMdevs));
+        assertThat(result.contains(vdsWithMixedMdevs));
+    }
+
     private List<VDS> filter() {
         return policyUnit.filter(new SchedulingContext(null, Collections.emptyMap()),
                 vdsList,
@@ -158,6 +173,6 @@ public class MDevicePolicyUnitTest {
     }
 
     private MDevType mDevType(String name, Integer availableInstances) {
-        return new MDevType(name, availableInstances, null);
+        return new MDevType(name, null, availableInstances, null);
     }
 }

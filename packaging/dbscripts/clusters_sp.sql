@@ -57,7 +57,8 @@ CREATE OR REPLACE FUNCTION InsertCluster (
     v_log_max_memory_used_threshold_type SMALLINT,
     v_vnc_encryption_enabled BOOLEAN,
     v_smt_disabled BOOLEAN,
-    v_managed BOOLEAN
+    v_managed BOOLEAN,
+    v_fips_mode SMALLINT
     )
 RETURNS VOID AS $PROCEDURE$
 BEGIN
@@ -115,7 +116,8 @@ BEGIN
         log_max_memory_used_threshold_type,
         vnc_encryption_enabled,
         smt_disabled,
-        managed
+        managed,
+        fips_mode
         )
     VALUES (
         v_cluster_id,
@@ -171,7 +173,8 @@ BEGIN
         v_log_max_memory_used_threshold_type,
         v_vnc_encryption_enabled,
         v_smt_disabled,
-        v_managed
+        v_managed,
+        v_fips_mode
         );
 END;$PROCEDURE$
 LANGUAGE plpgsql;
@@ -231,7 +234,8 @@ CREATE OR REPLACE FUNCTION UpdateCluster (
     v_log_max_memory_used_threshold_type SMALLINT,
     v_vnc_encryption_enabled BOOLEAN,
     v_smt_disabled BOOLEAN,
-    v_managed BOOLEAN
+    v_managed BOOLEAN,
+    v_fips_mode SMALLINT
     )
 RETURNS VOID
     --The [cluster] table doesn't have a timestamp column. Optimistic concurrency logic cannot be generated
@@ -292,7 +296,8 @@ BEGIN
         log_max_memory_used_threshold_type = v_log_max_memory_used_threshold_type,
         vnc_encryption_enabled = v_vnc_encryption_enabled,
         smt_disabled = v_smt_disabled,
-        managed = v_managed
+        managed = v_managed,
+        fips_mode = v_fips_mode
     WHERE cluster_id = v_cluster_id;
 END;$PROCEDURE$
 LANGUAGE plpgsql;
@@ -629,7 +634,8 @@ DROP TYPE IF EXISTS host_vm_cluster_rs CASCADE;
 CREATE TYPE host_vm_cluster_rs AS (
         cluster_id UUID,
         hosts BIGINT,
-        vms BIGINT
+        vms BIGINT,
+        hosts_with_update_available BIGINT
         );
 
 CREATE OR REPLACE FUNCTION GetHostsAndVmsForClusters (v_cluster_ids UUID [])
@@ -648,7 +654,13 @@ BEGIN
             FROM vm_static vms
             WHERE vms.cluster_id = groups.cluster_id
                 AND vms.entity_type::TEXT = 'VM'::TEXT
-            ) AS vm_count
+            ) AS vm_count, -- TODO consider replacing with computed columns
+        (
+            SELECT COUNT(DISTINCT vds_dynamic.vds_id)
+            FROM vds_dynamic JOIN vds_static ON vds_static.vds_id = vds_dynamic.vds_id
+            WHERE vds_static.cluster_id = groups.cluster_id
+                AND vds_dynamic.is_update_available
+            ) AS hosts_with_update_available
     FROM cluster groups
     WHERE groups.cluster_id = ANY (v_cluster_ids)
     GROUP BY groups.cluster_id;
@@ -693,5 +705,20 @@ BEGIN
     SELECT cv.*
     FROM cluster_view cv
     WHERE cv.default_network_provider_id = v_id;
+END;$PROCEDURE$
+LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION GetClusterIdForHostByNameOrAddress (v_vds_name VARCHAR(255), v_host_address VARCHAR(39))
+RETURNS SETOF UUID STABLE AS $PROCEDURE$
+BEGIN
+    RETURN QUERY
+
+        SELECT vds_static.cluster_id
+        FROM vds_static
+        JOIN vds_interface ON vds_static.vds_id = vds_interface.vds_id
+        WHERE vds_static.vds_name = v_vds_name
+            OR vds_interface.addr = v_host_address
+            OR vds_interface.ipv6_address = v_host_address
+        LIMIT 1;
 END;$PROCEDURE$
 LANGUAGE plpgsql;

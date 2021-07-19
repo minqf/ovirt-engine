@@ -16,6 +16,8 @@ import org.ovirt.engine.core.common.businessentities.BusinessEntity;
 import org.ovirt.engine.core.common.businessentities.Nameable;
 import org.ovirt.engine.core.common.businessentities.ProgressEntity;
 import org.ovirt.engine.core.common.businessentities.Queryable;
+import org.ovirt.engine.core.common.config.Config;
+import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.validation.annotation.ValidDescription;
 import org.ovirt.engine.core.common.validation.annotation.ValidI18NName;
 import org.ovirt.engine.core.common.validation.group.CreateEntity;
@@ -85,7 +87,9 @@ public class BaseDisk implements Queryable, BusinessEntity<Guid>, ProgressEntity
     }
 
     public void setDiskVmElements(Collection<DiskVmElement> diskVmElements) {
-        diskVmElementsMap = diskVmElements.stream().collect(Collectors.toMap(d -> d.getId().getVmId(), Function.identity()));
+        diskVmElementsMap = diskVmElements.stream()
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(d -> d.getId().getVmId(), Function.identity()));
     }
 
     @JsonIgnore
@@ -108,6 +112,8 @@ public class BaseDisk implements Queryable, BusinessEntity<Guid>, ProgressEntity
     private String cinderVolumeType;
 
     private DiskBackup backup;
+
+    private DiskBackupMode backupMode;
 
     public BaseDisk() {
         propagateErrors = PropagateErrors.Off;
@@ -147,6 +153,9 @@ public class BaseDisk implements Queryable, BusinessEntity<Guid>, ProgressEntity
     }
 
     public PropagateErrors getPropagateErrors() {
+        if ((Boolean)(Config.getValue(ConfigValues.PropagateDiskErrors))) {
+            return PropagateErrors.On;
+        }
         return propagateErrors;
     }
 
@@ -237,6 +246,14 @@ public class BaseDisk implements Queryable, BusinessEntity<Guid>, ProgressEntity
         this.backup = backup;
     }
 
+    public DiskBackupMode getBackupMode() {
+        return backupMode;
+    }
+
+    public void setBackupMode(DiskBackupMode backupMode) {
+        this.backupMode = backupMode;
+    }
+
     @Override
     public int hashCode() {
         return Objects.hash(
@@ -249,7 +266,8 @@ public class BaseDisk implements Queryable, BusinessEntity<Guid>, ProgressEntity
                 sgio,
                 cinderVolumeType,
                 contentType,
-                backup
+                backup,
+                backupMode
         );
     }
 
@@ -276,6 +294,7 @@ public class BaseDisk implements Queryable, BusinessEntity<Guid>, ProgressEntity
                 && sgio == other.sgio
                 && Objects.equals(cinderVolumeType, other.cinderVolumeType)
                 && contentType == other.contentType
-                && backup == other.backup;
+                && backup == other.backup
+                && backupMode == other.backupMode;
     }
 }

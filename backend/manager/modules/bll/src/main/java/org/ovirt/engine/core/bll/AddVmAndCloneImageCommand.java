@@ -104,6 +104,7 @@ public abstract class AddVmAndCloneImageCommand<T extends AddVmParameters> exten
                 diskInfoDestinationMap != null ? diskInfoDestinationMap.get(diskImage.getId()) : null);
         ImagesHandler.setDiskAlias(newDiskImage, getVm());
         newDiskImage.setDiskAlias(String.format("%s_%s", newDiskImage.getDiskAlias(), getVm().getName()));
+        newDiskImage.setActive(true);
         MoveOrCopyImageGroupParameters parameters = createCopyParameters(newDiskImage,
                 srcStorageDomainId,
                 diskImage.getId(),
@@ -123,7 +124,7 @@ public abstract class AddVmAndCloneImageCommand<T extends AddVmParameters> exten
         super.removeVmRelatedEntitiesFromDb();
     }
 
-    private void removeVmImages() {
+    protected void removeVmImages() {
         // Remove vm images, in case they were not already removed by child commands
         List<ActionParametersBase> imageParams = getParameters().getImagesParameters();
         for (ActionParametersBase param : imageParams) {
@@ -304,10 +305,10 @@ public abstract class AddVmAndCloneImageCommand<T extends AddVmParameters> exten
      * Returns collection of DiskImage objects to use for construction of the imageToDestinationDomainMap
      */
     protected Collection<DiskImage> getDiskImagesToBeCloned() {
-        return getAdjustedDiskImagesFromConfiguration();
+        return getSourceDisks();
     }
 
-    protected abstract Collection<DiskImage> getAdjustedDiskImagesFromConfiguration();
+    protected abstract Collection<DiskImage> getSourceDisks();
 
     protected DiskImage getDiskImageToRemoveByParam(MoveOrCopyImageGroupParameters param) {
         Guid imageGroupId = param.getDestImageGroupId();
@@ -387,9 +388,9 @@ public abstract class AddVmAndCloneImageCommand<T extends AddVmParameters> exten
         List<DiskImage> cinderDisks = new ArrayList<>();
         List<DiskImage> managedBlockDisks = new ArrayList<>();
         try {
-            if (!getAdjustedDiskImagesFromConfiguration().isEmpty()) {
+            if (!getSourceDisks().isEmpty()) {
                 lockEntities();
-                for (DiskImage diskImage : getAdjustedDiskImagesFromConfiguration()) {
+                for (DiskImage diskImage : getSourceDisks()) {
                     // For illegal image check if it was snapshot as illegal (therefore
                     // still exists at DB, or was it erased after snapshot - therefore the
                     // query returned to UI an illegal image)
@@ -417,7 +418,7 @@ public abstract class AddVmAndCloneImageCommand<T extends AddVmParameters> exten
                             default:
                                 copyDiskImage(diskImage,
                                         diskImage.getStorageIds().get(0),
-                                        diskInfoDestinationMap.get(diskImage.getId()).getStorageIds().get(0),
+                                        getDestStorageDomain(diskImage.getId()),
                                         diskInfoDestinationMap.get(diskImage.getId()).getDiskProfileId(),
                                         getActionType());
                                 numberOfStartedCopyTasks++;
@@ -464,13 +465,14 @@ public abstract class AddVmAndCloneImageCommand<T extends AddVmParameters> exten
                 devices,
                 getSrcDeviceIdToTargetDeviceIdMapping(),
                 isSoundDeviceEnabled(),
+                getParameters().isTpmEnabled(),
                 getParameters().isConsoleEnabled(),
                 isVirtioScsiEnabled(),
-                isBalloonEnabled(),
                 getParameters().getGraphicsDevices().keySet(),
                 false,
                 getVmDeviceUtils().canCopyHostDevices(getSourceVmId(), getVm().getStaticData()),
                 getEffectiveCompatibilityVersion());
+        getVmDeviceUtils().copyVmExternalData(getSourceVmId(), getVmId());
     }
 
     @Override
@@ -479,6 +481,10 @@ public abstract class AddVmAndCloneImageCommand<T extends AddVmParameters> exten
     }
 
     protected abstract VM getVmFromConfiguration();
+
+    protected Guid getDestStorageDomain(Guid diskImageID){
+        return diskInfoDestinationMap.get(diskImageID).getStorageIds().get(0);
+    }
 
     @Override
     protected abstract Guid getSourceVmId();

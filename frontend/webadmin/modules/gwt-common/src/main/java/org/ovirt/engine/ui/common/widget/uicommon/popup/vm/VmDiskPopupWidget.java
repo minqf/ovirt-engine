@@ -1,7 +1,6 @@
 package org.ovirt.engine.ui.common.widget.uicommon.popup.vm;
 
 import java.util.ArrayList;
-import java.util.Collection;
 
 import org.gwtbootstrap3.client.ui.Container;
 import org.gwtbootstrap3.client.ui.constants.ColumnSize;
@@ -105,11 +104,6 @@ public class VmDiskPopupWidget extends AbstractModelBoundPopupWidget<AbstractDis
     ListModelListBoxEditor<VolumeType> volumeTypeEditor;
 
     @UiField(provided = true)
-    @Path("cinderVolumeType.selectedItem")
-    @WithElementId("cinderVolumeType")
-    ListModelListBoxEditor<String> cinderVolumeTypeEditor;
-
-    @UiField(provided = true)
     @Path("diskProfile.selectedItem")
     @WithElementId("diskProfile")
     ListModelListBoxEditor<DiskProfile> diskProfileEditor;
@@ -185,10 +179,6 @@ public class VmDiskPopupWidget extends AbstractModelBoundPopupWidget<AbstractDis
 
     @UiField(provided = true)
     @Ignore
-    InfoIcon cinderVolumeTypeInfoIcon;
-
-    @UiField(provided = true)
-    @Ignore
     InfoIcon scsiReservationInfoIcon;
 
     @UiField
@@ -249,8 +239,6 @@ public class VmDiskPopupWidget extends AbstractModelBoundPopupWidget<AbstractDis
 
         datacenterEditor = new ListModelListBoxEditor<>(new NameRenderer<StoragePool>());
 
-        cinderVolumeTypeEditor = new ListModelListBoxEditor<>();
-
         volumeTypeEditor = new ListModelListBoxEditor<>(new EnumRenderer());
         storageTypeEditor = new ListModelListBoxEditor<>(new EnumRenderer());
         plugDiskToVmEditor = new EntityModelCheckBoxEditor(Align.RIGHT);
@@ -267,7 +255,6 @@ public class VmDiskPopupWidget extends AbstractModelBoundPopupWidget<AbstractDis
 
         hostInfoIcon = new InfoIcon(SafeHtmlUtils.fromString(constants.hostToUseToolTip()));
         interfaceInfoIcon = new InfoIcon(templates.italicText(constants.diskInterfaceInfo()));
-        cinderVolumeTypeInfoIcon = new InfoIcon(templates.italicText(constants.cinderVolumeTypeInfoIcon()));
         scsiReservationInfoIcon = new InfoIcon(templates.italicText(constants.scsiReservationInfoIcon()));
     }
 
@@ -309,14 +296,6 @@ public class VmDiskPopupWidget extends AbstractModelBoundPopupWidget<AbstractDis
             interfaceEditor.addWidgetColSize(!isVirtioScsiEnabled ? ColumnSize.SM_7 : ColumnSize.SM_8);
         });
 
-        disk.getCinderVolumeType().getItemsChangedEvent().addListener((ev, sender, args) -> {
-            Collection<String> volumeTypes = disk.getCinderVolumeType().getItems();
-            boolean showIcon = volumeTypes == null || volumeTypes.isEmpty();
-            cinderVolumeTypeInfoIcon.setVisible(showIcon);
-            cinderVolumeTypeEditor.removeWidgetColSize(!showIcon ? ColumnSize.SM_7 : ColumnSize.SM_8);
-            cinderVolumeTypeEditor.addWidgetColSize(showIcon ? ColumnSize.SM_7 : ColumnSize.SM_8);
-        });
-
         disk.getIsModelDisabled().getEntityChangedEvent().addListener((ev, sender, args) -> {
             if (disk.getIsModelDisabled().getEntity()) {
                 disableWidget(getWidget());
@@ -349,16 +328,6 @@ public class VmDiskPopupWidget extends AbstractModelBoundPopupWidget<AbstractDis
                     if (disk.getIsNew()) {
                         disk.getDiskStorageType().setEntity(DiskStorageType.LUN);
                         revealStorageView(disk);
-                        revealDiskPanel(disk);
-                    }
-                });
-
-        radioButtonPanel.addRadioButton(constants.cinderDisk(),
-                disk.getDisk() != null && disk.getDisk().getDiskStorageType() == DiskStorageType.CINDER,
-                disk.getIsNew() || disk.getDisk().getDiskStorageType() == DiskStorageType.CINDER,
-                event -> {
-                    if (disk.getIsNew()) {
-                        disk.getDiskStorageType().setEntity(DiskStorageType.CINDER);
                         revealDiskPanel(disk);
                     }
                 });
@@ -495,7 +464,6 @@ public class VmDiskPopupWidget extends AbstractModelBoundPopupWidget<AbstractDis
         datacenterEditor.setTabIndex(nextTabIndex++);
         storageDomainEditor.setTabIndex(nextTabIndex++);
         volumeTypeEditor.setTabIndex(nextTabIndex++);
-        cinderVolumeTypeEditor.setTabIndex(nextTabIndex++);
         diskProfileEditor.setTabIndex(nextTabIndex++);
         quotaEditor.setTabIndex(nextTabIndex++);
         hostListEditor.setTabIndex(nextTabIndex++);

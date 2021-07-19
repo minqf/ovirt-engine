@@ -17,24 +17,22 @@ import javax.inject.Singleton;
 
 import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.common.businessentities.HostDevice;
+import org.ovirt.engine.core.common.businessentities.OriginType;
 import org.ovirt.engine.core.common.businessentities.UsbControllerModel;
 import org.ovirt.engine.core.common.businessentities.VmDevice;
 import org.ovirt.engine.core.common.businessentities.VmDeviceGeneralType;
-import org.ovirt.engine.core.common.businessentities.VmPayload;
-import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.utils.VmDeviceType;
 import org.ovirt.engine.core.compat.Guid;
-import org.ovirt.engine.core.dao.DiskImageDao;
 import org.ovirt.engine.core.dao.DiskLunMapDao;
 import org.ovirt.engine.core.dao.HostDeviceDao;
 import org.ovirt.engine.core.dao.VmDeviceDao;
-import org.ovirt.engine.core.dao.network.VmNetworkInterfaceDao;
 import org.ovirt.engine.core.utils.MemoizingSupplier;
 import org.ovirt.engine.core.utils.ovf.xml.XmlAttribute;
 import org.ovirt.engine.core.utils.ovf.xml.XmlDocument;
 import org.ovirt.engine.core.utils.ovf.xml.XmlNamespaceManager;
 import org.ovirt.engine.core.utils.ovf.xml.XmlNode;
 import org.ovirt.engine.core.utils.ovf.xml.XmlNodeList;
+import org.ovirt.engine.core.vdsbroker.ResourceManager;
 import org.ovirt.engine.core.vdsbroker.builder.vminfo.LibvirtVmXmlBuilder;
 import org.ovirt.engine.core.vdsbroker.vdsbroker.VdsProperties;
 import org.slf4j.Logger;
@@ -48,11 +46,9 @@ public class VmDevicesConverter {
     @Inject
     private HostDeviceDao hostDeviceDao;
     @Inject
-    private VmNetworkInterfaceDao vmNetworkInterfaceDao;
-    @Inject
     private DiskLunMapDao diskLunMapDao;
     @Inject
-    private DiskImageDao diskImageDao;
+    private ResourceManager resourceManager;
 
     protected final Logger log = LoggerFactory.getLogger(getClass());
 
@@ -97,9 +93,20 @@ public class VmDevicesConverter {
 
             XmlNode guestNameNode = node.selectSingleNode("ovirt-vm:guestName", xmlNS);
             if (guestNameNode != null) {
-                // guest disk mapping is not available for LUNs at the moment
-                result.put(node.selectSingleNode("ovirt-vm:imageID", xmlNS).innerText,
-                        Collections.singletonMap(VdsProperties.Name, guestNameNode.innerText));
+                // Both LUN and regular disk are having imageID. Therefore, we first check the LUN.
+                XmlNode lunId = node.selectSingleNode("ovirt-vm:GUID", xmlNS);
+                if (lunId != null) {
+                    // direct LUN
+                    result.put(diskLunMapDao.getDiskIdByLunId(lunId.innerText).getDiskId().toString(),
+                            Collections.singletonMap(VdsProperties.Name, guestNameNode.innerText));
+                } else {
+                    XmlNode imageId = node.selectSingleNode("ovirt-vm:imageID", xmlNS);
+                    if (imageId != null) {
+                        // regular disk
+                        result.put(imageId.innerText,
+                                Collections.singletonMap(VdsProperties.Name, guestNameNode.innerText));
+                    }
+                }
             }
         }
         return result;
@@ -108,6 +115,8 @@ public class VmDevicesConverter {
     @SuppressWarnings("unchecked")
     private Map<String, Object>[] parseDevices(Guid vmId, Guid hostId, XmlDocument document) throws Exception {
         List<VmDevice> devices = vmDeviceDao.getVmDeviceByVmId(vmId);
+        OriginType vmOrigin = resourceManager.getVmManager(vmId).getOrigin();
+        boolean isHostedEngine = OriginType.HOSTED_ENGINE == vmOrigin || OriginType.MANAGED_HOSTED_ENGINE == vmOrigin;
         MemoizingSupplier<Map<Map<String, String>, HostDevice>> addressToHostDeviceSupplier =
                 new MemoizingSupplier<>(() -> hostDeviceDao.getHostDevicesByHostId(hostId)
                         .stream()
@@ -122,14 +131,15 @@ public class VmDevicesConverter {
         result.add(parseDev(VmDeviceGeneralType.SOUND, document, devices));
         result.add(parseDev(VmDeviceGeneralType.CONSOLE, document, devices));
         result.addAll(parseChannels(document, devices));
-        result.addAll(parseControllers(document, devices));
-        result.addAll(parseVideos(document, devices));
-        result.addAll(parseInterfaces(document, devices, vmId, addressToHostDeviceSupplier));
-        result.addAll(parseDisks(document, devices));
+        result.addAll(parseControllers(document, devices, isHostedEngine));
+        result.addAll(parseVideos(document, devices, isHostedEngine));
+        result.addAll(parseInterfaces(document, devices, addressToHostDeviceSupplier, isHostedEngine));
+        result.addAll(parseDisks(document, devices, isHostedEngine));
         result.addAll(parseRedirs(document, devices));
         result.addAll(parseMemories(document, devices));
-        result.addAll(parseManagedHostDevices(document, devices, hostId, addressToHostDeviceSupplier));
-        result.addAll(parseUnmanagedHostDevices(document, devices, hostId, addressToHostDeviceSupplier));
+        result.addAll(parseNvdimms(document, devices, hostId));
+        result.addAll(parseManagedHostDevices(document, devices, addressToHostDeviceSupplier));
+        result.addAll(parseUnmanagedHostDevices(document, devices, addressToHostDeviceSupplier));
         return result.stream()
                 .filter(map -> !map.isEmpty())
                 .toArray(Map[]::new);
@@ -150,7 +160,7 @@ public class VmDevicesConverter {
             dev.put(VdsProperties.Address, address);
             dev.put(VdsProperties.Alias, parseAlias(node));
             // Channel devices are not sent within the domain xml during VM launching.
-            // Therefore, unlike other devices there is no need to call the correlateWithUserAlias
+            // Therefore, unlike other devices there is no need to call the correlateWithAlias
             // function here because there will not be a database channel device available.
             // We just need to create a new channel device here.
             dev.put(VdsProperties.DeviceId, Guid.newGuid().toString());
@@ -160,7 +170,8 @@ public class VmDevicesConverter {
         return result;
     }
 
-    private List<Map<String, Object>> parseControllers(XmlDocument document, List<VmDevice> devices) {
+    private List<Map<String, Object>> parseControllers(XmlDocument document, List<VmDevice> devices,
+            boolean isHostedEngine) {
         List<VmDevice> dbDevices = filterDevices(devices, VmDeviceGeneralType.CONTROLLER);
 
         // devices with spec params to appear first
@@ -187,12 +198,13 @@ public class VmDevicesConverter {
             dev.put(VdsProperties.Alias, parseAlias(node));
 
             Optional<VmDevice> dbDev = Optional.empty();
-            // Controllers such as pci controllers that are not sent by the engine during initial loading,
-            // but are received from the dumpxml will not have the device id in the alias. To avoid a warning for
-            // these types of devices we first validate if the alias contains the user access prefix.
+            // Controllers such as pci controllers that are not sent by the engine during initial loading, but are
+            // received from the dumpxml will not have the device id in the alias. To avoid a warning for these types
+            // of devices we first validate if the alias contains the user access prefix and the device is unmanged.
             // If not the correlationWithUserAlias function is skipped.
-            if (dev.get(VdsProperties.Alias).toString().startsWith(DomainXmlUtils.USER_ALIAS_PREFIX)) {
-                dbDev = correlateWithUserAlias(dev, dbDevices);
+            if (dev.get(VdsProperties.Alias).toString().startsWith(DomainXmlUtils.USER_ALIAS_PREFIX)
+                    || dbDevices.stream().anyMatch(d -> d.isManaged() && devType.equals(d.getDevice()))) {
+                dbDev = correlateWithAlias(dev, dbDevices, isHostedEngine);
             }
 
             if (dbDev.isPresent()) {
@@ -220,10 +232,10 @@ public class VmDevicesConverter {
     }
 
     private List<Map<String, Object>> parseMemories(XmlDocument document, List<VmDevice> devices) {
-        List<VmDevice> dbDevices= filterDevices(devices, VmDeviceGeneralType.MEMORY);
+        List<VmDevice> dbDevices = filterDevices(devices, VmDeviceGeneralType.MEMORY);
 
         List<Map<String, Object>> result = new ArrayList<>();
-        for (XmlNode node : selectNodes(document, VmDeviceGeneralType.MEMORY)) {
+        for (XmlNode node : document.selectNodes("//*/memory[@model != 'nvdimm']")) {
             Map<String, Object> dev = new HashMap<>();
             dev.put(VdsProperties.Type, VmDeviceGeneralType.MEMORY.getValue());
             dev.put(VdsProperties.Device, VmDeviceGeneralType.MEMORY.getValue());
@@ -235,7 +247,7 @@ public class VmDevicesConverter {
                 continue;
             }
 
-            Optional<VmDevice> dbDev = correlateWithUserAlias(dev, dbDevices);
+            Optional<VmDevice> dbDev = correlateWithAlias(dev, dbDevices, false);
 
             if (dbDev.isPresent()) {
                 dbDevices.remove(dbDev.get());
@@ -254,13 +266,60 @@ public class VmDevicesConverter {
         return result;
     }
 
+    private String getDevicePath(final HostDevice hostDevice) {
+        return (String)hostDevice.getSpecParams().get(VdsProperties.DEVICE_PATH);
+    }
+
+    private List<Map<String, Object>> parseNvdimms(XmlDocument document, List<VmDevice> devices, Guid hostId) {
+        List<VmDevice> dbDevices = filterDevices(devices, VmDeviceGeneralType.HOSTDEV);
+        MemoizingSupplier<Map<String, HostDevice>> pathToHostDeviceSupplier =
+                new MemoizingSupplier<>(() -> hostDeviceDao.getHostDevicesByHostId(hostId)
+                        .stream()
+                        .filter(device -> device.getCapability().equals("nvdimm"))
+                        .collect(Collectors.toMap(device -> getDevicePath(device), device -> device)));
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (XmlNode node : document.selectNodes("//*/memory[@model='nvdimm']")) {
+            XmlNode path = node.selectSingleNode("./source/path");
+            if (path == null) {
+                log.warn("No <path> found in NVDIMM device XML");
+                continue;
+            }
+            HostDevice hostDevice = pathToHostDeviceSupplier.get().get(path.innerText);
+            if (hostDevice == null) {
+                log.warn("NVDIMM device of '{}' could not be matched with any known device", path);
+                continue;
+            }
+
+            Map<String, Object> dev = new HashMap<>();
+            dev.put(VdsProperties.Address, DomainXmlUtils.parseAddress(node));
+            dev.put(VdsProperties.Type, VmDeviceGeneralType.HOSTDEV.getValue());
+            dev.put(VdsProperties.Alias, parseAlias(node));
+            dev.put(VdsProperties.Device, hostDevice.getDeviceName());
+
+            Optional<VmDevice> dbDev = correlateWithAlias(dev, dbDevices, false);
+
+            if (!dbDev.isPresent()) {
+                log.warn("NVDIMM device '{}' does not exist in the database, thus ignored",
+                         hostDevice.getDeviceName());
+                continue;
+            }
+
+            dev.put(VdsProperties.DeviceId, dbDev.get().getDeviceId().toString());
+            dev.put(VdsProperties.SpecParams, dbDev.get().getSpecParams());
+
+            result.add(dev);
+        }
+        return result;
+    }
+
     private String kiloBytesToMegaBytes(String value) {
         final int intKbValue = Integer.parseUnsignedInt(value);
         return String.valueOf(intKbValue / 1024);
     }
 
     private List<Map<String, Object>> parseUnmanagedHostDevices(XmlDocument document, List<VmDevice> devices,
-            Guid hostId, MemoizingSupplier<Map<Map<String, String>, HostDevice>> addressToHostDeviceSupplier) {
+            MemoizingSupplier<Map<Map<String, String>, HostDevice>> addressToHostDeviceSupplier) {
         List<VmDevice> dbDevices = filterDevices(devices, VmDeviceGeneralType.HOSTDEV);
 
         List<Map<String, Object>> result = new ArrayList<>();
@@ -283,7 +342,7 @@ public class VmDevicesConverter {
             dev.put(VdsProperties.Device, deviceType);
             dev.put(VdsProperties.SpecParams, hostAddress);
 
-            Optional<VmDevice> dbDev = correlateWithUserAlias(dev, dbDevices);
+            Optional<VmDevice> dbDev = correlateWithAlias(dev, dbDevices, false);
 
             dev.put(VdsProperties.DeviceId, dbDev.isPresent() ? dbDev.get().getDeviceId().toString() : Guid.newGuid().toString());
             result.add(dev);
@@ -297,7 +356,7 @@ public class VmDevicesConverter {
      * with one of the devices of the host. Host devices that were designed to be added as
      * unmanaged devices, like mdev devices, are handled separately.
      */
-    private List<Map<String, Object>> parseManagedHostDevices(XmlDocument document, List<VmDevice> devices, Guid hostId,
+    private List<Map<String, Object>> parseManagedHostDevices(XmlDocument document, List<VmDevice> devices,
             MemoizingSupplier<Map<Map<String, String>, HostDevice>> addressToHostDeviceSupplier) {
         List<VmDevice> dbDevices = filterDevices(devices, VmDeviceGeneralType.HOSTDEV);
         if (dbDevices.isEmpty()) {
@@ -323,7 +382,7 @@ public class VmDevicesConverter {
             dev.put(VdsProperties.Alias, parseAlias(node));
             dev.put(VdsProperties.Device, hostDevice.getDeviceName());
 
-            Optional<VmDevice> dbDev = correlateWithUserAlias(dev, dbDevices);
+            Optional<VmDevice> dbDev = correlateWithAlias(dev, dbDevices, false);
 
             if (!dbDev.isPresent()) {
                 log.warn("VM host device '{}' does not exist in the database, thus ignored",
@@ -350,7 +409,7 @@ public class VmDevicesConverter {
             dev.put(VdsProperties.Address, DomainXmlUtils.parseAddress(node));
             dev.put(VdsProperties.Alias, parseAlias(node));
 
-            Optional<VmDevice> dbDev = correlateWithUserAlias(dev, dbDevices);
+            Optional<VmDevice> dbDev = correlateWithAlias(dev, dbDevices, false);
 
             if (dbDev.isPresent()) {
                 dbDevices.remove(dbDev.get());
@@ -365,7 +424,7 @@ public class VmDevicesConverter {
         return result;
     }
 
-    List<Map<String, Object>> parseDisks(XmlDocument document, List<VmDevice> devices) {
+    List<Map<String, Object>> parseDisks(XmlDocument document, List<VmDevice> devices, boolean isHostedEngine) {
         List<VmDevice> dbDevices = filterDevices(devices, VmDeviceGeneralType.DISK, VmDeviceGeneralType.HOSTDEV);
 
         List<Map<String, Object>> result = new ArrayList<>();
@@ -378,7 +437,7 @@ public class VmDevicesConverter {
             dev.put(VdsProperties.Alias, parseAlias(node));
 
             String path = DomainXmlUtils.parseDiskPath(node);
-            Optional<VmDevice> dbDev = correlateWithUserAlias(dev, dbDevices);
+            Optional<VmDevice> dbDev = correlateWithAlias(dev, dbDevices, isHostedEngine);
 
             if (!dbDev.isPresent()) {
                 log.warn("unmanaged disk with path '{}' is ignored", path);
@@ -401,43 +460,9 @@ public class VmDevicesConverter {
         return result;
     }
 
-    private VmDevice findDiskDeviceInDbByPath(List<VmDevice> dbDevices, String diskType, String path,
-            MemoizingSupplier<Map<Guid, String>> diskToLunSupplier) {
-        return dbDevices.stream()
-                .filter(d -> {
-                    switch(diskType) {
-                    case "cdrom":
-                        if (!diskType.equals(d.getDevice())) {
-                            return false;
-                        }
-                        // payload and vm-init reside in /var/run/vdsm/payload while other images
-                        // are mounted as the primary, single and managed, CD-ROM device of the VM
-                        boolean payload = VmPayload.isPayload(d.getSpecParams());
-                        return !path.startsWith("/var/run/vdsm/payload/") ? d.isManaged() && !payload : payload;
-                    case "floppy":
-                        return diskType.equals(d.getDevice());
-                    default:
-                        if (d.getSnapshotId() != null && path.contains(VdsProperties.Transient)) {
-                            DiskImage diskImage =  diskImageDao.getDiskSnapshotForVmSnapshot(d.getDeviceId(), d.getSnapshotId());
-                            return diskImage != null && path.contains(diskImage.getImageId().toString());
-                        }
-                        Guid diskId = d.getDeviceId();
-                        return path.contains(diskId.toString()) ||
-                                isPathContainsLunIdOfDisk(path, diskId, diskToLunSupplier);
-                    }
-                })
-                .findFirst()
-                .orElse(null);
-    }
-
-    private boolean isPathContainsLunIdOfDisk(String path, Guid diskId,
-            MemoizingSupplier<Map<Guid, String>> diskToLunSupplier) {
-        String lunId = diskToLunSupplier.get().get(diskId);
-        return lunId != null && path.contains(lunId);
-    }
-
-    private List<Map<String, Object>> parseInterfaces(XmlDocument document, List<VmDevice> devices, Guid vmId,
-            MemoizingSupplier<Map<Map<String, String>, HostDevice>> addressToHostDeviceSupplier) {
+    private List<Map<String, Object>> parseInterfaces(XmlDocument document, List<VmDevice> devices,
+            MemoizingSupplier<Map<Map<String, String>, HostDevice>> addressToHostDeviceSupplier,
+            boolean isHostedEngine) {
         List<VmDevice> dbDevices = filterDevices(devices, VmDeviceGeneralType.INTERFACE);
 
         List<Map<String, Object>> result = new ArrayList<>();
@@ -454,7 +479,7 @@ public class VmDevicesConverter {
             dev.put(VdsProperties.Address, DomainXmlUtils.parseAddress(node));
             dev.put(VdsProperties.Alias, parseAlias(node));
 
-            Optional<VmDevice> dbDev = correlateWithUserAlias(dev, dbDevices);
+            Optional<VmDevice> dbDev = correlateWithAlias(dev, dbDevices, isHostedEngine);
 
             if (!dbDev.isPresent()) {
                 String macAddress = DomainXmlUtils.parseMacAddress(node);
@@ -483,7 +508,8 @@ public class VmDevicesConverter {
         return hostDevice.getDeviceName();
     }
 
-    private List<Map<String, Object>> parseVideos(XmlDocument document, List<VmDevice> devices) {
+    private List<Map<String, Object>> parseVideos(XmlDocument document, List<VmDevice> devices,
+            boolean isHostedEngine) {
         List<VmDevice> dbDevices = filterDevices(devices, VmDeviceGeneralType.VIDEO);
 
         List<Map<String, Object>> result = new ArrayList<>();
@@ -495,7 +521,7 @@ public class VmDevicesConverter {
             dev.put(VdsProperties.Alias, parseAlias(node));
 
             // There is supposed to be one video device of each type (spice/vnc/..)
-            Optional<VmDevice> dbDev = correlateWithUserAlias(dev, dbDevices);
+            Optional<VmDevice> dbDev = correlateWithAlias(dev, dbDevices, isHostedEngine);
 
             if (!dbDev.isPresent()) {
                 log.warn("unmanaged video device with address '{}' is ignored", dev.get(VdsProperties.Address));
@@ -509,24 +535,6 @@ public class VmDevicesConverter {
         }
 
         return result;
-    }
-
-    /** This function is called when a video device has not been correlated by its alias.
-     * Select the video device if libvirt sent video of type none but the VM needs a video device.
-     *
-     * @param device Libvirt device
-     * @param allDevices All devices in the DB
-     * @return true if "none" video device needs to be included
-     */
-    private boolean isNoneVideoDeviceValid(Map<String, Object> device, List<VmDevice> allDevices) {
-        // Video device is needed when there is a graphics console, even if the device is not plugged in.
-        // If not included, libvirt will add a default video device.
-        boolean videoNeeded = allDevices.stream().anyMatch(vmDevice -> vmDevice.getType() == VmDeviceGeneralType.GRAPHICS);
-
-        // When a vGPU is used as a display device, libvirt removes alias from VIDEO element. Tricks need to be
-        // used to correctly correlate the device.
-        // See https://bugzilla.redhat.com/show_bug.cgi?id=1720612
-        return device.get(VdsProperties.Device).equals("none") && videoNeeded;
     }
 
     /**
@@ -661,17 +669,39 @@ public class VmDevicesConverter {
         return devices.stream().filter(d -> d.getType() == devType).findFirst().orElse(null);
     }
 
-    private Optional<VmDevice> correlateWithUserAlias(Map<String, Object> device,
-            List<VmDevice> dbDevices) {
+    private Optional<VmDevice> correlateWithAlias(Map<String, Object> device, List<VmDevice> dbDevices,
+            boolean isHostedEngine) {
         String alias = (String) device.get(VdsProperties.Alias);
         try {
             Guid deviceId = Guid.createGuidFromString(alias.substring(DomainXmlUtils.USER_ALIAS_PREFIX.length()));
-            return dbDevices.stream()
+            Optional<VmDevice> result = dbDevices.stream()
                     .filter(dev -> deviceId.equals(dev.getDeviceId()))
                     .findFirst();
+            if (result.isPresent()) {
+                return result;
+            }
         } catch(Exception e) {
-            log.warn("Received unexpected user-alias: {}", alias);
-            return Optional.empty();
+            log.debug("Received unexpected user-alias: {}", alias);
         }
+        // We need it in case the user have a VM running from old versions(4.1) without shutting it down as a backward
+        // compatibility.
+        Optional<VmDevice> result = dbDevices.stream()
+                .filter(dev -> alias.equals(dev.getAlias()))
+                .findFirst();
+        if (result.isPresent()) {
+            return result;
+        }
+        // In case of HE VM, it is possible the alias is missing after the first boot.
+        if (isHostedEngine) {
+            result = dbDevices.stream()
+                    .filter(d -> d.isManaged() && d.getDevice().equals(device.get(VdsProperties.Device))
+                            && d.getType().getValue().equals(device.get(VdsProperties.Type)))
+                    .findAny();
+            if (result.isPresent() && result.stream().count() == 1) {
+                return result;
+            }
+        }
+        log.warn("The alias wasn't found in the database, {}", alias);
+        return Optional.empty();
     }
 }

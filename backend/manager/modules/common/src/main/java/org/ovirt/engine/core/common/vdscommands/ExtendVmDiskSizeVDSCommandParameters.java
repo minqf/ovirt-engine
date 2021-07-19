@@ -1,5 +1,6 @@
 package org.ovirt.engine.core.common.vdscommands;
 
+import java.util.Collections;
 import java.util.Map;
 
 import org.ovirt.engine.core.common.utils.PDIVMapBuilder;
@@ -12,19 +13,29 @@ public class ExtendVmDiskSizeVDSCommandParameters extends VdsAndVmIDVDSParameter
     private Guid storageDomainId;
     private Guid imageGroupId;
     private Guid imageId;
+    private String lunGuid;
 
     public ExtendVmDiskSizeVDSCommandParameters(Guid vdsId,
-                                                Guid vmId,
-                                                Guid storagePoolId,
-                                                Guid storageDomainId,
-                                                Guid imageId,
-                                                Guid imageGroupId,
-                                                long newSize) {
+            Guid vmId,
+            Guid storagePoolId,
+            Guid storageDomainId,
+            Guid imageId,
+            Guid imageGroupId,
+            long newSize) {
         super(vdsId, vmId);
         this.storagePoolId = storagePoolId;
         this.storageDomainId = storageDomainId;
         this.imageId = imageId;
         this.imageGroupId = imageGroupId;
+        this.newSize = newSize;
+    }
+
+    public ExtendVmDiskSizeVDSCommandParameters(Guid vdsId,
+            Guid vmId,
+            String lunGuid,
+            long newSize) {
+        super(vdsId, vmId);
+        this.lunGuid = lunGuid;
         this.newSize = newSize;
     }
 
@@ -72,6 +83,9 @@ public class ExtendVmDiskSizeVDSCommandParameters extends VdsAndVmIDVDSParameter
     }
 
     public Map<String, String> getDriveSpecs() {
+        if (lunGuid != null) {
+            return Collections.singletonMap("GUID", lunGuid);
+        }
         return PDIVMapBuilder.create()
                 .setPoolId(getStoragePoolId())
                 .setDomainId(getStorageDomainId())

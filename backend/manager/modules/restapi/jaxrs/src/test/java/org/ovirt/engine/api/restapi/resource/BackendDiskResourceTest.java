@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.stream.Stream;
 
 import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.core.Response;
@@ -26,9 +27,13 @@ import org.ovirt.engine.core.common.businessentities.storage.ImageStatus;
 import org.ovirt.engine.core.common.businessentities.storage.PropagateErrors;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeType;
+import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.queries.IdQueryParameters;
 import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.core.compat.Guid;
+import org.ovirt.engine.core.utils.MockConfigDescriptor;
+import org.ovirt.engine.core.utils.MockedConfig;
+
 
 @MockitoSettings(strictness = Strictness.LENIENT)
 public class BackendDiskResourceTest
@@ -36,11 +41,18 @@ public class BackendDiskResourceTest
 
     protected static final Guid DISK_ID = GUIDS[1];
 
+    public static Stream<MockConfigDescriptor<?>> mockConfiguration() {
+        return Stream.of(
+                MockConfigDescriptor.of(ConfigValues.PropagateDiskErrors, false)
+        );
+    }
+
     public BackendDiskResourceTest() {
         super(new BackendDiskResource(DISK_ID.toString()));
     }
 
     @Test
+    @MockedConfig("mockConfiguration")
     public void testGet() {
         setUriInfo(setUpBasicUriExpectations());
         setUpEntityQueryExpectations(
@@ -56,6 +68,7 @@ public class BackendDiskResourceTest
     }
 
     @Test
+    @MockedConfig("mockConfiguration")
     public void testExport() {
         setUriInfo(setUpActionExpectations(ActionType.ExportRepoImage,
                 ExportRepoImageParameters.class,
@@ -70,6 +83,7 @@ public class BackendDiskResourceTest
     }
 
     @Test
+    @MockedConfig("mockConfiguration")
     public void testMoveById() {
         setUpEntityQueryExpectations(QueryType.GetDiskAndSnapshotsByDiskId,
                 IdQueryParameters.class,
@@ -85,6 +99,7 @@ public class BackendDiskResourceTest
     }
 
     @Test
+    @MockedConfig("mockConfiguration")
     public void testCopyById() {
         setUpEntityQueryExpectations(QueryType.GetDiskAndSnapshotsByDiskId,
                 IdQueryParameters.class,
@@ -137,10 +152,12 @@ public class BackendDiskResourceTest
 
     static org.ovirt.engine.core.common.businessentities.storage.Disk setUpStatisticalEntityExpectations(DiskImage entity) {
         entity.setReadRate(1);
-        entity.setWriteRate(2);
-        entity.setReadLatency(3.0);
-        entity.setWriteLatency(4.0);
-        entity.setFlushLatency(5.0);
+        entity.setReadOps(2L);
+        entity.setWriteRate(3);
+        entity.setWriteOps(4L);
+        entity.setReadLatency(5.0);
+        entity.setWriteLatency(6.0);
+        entity.setFlushLatency(7.0);
         return entity;
     }
 

@@ -21,6 +21,7 @@ import javax.inject.Inject;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.ConsoleDisconnectAction;
 import org.ovirt.engine.core.common.businessentities.MigrationSupport;
 import org.ovirt.engine.core.common.businessentities.OriginType;
@@ -46,6 +47,8 @@ public class VmStaticDaoTest extends BaseGenericDaoTestCase<Guid, VmStatic, VmSt
             FixturesTool.HOST_ID,
             FixturesTool.GLUSTER_BRICK_SERVER1};
 
+    private static final String RUNNING_NAME_WITH_LEASE_ON_STORAGE_DOMAIN = "rhel5-pool-57";
+
     @Inject
     private SnapshotDao snapshotDao;
     @Inject
@@ -65,6 +68,7 @@ public class VmStaticDaoTest extends BaseGenericDaoTestCase<Guid, VmStatic, VmSt
         newVmStatic.setId(Guid.newGuid());
         newVmStatic.setName("New Virtual Machine");
         newVmStatic.setClusterId(FixturesTool.CLUSTER);
+        newVmStatic.setBiosType(BiosType.Q35_SEA_BIOS);
         newVmStatic.setVmtGuid(FixturesTool.VM_TEMPLATE_RHEL5);
         newVmStatic.setOrigin(OriginType.OVIRT);
         newVmStatic.setQuotaId(FixturesTool.QUOTA_GENERAL);
@@ -252,12 +256,6 @@ public class VmStaticDaoTest extends BaseGenericDaoTestCase<Guid, VmStatic, VmSt
     }
 
     @Test
-    public void testGetAllNamesPinnedToHostReturnsNothingForRandomHost() {
-        assertTrue(dao.getAllNamesPinnedToHost(Guid.newGuid()).isEmpty());
-    }
-
-
-    @Test
     public void testGetDbGeneration() {
         Long version = dao.getDbGeneration(FixturesTool.VM_RHEL5_POOL_50);
         assertNotNull(version, "db generation shouldn't be null");
@@ -281,19 +279,6 @@ public class VmStaticDaoTest extends BaseGenericDaoTestCase<Guid, VmStatic, VmSt
         dao.incrementDbGeneration(FixturesTool.VM_RHEL5_POOL_50);
         Long version = dao.getDbGeneration(FixturesTool.VM_RHEL5_POOL_50);
         assertEquals(2, version.longValue(), "db generation wasn't incremented as expected");
-    }
-
-    @Test
-    public void testGetAllNamesPinnedToHostReturnsNothingForHostButNotPinned() {
-        assertTrue(dao.getAllNamesPinnedToHost(FixturesTool.HOST_ID).isEmpty());
-    }
-
-    @Test
-    public void testGetAllNamesPinnedToHostReturnsVmNameForHostPinned() {
-        List<String> namesPinnedToHost = dao.getAllNamesPinnedToHost(FixturesTool.VDS_RHEL6_NFS_SPM);
-
-        assertFalse(namesPinnedToHost.isEmpty());
-        assertTrue(namesPinnedToHost.contains(existingEntity.getName()));
     }
 
     /**
@@ -489,9 +474,8 @@ public class VmStaticDaoTest extends BaseGenericDaoTestCase<Guid, VmStatic, VmSt
 
     @Test
     public void testGetAllActiveWithLeaseOnForStorageDomain() {
-        List<Guid> runningVmsWithLeasesIds = dao.getAllRunningWithLeaseOnStorageDomain(FixturesTool.STORAGE_DOMAIN_NFS2_1)
-                .stream().map(VmBase::getId).collect(Collectors.toList());
-        assertThat(runningVmsWithLeasesIds, Matchers.contains(FixturesTool.VM_RHEL5_POOL_57));
+        List<String> runningVmsWithLeasesIds = dao.getAllRunningNamesWithLeaseOnStorageDomain(FixturesTool.STORAGE_DOMAIN_NFS2_1);
+        assertThat(runningVmsWithLeasesIds, Matchers.contains(RUNNING_NAME_WITH_LEASE_ON_STORAGE_DOMAIN));
     }
 
     @Test

@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
+import java.util.stream.Stream;
 
 import org.apache.commons.lang.SerializationException;
 import org.codehaus.jackson.map.DeserializationConfig;
@@ -27,13 +28,24 @@ import org.ovirt.engine.core.common.action.LockProperties;
 import org.ovirt.engine.core.common.action.LockProperties.Scope;
 import org.ovirt.engine.core.common.businessentities.network.Network;
 import org.ovirt.engine.core.common.businessentities.network.VdsNetworkInterface;
+import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
+import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.compat.Guid;
+import org.ovirt.engine.core.utils.MockConfigDescriptor;
+import org.ovirt.engine.core.utils.MockedConfig;
 
 
 /**
  * Tests for {@link JsonObjectSerializer}.
  */
 public class JsonObjectSerializerTest {
+
+     public static Stream<MockConfigDescriptor<?>> mockConfiguration() {
+         return Stream.of(
+                  MockConfigDescriptor.of(ConfigValues.PropagateDiskErrors, false)
+         );
+     }
+
 
     @Test
     public void testSerialize() {
@@ -66,6 +78,7 @@ public class JsonObjectSerializerTest {
     }
 
     @Test
+    @MockedConfig("mockConfiguration")
     public void serializeParametersMap() {
         Map<String, Serializable> data = new HashMap<>();
         data.put("NEXT_COMMAND_TYPE", ActionType.DestroyImage);
@@ -74,15 +87,16 @@ public class JsonObjectSerializerTest {
     }
 
     @Test
+    @MockedConfig("mockConfiguration")
     public void serializeCreateSnapshotForVmParametersMap() {
-        Map<Guid, Guid> diskToImageIds = new HashMap<>();
-        diskToImageIds.put(Guid.newGuid(), Guid.newGuid());
+        Map<Guid, DiskImage> diskImagesMap = new HashMap<>();
+        diskImagesMap.put(Guid.newGuid(), new DiskImage());
         CreateSnapshotForVmParameters params = new CreateSnapshotForVmParameters(
                 Guid.newGuid(),
                 "Test",
                 false,
-                new TreeSet<>(diskToImageIds.keySet()));
-        params.setDiskToImageIds(diskToImageIds);
+                new TreeSet<>(diskImagesMap.keySet()));
+        params.setDiskImagesMap(diskImagesMap);
 
         JsonObjectSerializer serializer = new JsonObjectSerializer();
         String json = serializer.serialize(params);
@@ -95,15 +109,16 @@ public class JsonObjectSerializerTest {
     }
 
     @Test
+    @MockedConfig("mockConfiguration")
     public void serializeCreateSnapshotForVmParametersMapFailure() {
-        Map<Guid, Guid> diskToImageIds = new HashMap<>();
-        diskToImageIds.put(Guid.newGuid(), Guid.newGuid());
+        Map<Guid, DiskImage> diskImagesMap = new HashMap<>();
+        diskImagesMap.put(Guid.newGuid(), new DiskImage());
         CreateSnapshotForVmParameters params = new CreateSnapshotForVmParameters(
                 Guid.newGuid(),
                 "Test",
                 false,
-                diskToImageIds.keySet());
-        params.setDiskToImageIds(diskToImageIds);
+                diskImagesMap.keySet());
+        params.setDiskImagesMap(diskImagesMap);
 
         JsonObjectSerializer serializer = new JsonObjectSerializer();
         String json = serializer.serialize(params);
@@ -114,15 +129,16 @@ public class JsonObjectSerializerTest {
     }
 
     @Test
+    @MockedConfig("mockConfiguration")
     public void objectMapperSerializeCreateSnapshotForVmParametersMapFailure() {
-        Map<Guid, Guid> diskToImageIds = new HashMap<>();
-        diskToImageIds.put(Guid.newGuid(), Guid.newGuid());
+        Map<Guid, DiskImage> diskImagesMap = new HashMap<>();
+        diskImagesMap.put(Guid.newGuid(), new DiskImage());
         CreateSnapshotForVmParameters params = new CreateSnapshotForVmParameters(
                 Guid.newGuid(),
                 "Test",
                 false,
-                diskToImageIds.keySet());
-        params.setDiskToImageIds(diskToImageIds);
+                diskImagesMap.keySet());
+        params.setDiskImagesMap(diskImagesMap);
 
         try {
             String json = serialize(params);
@@ -135,6 +151,7 @@ public class JsonObjectSerializerTest {
     }
 
     @Test
+    @MockedConfig("mockConfiguration")
     public void serializeDestroyImageParameters() {
         List<Guid> guids = new ArrayList<>(Arrays.asList(Guid.newGuid(), Guid.newGuid()));
         DestroyImageParameters destroyImageParameters = new DestroyImageParameters(Guid.newGuid(),

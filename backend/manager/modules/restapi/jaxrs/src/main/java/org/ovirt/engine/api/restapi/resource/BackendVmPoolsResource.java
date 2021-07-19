@@ -120,13 +120,9 @@ public class BackendVmPoolsResource
         params.setSoundDeviceEnabled(pool.isSetSoundcardEnabled() ? pool.isSoundcardEnabled() : !VmHelper.getSoundDevicesForEntity(this, template.getId()).isEmpty());
         params.setRngDevice(pool.isSetVm() && pool.getVm().isSetRngDevice() ?
                 RngDeviceMapper.map(pool.getVm().getRngDevice(), null) : params.getRngDevice());
-        boolean balloonEnabled = pool.isSetVm() &&
-                pool.getVm().isSetMemoryPolicy() &&
-                pool.getVm().getMemoryPolicy().isSetBallooning() &&
-                pool.getVm().getMemoryPolicy().isBallooning();
-        params.setBalloonEnabled(balloonEnabled);
         params.getVmStaticData().setCustomProperties(pool.isSetVm() && pool.getVm().isSetCustomProperties() ?
                 CustomPropertiesParser.parse(pool.getVm().getCustomProperties().getCustomProperties()) : params.getVmStaticData().getCustomProperties());
+        params.setTpmEnabled(pool.isSetTpmEnabled() ? pool.isTpmEnabled() : null);
 
         return performCreate(ActionType.AddVmPool,
                                params,
@@ -146,12 +142,12 @@ public class BackendVmPoolsResource
             Vm vm = VmMapper.map(vmModel, new Vm());
             DisplayHelper.adjustDisplayData(this, vm, false);
             BackendVmDeviceHelper.setPayload(this, vm);
-            MemoryPolicyHelper.setupMemoryBalloon(vm, this);
             BackendVmDeviceHelper.setConsoleDevice(this, vm);
             BackendVmDeviceHelper.setVirtioScsiController(this, vm);
             BackendVmDeviceHelper.setSoundcard(this, vm);
             BackendVmDeviceHelper.setCertificateInfo(this, vm);
             BackendVmDeviceHelper.setRngDevice(this, vm);
+            BackendVmDeviceHelper.setTpmDevice(this, vm);
             pool.setVm(vm);
         }
         // Legacy code

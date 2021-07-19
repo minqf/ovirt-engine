@@ -169,9 +169,9 @@ public class VmHandlerTest {
     public void testInValidUpdateOfStatusRestrictedEditableFieldOnRunningVm() {
         // Given
         VmStatic src = new VmStatic();
-        src.setSingleQxlPci(true);
+        src.setMultiQueuesEnabled(true);
         VmStatic dest = new VmStatic();
-        dest.setSingleQxlPci(false);
+        dest.setMultiQueuesEnabled(false);
 
         // When
         boolean updateIsValid = vmHandler.isUpdateValid(src, dest, VMStatus.Up, false);
@@ -213,8 +213,8 @@ public class VmHandlerTest {
         boolean updateIsValid = vmHandler.isUpdateValid(src, dest, VMStatus.Up, false);
 
         // Then
-        assertFalse(updateIsValid,
-                "Update should be invalid for different names on a running, hosted engine VM");
+        assertTrue(updateIsValid,
+                "Update should be valid for different names on a running, hosted engine VM");
     }
 
     @Test
@@ -241,10 +241,23 @@ public class VmHandlerTest {
         isoNames.add("Rhev-toolSsetup_4.2_5.iso");
 
         // When
-        String latestVersion = vmHandler.getLatestGuestToolsVersion(isoNames);
+        String latestVersion = vmHandler.getLatestGuestToolsVersion(isoNames, isoDomainListSynchronizer.getRegexToolPattern());
 
         // Then
         assertEquals(latestVersion, "4.2.8");
+    }
+
+    @Test
+    public void testGetLatestGuestVirtioVersion() {
+        Set<String> isoNames = new HashSet<>();
+        isoNames.add("virtio-win-0.1.185.iso");
+        isoNames.add("virtio-win-1.9.12.iso");
+
+        // When
+        String latestVersion = vmHandler.getLatestGuestToolsVersion(isoNames, vmHandler.getRegexVirtIoIsoPattern());
+
+        // Then
+        assertEquals(latestVersion, "1.9.12");
     }
 
     @Test

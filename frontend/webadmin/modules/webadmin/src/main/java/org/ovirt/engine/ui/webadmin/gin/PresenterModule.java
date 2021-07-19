@@ -257,6 +257,7 @@ import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.cluster.ClusterSu
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.cluster.SubTabClusterAffinityGroupPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.cluster.SubTabClusterAffinityLabelPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.cluster.SubTabClusterCpuProfilePresenter;
+import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.cluster.SubTabClusterEventPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.cluster.SubTabClusterGeneralPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.cluster.SubTabClusterGlusterHookPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.cluster.SubTabClusterHostPresenter;
@@ -342,7 +343,6 @@ import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.storage.SubTabSto
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.storage.SubTabStorageLeasePresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.storage.SubTabStoragePermissionPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.storage.SubTabStorageRegisterDiskImagePresenter;
-import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.storage.SubTabStorageRegisterDiskPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.storage.SubTabStorageRegisterTemplatePresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.storage.SubTabStorageRegisterVmPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.storage.SubTabStorageSnapshotPresenter;
@@ -545,6 +545,7 @@ import org.ovirt.engine.ui.webadmin.section.main.view.tab.cluster.ClusterSubTabP
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.cluster.SubTabClusterAffinityGroupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.cluster.SubTabClusterAffinityLabelView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.cluster.SubTabClusterCpuProfileView;
+import org.ovirt.engine.ui.webadmin.section.main.view.tab.cluster.SubTabClusterEventView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.cluster.SubTabClusterGeneralView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.cluster.SubTabClusterGlusterHookView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.cluster.SubTabClusterHostView;
@@ -630,7 +631,6 @@ import org.ovirt.engine.ui.webadmin.section.main.view.tab.storage.SubTabStorageI
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.storage.SubTabStorageLeaseView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.storage.SubTabStoragePermissionView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.storage.SubTabStorageRegisterDiskImageView;
-import org.ovirt.engine.ui.webadmin.section.main.view.tab.storage.SubTabStorageRegisterDiskView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.storage.SubTabStorageRegisterTemplateView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.storage.SubTabStorageRegisterVmView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.storage.SubTabStorageSnapshotView;
@@ -900,10 +900,6 @@ public class PresenterModule extends BasePresenterModule {
                 SubTabStorageDiskPresenter.ViewDef.class,
                 SubTabStorageDiskView.class,
                 SubTabStorageDiskPresenter.ProxyDef.class);
-        bindPresenter(SubTabStorageRegisterDiskPresenter.class,
-                SubTabStorageRegisterDiskPresenter.ViewDef.class,
-                SubTabStorageRegisterDiskView.class,
-                SubTabStorageRegisterDiskPresenter.ProxyDef.class);
         bindPresenter(SubTabStorageRegisterDiskImagePresenter.class,
                 SubTabStorageRegisterDiskImagePresenter.ViewDef.class,
                 SubTabStorageRegisterDiskImageView.class,
@@ -1001,6 +997,10 @@ public class PresenterModule extends BasePresenterModule {
                 SubTabClusterAffinityLabelPresenter.ViewDef.class,
                 SubTabClusterAffinityLabelView.class,
                 SubTabClusterAffinityLabelPresenter.ProxyDef.class);
+        bindPresenter(SubTabClusterEventPresenter.class,
+                SubTabClusterEventPresenter.ViewDef.class,
+                SubTabClusterEventView.class,
+                SubTabClusterEventPresenter.ProxyDef.class);
         bindSingletonPresenterWidget(
                 new TypeLiteral<SearchPanelPresenterWidget<Cluster, ClusterListModel<Void>>>(){},
                 new TypeLiteral<SearchPanelPresenterWidget.ViewDef<ClusterListModel<Void>>>(){},

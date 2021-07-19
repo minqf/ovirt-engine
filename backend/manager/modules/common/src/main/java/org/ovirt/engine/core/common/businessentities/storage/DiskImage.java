@@ -16,11 +16,15 @@ public class DiskImage extends DiskImageBase {
     private static final long serialVersionUID = 3185087852755356847L;
 
     private Date lastModifiedDate;
+    private Date snapshotCreationDate;
     private List<String> storagesNames;
     private long actualSizeInBytes;
     private long apparentSizeInBytes;
+    private Long initialSizeInBytes;
     private int readRateFromDiskImageDynamic;
+    private long readOpsFromDiskImageDynamic;
     private int writeRateFromDiskImageDynamic;
+    private long writeOpsFromDiskImageDynamic;
 
     // Latency fields from DiskImageDynamic which are measured in seconds.
     private Double readLatency;
@@ -116,6 +120,14 @@ public class DiskImage extends DiskImageBase {
         this.lastModifiedDate = lastModifiedDate;
     }
 
+    public Date getSnapshotCreationDate() {
+        return snapshotCreationDate;
+    }
+
+    public void setSnapshotCreationDate(Date snapshotCreationDate) {
+        this.snapshotCreationDate = snapshotCreationDate;
+    }
+
     public long getActualSizeInBytes() {
         return actualSizeInBytes;
     }
@@ -123,6 +135,14 @@ public class DiskImage extends DiskImageBase {
     public void setActualSizeInBytes(long size) {
         actualSizeInBytes = size;
         setActualSize(getActualSizeInBytes() * 1.0 / (1024 * 1024 * 1024));
+    }
+
+    public Long getInitialSizeInBytes() {
+        return initialSizeInBytes;
+    }
+
+    public void setInitialSizeInBytes(Long size) {
+        initialSizeInBytes = size;
     }
 
     public boolean hasActualSize() {
@@ -145,12 +165,28 @@ public class DiskImage extends DiskImageBase {
         this.readRateFromDiskImageDynamic = readRateFromDiskImageDynamic;
     }
 
+    public long getReadOps() {
+        return readOpsFromDiskImageDynamic;
+    }
+
+    public void setReadOps(long readOpsFromDiskImageDynamic) {
+        this.readOpsFromDiskImageDynamic = readOpsFromDiskImageDynamic;
+    }
+
     public int getWriteRate() {
         return writeRateFromDiskImageDynamic;
     }
 
     public void setWriteRate(int writeRateFromDiskImageDynamic) {
         this.writeRateFromDiskImageDynamic = writeRateFromDiskImageDynamic;
+    }
+
+    public long getWriteOps() {
+        return writeOpsFromDiskImageDynamic;
+    }
+
+    public void setWriteOps(long writeOpsFromDiskImageDynamic) {
+        this.writeOpsFromDiskImageDynamic = writeOpsFromDiskImageDynamic;
     }
 
     public Double getReadLatency() {
@@ -419,10 +455,14 @@ public class DiskImage extends DiskImageBase {
         di.setQuotaEnforcementType(diskImage.getQuotaEnforcementType());
         di.setActive(diskImage.getActive());
         di.setCreationDate(new Date(diskImage.getCreationDate().getTime()));
+        di.setSnapshotCreationDate(diskImage.getSnapshotCreationDate());
         di.setLastModifiedDate(new Date(diskImage.getLastModifiedDate().getTime()));
         di.actualSizeInBytes = diskImage.actualSizeInBytes;
+        di.initialSizeInBytes = diskImage.initialSizeInBytes;
         di.readRateFromDiskImageDynamic = diskImage.readRateFromDiskImageDynamic;
+        di.readOpsFromDiskImageDynamic = diskImage.readOpsFromDiskImageDynamic;
         di.writeRateFromDiskImageDynamic = diskImage.writeRateFromDiskImageDynamic;
+        di.writeOpsFromDiskImageDynamic = diskImage.writeOpsFromDiskImageDynamic;
         di.readLatency = diskImage.readLatency;
         di.writeLatency = diskImage.writeLatency;
         di.flushLatency = diskImage.flushLatency;
@@ -465,14 +505,18 @@ public class DiskImage extends DiskImageBase {
                 super.hashCode(),
                 getImage(),
                 snapshots,
+                snapshotCreationDate,
                 actualSizeInBytes,
+                initialSizeInBytes,
                 appList,
                 description,
                 readRateFromDiskImageDynamic,
+                readOpsFromDiskImageDynamic,
                 storageIds,
                 storagePoolId,
                 storagesNames,
                 writeRateFromDiskImageDynamic,
+                writeOpsFromDiskImageDynamic,
                 readLatency,
                 writeLatency,
                 flushLatency,
@@ -494,13 +538,17 @@ public class DiskImage extends DiskImageBase {
                 && Objects.equals(getImage(), other.getImage())
                 && Objects.equals(snapshots, other.snapshots)
                 && actualSizeInBytes == other.actualSizeInBytes
+                && Objects.equals(initialSizeInBytes, other.initialSizeInBytes)
                 && Objects.equals(appList, other.appList)
                 && Objects.equals(description, other.description)
+                && Objects.equals(snapshotCreationDate, other.getSnapshotCreationDate())
                 && readRateFromDiskImageDynamic == other.readRateFromDiskImageDynamic
+                && readOpsFromDiskImageDynamic == other.readOpsFromDiskImageDynamic
                 && Objects.equals(storageIds, other.storageIds)
                 && Objects.equals(storagePoolId, other.storagePoolId)
                 && Objects.equals(storagesNames, other.storagesNames)
                 && writeRateFromDiskImageDynamic == other.writeRateFromDiskImageDynamic
+                && writeOpsFromDiskImageDynamic == other.writeOpsFromDiskImageDynamic
                 && Objects.equals(readLatency, other.readLatency)
                 && Objects.equals(writeLatency, other.writeLatency)
                 && Objects.equals(flushLatency, other.flushLatency)

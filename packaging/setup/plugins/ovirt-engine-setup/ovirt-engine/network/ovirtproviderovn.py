@@ -22,7 +22,9 @@ import uuid
 
 from collections import namedtuple
 
-from M2Crypto import RSA
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import padding
 
 from otopi import constants as otopicons
 from otopi import filetransaction
@@ -277,6 +279,7 @@ class Plugin(plugin.PluginBase):
                     %(callback_prefix)s,
                     %(description)s,
                     %(email)s,
+                    %(encrypted_userinfo)s,
                     %(trusted)s,
                     %(notification_callback)s,
                     %(notification_callback_host_protocol)s,
@@ -301,6 +304,7 @@ class Plugin(plugin.PluginBase):
                 callback_prefix='',
                 description='ovirt-provider-ovn',
                 email='',
+                encrypted_userinfo=True,
                 trusted=True,
                 notification_callback='',
                 notification_callback_host_protocol='TLS',
@@ -376,13 +380,18 @@ class Plugin(plugin.PluginBase):
                 ),
                 logStreams=False,
             )
-            return RSA.load_key_string(
-                '\n'.join(stdout).encode()
-                )
+            return serialization.load_pem_private_key(
+                '\n'.join(stdout).encode(),
+                password=None,
+                backend=default_backend(),
+            )
 
-        encrypted_password = _getRSA().public_encrypt(
-            data=password.encode(),
-            padding=RSA.pkcs1_padding,
+        encrypted_password = _getRSA().public_key().encrypt(
+            password.encode(),
+            # TODO replace PKCS1v15 with PSS if/when we know we do not
+            # need m2crypto compatibility. Would likely require changes
+            # also in the engine and in the ovn provider.
+            padding=padding.PKCS1v15(),
         )
         return base64.b64encode(encrypted_password)
 
@@ -391,8 +400,11 @@ class Plugin(plugin.PluginBase):
             dialog=self.dialog,
             name='ovirt-provider-ovn',
             note=_(
-                'Configure ovirt-provider-ovn '
-                '(@VALUES@) [@DEFAULT@]: '
+                '\nConfiguring ovirt-provider-ovn also sets the Default '
+                'cluster\'s default network provider to ovirt-provider-ovn.\n'
+                'Non-Default clusters may be configured with an OVN after '
+                'installation.\n'
+                'Configure ovirt-provider-ovn (@VALUES@) [@DEFAULT@]: '
             ),
             prompt=True,
             default=True
@@ -559,17 +571,22 @@ class Plugin(plugin.PluginBase):
             )
         )
 
-    def _sanitize_ovn_key_file_permissions(self, file_path, enable_logging):
+    def _set_file_permissions(
+            self,
+            file_path,
+            enable_logging,
+            desired_permissions
+    ):
         current_permissions = stat.S_IMODE(
             os.lstat(
                 file_path
             ).st_mode
         )
-        desired_permissions = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP
         if desired_permissions != current_permissions:
             if enable_logging:
                 self.logger.info(_(
-                    'Setting permissions on {file} to enable OVN to read it.'
+                    'Setting permissions on {file} '
+                    'to enable OVN and engine to read it.'
                 ).format(
                     file=file_path
                 ))
@@ -581,6 +598,13 @@ class Plugin(plugin.PluginBase):
                 desired_permissions
             )
 
+    def _sanitize_ovn_key_file_permissions(self, file_path, enable_logging):
+        desired_permissions = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP
+        self._set_file_permissions(
+            file_path,
+            enable_logging,
+            desired_permissions
+        )
         desired_gid = grp.getgrnam('hugetlbfs').gr_gid
         current_gid = os.stat(file_path).st_gid
         if desired_gid != current_gid:
@@ -761,8 +785,12 @@ class Plugin(plugin.PluginBase):
         truststore_password = config.get(
             'ENGINE_EXTERNAL_PROVIDERS_TRUST_STORE_PASSWORD'
         )
+
+        # We need to disable FIPS configuration of OpenJDK to be able to work
+        # with file system keystores and interoperability with openssl
         command = (
             'keytool',
+            '-J-Dcom.redhat.fips=false',
             '-import',
             '-alias',
             OvnEnv.PROVIDER_NAME,
@@ -797,6 +825,11 @@ class Plugin(plugin.PluginBase):
             env={
                 'pass': truststore_password,
             },
+        )
+        self._set_file_permissions(
+            truststore,
+            True,
+            stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH,
         )
 
     def _is_provider_installed(self):
@@ -886,56 +919,14 @@ class Plugin(plugin.PluginBase):
 
     @plugin.event(
         stage=plugin.Stages.STAGE_MISC,
-        name=oenginecons.Stages.OVN_SERVICES_RESTART,
-        condition=lambda self: (
-            self._enabled and
-            not self.environment[osetupcons.CoreEnv.DEVELOPER_MODE]
-        )
-    )
-    def _restart_ovn_services(self):
-        for service in OvnEnv.ENGINE_MACHINE_OVN_SERVICES:
-            self._restart_service(service)
-
-    @plugin.event(
-        stage=plugin.Stages.STAGE_MISC,
         before=(
-            oenginecons.Stages.OVN_PROVIDER_SERVICE_RESTART,
+                oenginecons.Stages.OVN_SERVICES_RESTART,
         ),
-        after=(
-            oenginecons.Stages.CA_AVAILABLE,
-            oenginecons.Stages.OVN_SERVICES_RESTART,
-        ),
-        condition=lambda self: self._enabled or self._provider_installed,
-    )
-    def _misc_configure_ovn_pki(self):
-        self.logger.info(_('Updating OVN SSL configuration'))
-        self._configure_ovndb_north_connection()
-        self._configure_ovndb_south_connection()
-
-    @plugin.event(
-        stage=plugin.Stages.STAGE_MISC,
-        before=(
-            oenginecons.Stages.OVN_PROVIDER_SERVICE_RESTART,
-        ),
-        after=(
-            oenginecons.Stages.CA_AVAILABLE,
-            oenginecons.Stages.OVN_SERVICES_RESTART,
-        ),
-        condition=lambda self:
-            self._enabled
-    )
-    def _misc_configure_provider(self):
-        self._generate_client_secret()
-        self._configure_ovirt_provider_ovn()
-        self._upate_external_providers_keystore()
-
-    @plugin.event(
-        stage=plugin.Stages.STAGE_MISC,
         condition=lambda self: (
-            self._provider_installed and
-            not self.environment[
-                osetupcons.CoreEnv.DEVELOPER_MODE
-            ]
+                self._provider_installed and
+                not self.environment[
+                    osetupcons.CoreEnv.DEVELOPER_MODE
+                ]
         ),
     )
     def _upgrade(self):
@@ -982,17 +973,86 @@ class Plugin(plugin.PluginBase):
                 ).format(
                     file=oenginecons.OvnFileLocations.
                     OVIRT_PROVIDER_ENGINE_SETUP_CONFIG_FILE
-                    )
+                )
                 )
             else:
                 raise
 
     @plugin.event(
         stage=plugin.Stages.STAGE_MISC,
+        name=oenginecons.Stages.OVN_SERVICES_RESTART,
+        condition=lambda self: (
+            (self._enabled or self._provider_installed) and not
+            self.environment[osetupcons.CoreEnv.DEVELOPER_MODE]
+        )
+    )
+    def _restart_ovn_services(self):
+        for service in OvnEnv.ENGINE_MACHINE_OVN_SERVICES:
+            self._restart_service(service)
+
+    @plugin.event(
+        stage=plugin.Stages.STAGE_MISC,
+        before=(
+            oenginecons.Stages.OVN_PROVIDER_SERVICE_RESTART,
+        ),
+        after=(
+            oenginecons.Stages.CA_AVAILABLE,
+            oenginecons.Stages.OVN_SERVICES_RESTART,
+        ),
+        condition=lambda self: self._enabled or self._provider_installed,
+    )
+    def _misc_configure_ovn_pki(self):
+        self.logger.info(_('Updating OVN SSL configuration'))
+        self._configure_ovndb_north_connection()
+        self._configure_ovndb_south_connection()
+
+    @plugin.event(
+        stage=plugin.Stages.STAGE_MISC,
+        after=(
+                oenginecons.Stages.OVN_SERVICES_RESTART,
+        ),
+        condition=lambda self: self._enabled or self._provider_installed,
+    )
+    def _misc_configure_ovn_timeout(self):
+        self.logger.info(_('Updating OVN timeout configuration'))
+        self._execute_command(
+            (
+                self.OVN_SOUTH_DB_CONFIG.command,
+                'set',
+                'connection',
+                '.',
+                'inactivity_probe=60000',
+            ),
+            _(
+                'Failed to configure timeout on {name}'
+            ).format(
+                name=self.OVN_SOUTH_DB_CONFIG.name
+            )
+        )
+
+    @plugin.event(
+        stage=plugin.Stages.STAGE_MISC,
+        before=(
+            oenginecons.Stages.OVN_PROVIDER_SERVICE_RESTART,
+        ),
+        after=(
+            oenginecons.Stages.CA_AVAILABLE,
+            oenginecons.Stages.OVN_SERVICES_RESTART,
+        ),
+        condition=lambda self:
+            self._enabled
+    )
+    def _misc_configure_provider(self):
+        self._generate_client_secret()
+        self._configure_ovirt_provider_ovn()
+        self._upate_external_providers_keystore()
+
+    @plugin.event(
+        stage=plugin.Stages.STAGE_MISC,
         name=oenginecons.Stages.OVN_PROVIDER_SERVICE_RESTART,
         condition=lambda self: (
-            self._enabled and
-            not self.environment[osetupcons.CoreEnv.DEVELOPER_MODE]
+            (self._enabled or self._provider_installed) and not
+            self.environment[osetupcons.CoreEnv.DEVELOPER_MODE]
         )
     )
     def _restart_provider_service(self):
@@ -1051,7 +1111,7 @@ class Plugin(plugin.PluginBase):
             osetupcons.Stages.DIALOG_TITLES_S_SUMMARY,
         ),
         condition=lambda self: (
-            self._enabled and
+            (self._enabled or self._provider_installed) and
             self.environment[osetupcons.CoreEnv.DEVELOPER_MODE]
         )
     )

@@ -16,6 +16,7 @@ public enum ActionType {
     RemoveVm(4, ActionGroup.DELETE_VM, QuotaDependency.STORAGE),
     UpdateVm(5, ActionGroup.EDIT_VM_PROPERTIES, QuotaDependency.CLUSTER),
     RebootVm(6, ActionGroup.REBOOT_VM, QuotaDependency.NONE),
+    ResetVm(70, ActionGroup.RESET_VM, QuotaDependency.NONE),
     StopVm(7, ActionGroup.STOP_VM, QuotaDependency.BOTH),
     ShutdownVm(8, ActionGroup.SHUT_DOWN_VM, QuotaDependency.CLUSTER),
     ChangeDisk(9, ActionGroup.CHANGE_VM_CD, QuotaDependency.NONE),
@@ -36,10 +37,11 @@ public enum ActionType {
     AddVmInterface(28, ActionGroup.CONFIGURE_VM_NETWORK, false, QuotaDependency.NONE),
     RemoveVmInterface(29, ActionGroup.CONFIGURE_VM_NETWORK, false, QuotaDependency.NONE),
     UpdateVmInterface(30, ActionGroup.CONFIGURE_VM_NETWORK, false, QuotaDependency.NONE),
+    VmInterfacesModify(260, ActionGroup.CONFIGURE_VM_NETWORK, false, QuotaDependency.NONE),
     AddDisk(31, ActionGroup.CONFIGURE_VM_STORAGE, QuotaDependency.STORAGE),
     RegisterDisk(32, ActionGroup.CONFIGURE_VM_STORAGE, QuotaDependency.STORAGE),
     ExtractOva(33, QuotaDependency.NONE),
-    UpdateDisk(34, ActionGroup.CONFIGURE_VM_STORAGE, false, QuotaDependency.STORAGE),
+    UpdateDisk(34, ActionGroup.CONFIGURE_VM_STORAGE, QuotaDependency.STORAGE),
     ExportVmTemplateToOva(35, ActionGroup.IMPORT_EXPORT_VM, QuotaDependency.NONE),
     AttachDiskToVm(180, ActionGroup.CONFIGURE_VM_STORAGE, false, QuotaDependency.NONE),
     DetachDiskFromVm(181, ActionGroup.CONFIGURE_VM_STORAGE, false, QuotaDependency.NONE),
@@ -70,13 +72,19 @@ public enum ActionType {
     ConvertOva(50, QuotaDependency.NONE),
     CancelConvertVm(51, ActionGroup.IMPORT_EXPORT_VM, QuotaDependency.NONE),
     ImportVmFromExternalUrl(55, ActionGroup.IMPORT_EXPORT_VM, QuotaDependency.NONE),
+    ImportVmTemplateFromExternalUrl(57, ActionGroup.IMPORT_EXPORT_VM, QuotaDependency.NONE),
     AddVmNicFilterParameter(60, ActionGroup.CONFIGURE_VM_NETWORK, false, QuotaDependency.NONE),
+    AddVmNicFilterParameterLive(600, ActionGroup.CONFIGURE_VM_NETWORK, false, QuotaDependency.NONE),
     UpdateVmNicFilterParameter(61, ActionGroup.CONFIGURE_VM_NETWORK, false, QuotaDependency.NONE),
+    UpdateVmNicFilterParameterLive(610, ActionGroup.CONFIGURE_VM_NETWORK, false, QuotaDependency.NONE),
     RemoveVmNicFilterParameter(62, ActionGroup.CONFIGURE_VM_NETWORK, false, QuotaDependency.NONE),
+    RemoveVmNicFilterParameterLive(620, ActionGroup.CONFIGURE_VM_NETWORK, false, QuotaDependency.NONE),
     UpdateConvertedVm(63, QuotaDependency.NONE),
     RemoveUnregisteredVmTemplate(67, ActionGroup.DELETE_TEMPLATE, QuotaDependency.NONE),
     RemoveUnregisteredVm(68, ActionGroup.DELETE_VM, QuotaDependency.NONE),
     MeasureVolume(69, false, QuotaDependency.NONE),
+    SealVm(255, QuotaDependency.NONE),
+
     // VdsCommands
     AddVds(101, ActionGroup.CREATE_HOST, QuotaDependency.NONE),
     UpdateVds(102, ActionGroup.EDIT_HOST_CONFIGURATION, false, QuotaDependency.NONE),
@@ -116,6 +124,7 @@ public enum ActionType {
     HostEnrollCertificateInternal(140, QuotaDependency.NONE),
     HostUpgradeCheck(141, ActionGroup.EDIT_HOST_CONFIGURATION, false, QuotaDependency.NONE),
     HostUpgradeCheckInternal(142, QuotaDependency.NONE),
+    HandleVdsFips(143, QuotaDependency.NONE),
 
     // Network
     AddNetwork(154, ActionGroup.CREATE_STORAGE_POOL_NETWORK, QuotaDependency.NONE),
@@ -199,7 +208,9 @@ public enum ActionType {
     UpdateVolume(253, QuotaDependency.NONE),
     UpdateAllTemplateDisks(254, QuotaDependency.NONE),
     CreateSnapshotDisk(256, ActionGroup.MANIPULATE_VM_SNAPSHOTS, QuotaDependency.NONE),
-    CreateLiveSnapshotForVm(257, ActionGroup.MANIPULATE_VM_SNAPSHOTS, QuotaDependency.STORAGE),
+    CreateLiveSnapshotForVm(257, ActionGroup.MANIPULATE_VM_SNAPSHOTS, QuotaDependency.NONE),
+    AnsibleImageMeasure(258, QuotaDependency.NONE),
+    AnsiblePackOva(259, QuotaDependency.NONE),
 
     // VmPoolCommands
     AddVmPool(304, ActionGroup.CREATE_VM_POOL, QuotaDependency.BOTH),
@@ -222,9 +233,9 @@ public enum ActionType {
     CreateUserSession(425, ActionGroup.LOGIN, false, QuotaDependency.NONE),
 
     // UserProfile
-    AddUserProfile(421, ActionGroup.EDIT_PROFILE, false, QuotaDependency.NONE),
-    UpdateUserProfile(422, ActionGroup.EDIT_PROFILE, false, QuotaDependency.NONE),
-    RemoveUserProfile(423, ActionGroup.EDIT_PROFILE, false, QuotaDependency.NONE),
+    UpdateUserProfileProperty(427, ActionGroup.EDIT_PROFILE, false, QuotaDependency.NONE),
+    RemoveUserProfileProperty(428, ActionGroup.EDIT_PROFILE, false, QuotaDependency.NONE),
+    AddUserProfileProperty(429, ActionGroup.EDIT_PROFILE, false, QuotaDependency.NONE),
 
     // Tags
     AddTag(501, false, QuotaDependency.NONE),
@@ -296,7 +307,7 @@ public enum ActionType {
     AddSANStorageDomain(910, ActionGroup.CREATE_STORAGE_DOMAIN, QuotaDependency.NONE),
     ExtendSANStorageDomain(911, ActionGroup.EDIT_STORAGE_DOMAIN_CONFIGURATION, QuotaDependency.NONE),
     ReconstructMasterDomain(913, QuotaDependency.NONE),
-    DeactivateStorageDomainWithOvfUpdate(914, ActionGroup.MANIPULATE_STORAGE_DOMAIN, false, QuotaDependency.NONE),
+    DeactivateStorageDomainWithOvfUpdate(914, ActionGroup.MANIPULATE_STORAGE_DOMAIN, true, QuotaDependency.NONE),
     ProcessOvfUpdateForStorageDomain(1902, ActionGroup.MANIPULATE_STORAGE_DOMAIN, QuotaDependency.NONE),
     CreateOvfVolumeForStorageDomain(1903, ActionGroup.MANIPULATE_STORAGE_DOMAIN, QuotaDependency.NONE),
     RecoveryStoragePool(915, ActionGroup.CREATE_STORAGE_POOL, QuotaDependency.NONE),
@@ -345,16 +356,22 @@ public enum ActionType {
     CopyData(1033, QuotaDependency.STORAGE),
     CopyImageGroupVolumesData(1034, QuotaDependency.STORAGE),
     CopyImageGroupWithData(1035, QuotaDependency.STORAGE),
+    CopyManagedBlockDisk(1050, QuotaDependency.NONE),
     GlusterStorageSync(1036, QuotaDependency.NONE),
     GlusterStorageGeoRepSyncInternal(1037, QuotaDependency.NONE),
     ScheduleGlusterStorageSync(1038, ActionGroup.MANIPULATE_GLUSTER_VOLUME, QuotaDependency.NONE),
     FenceVolumeJob(1039, QuotaDependency.STORAGE),
     ReduceImage(1046, ActionGroup.REDUCE_DISK, QuotaDependency.NONE),
+    SwitchMasterStorageDomain(1048, ActionGroup.MANIPULATE_STORAGE_DOMAIN, QuotaDependency.NONE),
+    CleanFinishedTasks(1049, ActionGroup.MANIPULATE_HOST, QuotaDependency.NONE),
 
     // Leases
     AddVmLease(1040, QuotaDependency.NONE),
     RemoveVmLease(1041, QuotaDependency.NONE),
     GetVmLeaseInfo(1047, QuotaDependency.NONE),
+    AddExternalLease(1051, QuotaDependency.NONE),
+    RemoveExternalLease(1052, QuotaDependency.NONE),
+    FenceLeaseJob(1053, QuotaDependency.NONE),
 
     // Sync luns
     SyncAllStorageDomainsLuns(1042, QuotaDependency.NONE),
@@ -495,6 +512,14 @@ public enum ActionType {
     AddAffinityGroup(1950, ActionGroup.MANIPULATE_AFFINITY_GROUPS, false, QuotaDependency.NONE),
     EditAffinityGroup(1951, ActionGroup.MANIPULATE_AFFINITY_GROUPS, false, QuotaDependency.NONE),
     RemoveAffinityGroup(1952, ActionGroup.MANIPULATE_AFFINITY_GROUPS, false, QuotaDependency.NONE),
+    AddVmToAffinityGroup(1953, ActionGroup.MANIPULATE_AFFINITY_GROUPS, false, QuotaDependency.NONE),
+    RemoveVmFromAffinityGroup(1954, ActionGroup.MANIPULATE_AFFINITY_GROUPS, false, QuotaDependency.NONE),
+    AddHostToAffinityGroup(1955, ActionGroup.MANIPULATE_AFFINITY_GROUPS, false, QuotaDependency.NONE),
+    RemoveHostFromAffinityGroup(1956, ActionGroup.MANIPULATE_AFFINITY_GROUPS, false, QuotaDependency.NONE),
+    AddVmLabelToAffinityGroup(1957, ActionGroup.MANIPULATE_AFFINITY_GROUPS, false, QuotaDependency.NONE),
+    RemoveVmLabelFromAffinityGroup(1958, ActionGroup.MANIPULATE_AFFINITY_GROUPS, false, QuotaDependency.NONE),
+    AddHostLabelToAffinityGroup(1959, ActionGroup.MANIPULATE_AFFINITY_GROUPS, false, QuotaDependency.NONE),
+    RemoveHostLabelFromAffinityGroup(1960, ActionGroup.MANIPULATE_AFFINITY_GROUPS, false, QuotaDependency.NONE),
 
     // ISCSI Bonds
     AddIscsiBond(2000, ActionGroup.EDIT_STORAGE_POOL_CONFIGURATION, false, QuotaDependency.NONE),
@@ -522,6 +547,7 @@ public enum ActionType {
     // Vm devices
     HotUnplugMemory(2400, ActionGroup.EDIT_VM_PROPERTIES, false, QuotaDependency.NONE),
     HotUnplugMemoryWithoutVmUpdate(2401, ActionGroup.EDIT_VM_PROPERTIES, false, QuotaDependency.NONE),
+    SaveVmExternalData(2402, false, QuotaDependency.NONE),
 
     // Audit Log
     RemoveAuditLogById(2100, false, QuotaDependency.NONE),
@@ -580,6 +606,15 @@ public enum ActionType {
     // Incremental Backup
     StartVmBackup(3300, ActionGroup.BACKUP_DISK, false, QuotaDependency.NONE),
     StopVmBackup(3301, ActionGroup.BACKUP_DISK, false, QuotaDependency.NONE),
+    DeleteVmCheckpoint(3302, ActionGroup.BACKUP_DISK, false, QuotaDependency.NONE),
+    RedefineVmCheckpoint(3303, ActionGroup.BACKUP_DISK, false, QuotaDependency.NONE),
+    AddVolumeBitmap(3304, ActionGroup.BACKUP_DISK, false, QuotaDependency.NONE),
+    CreateScratchDisk(3305, ActionGroup.BACKUP_DISK, false, QuotaDependency.NONE),
+    CreateScratchDisks(3306, ActionGroup.BACKUP_DISK, false, QuotaDependency.NONE),
+    RemoveScratchDisks(3307, ActionGroup.BACKUP_DISK, false, QuotaDependency.NONE),
+    RemoveVolumeBitmap(3308, ActionGroup.BACKUP_DISK, false, QuotaDependency.NONE),
+    ClearVolumeBitmaps(3309, ActionGroup.BACKUP_DISK, false, QuotaDependency.NONE),
+    DeleteAllVmCheckpoints(3310, ActionGroup.BACKUP_DISK, false, QuotaDependency.NONE),
 
     // Host Devices
     RefreshHostDevices(4000, ActionGroup.MANIPULATE_HOST, false, QuotaDependency.NONE),
@@ -615,7 +650,10 @@ public enum ActionType {
     RunAsyncAction(7000, QuotaDependency.NONE),
 
     // API:
-    AddDeprecatedApiEvent(8000, false, QuotaDependency.NONE);
+    AddDeprecatedApiEvent(8000, false, QuotaDependency.NONE),
+
+    // KubeVirt
+    AddVmToKubevirt(9000, ActionGroup.CREATE_VM, QuotaDependency.NONE);
 
     private int intValue;
     private ActionGroup actionGroup;

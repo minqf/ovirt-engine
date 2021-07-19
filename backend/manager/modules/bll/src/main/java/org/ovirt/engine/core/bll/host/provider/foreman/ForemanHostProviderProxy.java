@@ -407,8 +407,7 @@ public class ForemanHostProviderProxy extends BaseProviderProxy implements HostP
 
     @Override
     protected void afterReadResponse(HttpURLConnection connection, byte[] response) throws Exception {
-        if (connection.getResponseCode() != HttpURLConnection.HTTP_OK
-                && connection.getResponseCode() != HttpURLConnection.HTTP_MOVED_TEMP) {
+        if (isUnsuccessfulResponseCode(connection)) {
             ForemanErrorWrapper ferr = objectMapper.readValue(response, ForemanErrorWrapper.class);
             String err = StringUtils.join(ferr.getForemanError().getFullMessages(), ", ");
             throw new EngineException(EngineError.PROVIDER_FAILURE, err);
@@ -425,18 +424,18 @@ public class ForemanHostProviderProxy extends BaseProviderProxy implements HostP
     }
 
     @Override
-    public ErrataData getErrataForHost(String hostName, ErrataFilter errataFilter) {
-        return getContentHostProvider().getErrataForHost(hostName, errataFilter);
+    public ErrataData getErrataForHost(ContentHostIdentifier contentHostIdentifier, ErrataFilter errataFilter) {
+        return getContentHostProvider().getErrataForHost(contentHostIdentifier, errataFilter);
     }
 
     @Override
-    public Erratum getErratumForHost(String hostName, String erratumId) {
-        return getContentHostProvider().getErratumForHost(hostName, erratumId);
+    public Erratum getErratumForHost(ContentHostIdentifier contentHostIdentifier, String erratumId) {
+        return getContentHostProvider().getErratumForHost(contentHostIdentifier, erratumId);
     }
 
     @Override
-    public boolean isContentHostExist(String hostName) {
-        return getContentHostProvider().isContentHostExist(hostName);
+    public boolean isContentHostExist(ContentHostIdentifier contentHostIdentifier) {
+        return getContentHostProvider().isContentHostExist(contentHostIdentifier);
     }
 
     private ContentHostProvider getContentHostProvider() {

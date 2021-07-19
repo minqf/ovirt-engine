@@ -72,7 +72,7 @@ public class UserMapper {
 
     @Mapping(from = User.class, to = DbUser.class)
     public static DbUser map(User model, DbUser template) {
-        DbUser entity = template != null? template: new DbUser();
+        DbUser entity = template != null ? template : new DbUser();
         if (model.isSetPrincipal()) {
             entity.setLoginName(model.getPrincipal());
         } else if (model.isSetName()) {

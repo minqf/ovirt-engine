@@ -84,3 +84,6 @@ SELECT fn_db_add_column_to_object_white_list('vds', 'pretty_name');
 SELECT fn_db_add_column_to_object_white_list('vds', 'hugepages');
 SELECT fn_db_add_column_to_object_white_list('vds', 'connector_info');
 SELECT fn_db_add_column_to_object_white_list('vds', 'backup_enabled');
+SELECT fn_db_add_column_to_object_white_list('vds', 'cold_backup_enabled');
+SELECT fn_db_add_column_to_object_white_list('vds', 'clear_bitmaps_enabled');
+SELECT fn_db_add_column_to_object_white_list('vds', 'cd_change_pdiv');

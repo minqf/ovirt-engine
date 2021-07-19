@@ -29,8 +29,8 @@ export BUILD_JAVA_OPTS_MAVEN="\
     -Dovirt.surefire.reportsDirectory=${PWD}/exported-artifacts/tests \
 "
 
-# For milestone (non-release) builds, build permutations for chrome and firefox
-if [ -n "${MILESTONE}" ]; then
+# For milestone (non-release) master builds, build permutations for chrome and firefox
+if [ -n "${MILESTONE}" ] && [ "${MILESTONE}" == "master" ]; then
 	export EXTRA_BUILD_FLAGS="-gs $MAVEN_SETTINGS \
 	    -D gwt.userAgent=gecko1_8,safari \
 	"
@@ -91,14 +91,14 @@ rpmbuild \
 yum-builddep output/*src.rpm
 
 # build minimal rpms for CI, fuller ones for releases
-BUILD_UT=1
-BUILD_ALL_USER_AGENTS=1
-BUILD_LOCALES=1
+BUILD_UT=0
+BUILD_ALL_USER_AGENTS=0
+BUILD_LOCALES=0
 
-if [ -n "${MILESTONE}" ]; then
-	BUILD_UT=0
-	BUILD_ALL_USER_AGENTS=0
-	BUILD_LOCALES=0
+if [ -z "${MILESTONE}" ] || { [ -n "${MILESTONE}" ] && [ "${MILESTONE}" != "master" ]; }; then
+	BUILD_UT=1
+	BUILD_ALL_USER_AGENTS=1
+	BUILD_LOCALES=1
 fi
 
 rpmbuild \
@@ -118,7 +118,4 @@ mv ./*tar.gz exported-artifacts/
 
 # Rename junit surefire reports to match jenkins report plugin
 # Error code 4 means nothing changed, ignore it
-if [[ "$(rpm --eval "%dist")" != ".fc30" ]]; then
-# On fc30 following fails, while investigating on it, keeping it working on the other distro
 rename .xml .junit.xml exported-artifacts/tests/* ||  [[ $? -eq 4 ]]
-fi

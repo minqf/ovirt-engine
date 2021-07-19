@@ -131,6 +131,10 @@ cinderlib_enabled() {
 	engine_setup_service_enabled "OVESETUP_CL_DB/enable"
 }
 
+grafana_enabled() {
+	engine_setup_service_enabled "OVESETUP_GRAFANA_CORE/enable"
+}
+
 load_branding() {
 	for f in /etc/ovirt-engine/branding/*/branding-external-resources.properties; do
 		if [ -e "${f}" ]; then
@@ -163,12 +167,22 @@ BACKUP_PATHS="/etc/ovirt-engine
 /etc/firewalld/services/ovirt-postgres.xml
 /etc/firewalld/services/ovirt-provider-ovn.xml
 /etc/firewalld/services/ovn-central-firewall-service.xml
-/var/lib/openvswitch"
+/var/lib/openvswitch
+/etc/grafana"
+
 # Add /var/lib/ovirt-engine except a few
-VAR_LIB_EXCLUSIONS="/var/lib/ovirt-engine/backups
-/var/lib/ovirt-engine/jboss_runtime"
+VAR_LIB_OVIRT_ENGINE_EXCLUSIONS="/var/lib/ovirt-engine/backups
+/var/lib/ovirt-engine/jboss_runtime
+/var/lib/ovirt-engine/ansible-runner-service.log"
 for p in /var/lib/ovirt-engine/*; do
-	echo "${VAR_LIB_EXCLUSIONS}" | grep -q "^${p}\$" || BACKUP_PATHS="${BACKUP_PATHS}
+	echo "${VAR_LIB_OVIRT_ENGINE_EXCLUSIONS}" | grep -q "^${p}\$" || BACKUP_PATHS="${BACKUP_PATHS}
+${p}"
+done
+
+# Add /var/lib/grafana except its db, which is backed up separately
+VAR_LIB_GRAFANA_EXCLUSIONS="/var/lib/grafana/grafana.db"
+for p in /var/lib/grafana/*; do
+	echo "${VAR_LIB_GRAFANA_EXCLUSIONS}" | grep -q "^${p}\$" || BACKUP_PATHS="${BACKUP_PATHS}
 ${p}"
 done
 
@@ -187,6 +201,7 @@ FILE=""
 DB_BACKUP_FILE_NAME="engine_backup.db"
 DWHDB_BACKUP_FILE_NAME="dwh_backup.db"
 CINDERLIBDB_BACKUP_FILE_NAME="cinderlib_backup.db"
+GRAFANA_BACKUP_FILE_NAME="grafana.db"
 
 PACKAGE_VERSION_FILENAME="version"
 OS_VERSION_FILENAME="os_version"
@@ -201,7 +216,7 @@ cleanup() {
 		notify_engine "${ENGINE_DB_USER}" "${ENGINE_DB_HOST}" "${ENGINE_DB_PORT}" "${ENGINE_DB_DATABASE}" -1 "Failed"
 	fi
 
-	[ -n "${TEMP_FOLDER}" ] && rm -rf "${TEMP_FOLDER}"
+	[ -n "${TEMP_FOLDER}" -a -z "${KEEP_TEMP_FOLDER}" ] && rm -rf "${TEMP_FOLDER}"
 }
 
 trap cleanup 0
@@ -222,6 +237,7 @@ USAGE:
     db                              Engine database only
     dwhdb                           Data Warehouse database only
     cinderlibdb                     Cinderlib database only
+    grafanadb                       Grafana database only
     The option --scope can be passed more than once, with different scopes.
  --file=FILE                        file to use during backup or restore.
                                     If mode is backup,  default to $ENGINE_BACKUP_DEFAULT_DIR/ovirt-engine-backup-YmdHMS.backup
@@ -390,6 +406,7 @@ SCOPE_FILES=
 SCOPE_ENGINE_DB=
 SCOPE_DWH_DB=
 SCOPE_CINDERLIB_DB=
+SCOPE_GRAFANA_DB=
 KEEP_TEMPORARY_DATA=
 ARCHIVE_COMPRESS_OPTION=z
 FILES_COMPRESS_OPTION=J
@@ -437,6 +454,7 @@ MY_CINDERLIB_DB_DATABASE=
 MY_CINDERLIB_DB_SECURED=False
 MY_CINDERLIB_DB_SECURED_VALIDATION=False
 MY_CINDERLIB_DB_CREDS=
+GRAFANA_DB_FILENAME=/var/lib/grafana/grafana.db
 RESTORE_PERMISSIONS=
 PROVISION_ALL_DBS=
 HE_REMOVE_STORAGE_VM=
@@ -451,7 +469,11 @@ EXCLUDED_FILES_ON_RESTORE="etc/ovirt-engine/engine-config/engine-config.properti
 etc/ovirt-engine-setup.conf.d/*packaging*
 etc/pki/ovirt-engine/cacert.template.in
 etc/pki/ovirt-engine/cert.template.in
-etc/pki/ovirt-engine/openssl.conf"
+etc/pki/ovirt-engine/openssl.conf
+etc/ovirt-engine/engine.conf.d/20-branding-rhv.conf
+etc/ovirt-engine/branding/50-rhv-2.brand
+ovirt-engine/engine.conf.d/10-scl-postgres.conf
+ovirt-engine-dwh/ovirt-engine-dwhd.conf.d/10-scl-postgres.conf"
 
 # Hashers. Must support:
 # - No options, for creation of hash file
@@ -512,6 +534,7 @@ set_scope() {
 			SCOPE_ENGINE_DB=1
 			SCOPE_DWH_DB=1
 			SCOPE_CINDERLIB_DB=1
+			SCOPE_GRAFANA_DB=1
 			;;
 		files)
 			SCOPE_FILES=1
@@ -524,6 +547,9 @@ set_scope() {
 			;;
 		cinderlibdb)
 			SCOPE_CINDERLIB_DB=1
+			;;
+		grafanadb)
+			SCOPE_GRAFANA_DB=1
 			;;
 		*) die "invalid scope '${s}'"
 	esac
@@ -946,6 +972,11 @@ dobackup() {
 		log "Backing up cinderlib database to ${tardir}/db/${CINDERLIBDB_BACKUP_FILE_NAME}"
 		backupDB "${tardir}/db/${CINDERLIBDB_BACKUP_FILE_NAME}" "${CINDERLIB_DB_USER}" "${CINDERLIB_DB_HOST}" "${CINDERLIB_DB_PORT}" "${CINDERLIB_DB_DATABASE}" "${CINDERLIB_DB_DUMP_COMPRESSOR}" "${CINDERLIB_DB_DUMP_FORMAT}"
 	fi
+	if grafana_enabled && [ -n "${SCOPE_GRAFANA_DB}" ]; then
+		output "- Grafana database '"${GRAFANA_DB_FILENAME}"'"
+		log "Backing up grafana database to ${tardir}/db/${GRAFANA_BACKUP_FILE_NAME}"
+		backupSQLiteDB "${tardir}/db/${GRAFANA_BACKUP_FILE_NAME}" "${GRAFANA_DB_FILENAME}"
+	fi
 	echo "${PACKAGE_VERSION}" > "${tardir}/${PACKAGE_VERSION_FILENAME}" || logdie "Can't create ${tardir}/${PACKAGE_VERSION_FILENAME}"
 	getOSVersion > "${tardir}/${OS_VERSION_FILENAME}" || logdie "Can't create ${tardir}/${OS_VERSION_FILENAME}"
 	source_d dobackup
@@ -963,6 +994,11 @@ dobackup() {
 
 getOSVersion() {
 	python@PY_VERSION@ -c 'import platform; d = platform.linux_distribution(full_distribution_name=0); print("%s%s" % (d[0], d[1].split(".")[0]))'
+}
+
+looseVersion_le() {
+	# return 0 if first arg is <= second arg
+	python@PY_VERSION@ -c 'import sys; from distutils.version import LooseVersion; sys.exit(0 if LooseVersion(sys.argv[1]) <= LooseVersion(sys.argv[2]) else 1)' "$1" "$2"
 }
 
 createtar() {
@@ -1004,12 +1040,15 @@ verifyhash() {
 backupFiles() {
 	local paths="$1"
 	local target="$2"
-	echo "${paths}" | \
-		while read -r path; do
-			[ -e "${path}" ] && echo "${path}"
-		done | \
-		sed 's;^/;;' | \
-		tar -C / --files-from - -cpS"${FILES_COMPRESS_OPTION}"f "${target}" || logdie "Failed backing up ${paths}"
+	(
+		echo "${paths}" | \
+			while read -r path; do
+				[ -e "${path}" ] && echo "${path}"
+			done | \
+			sed 's;^/;;' | \
+			tar -C / --files-from - -cpS"${FILES_COMPRESS_OPTION}"f "${target}"
+	) 2>> "${LOG}" \
+		|| logdie "Failed backing up ${paths}"
 }
 
 backupDB() {
@@ -1056,6 +1095,19 @@ backupDB() {
 	[ -n "${failed_msg}" ] && logdie "${failed_msg}"
 }
 
+backupSQLiteDB() {
+	local backup_file="$1"
+	local db_file="$2"
+
+	# Backup with sqlite, attempt to lock for up to 10 seconds
+	sqlite3 "${db_file}" << __EOF__ 2>> "${LOG}" || logdie "failed to backup ${db_file} with sqlite3"
+.timeout 10000
+.backup ${backup_file}
+__EOF__
+	chown --reference="${db_file}" "${backup_file}" 2>> "${LOG}" || logdie "chown failed"
+	chmod --reference="${db_file}" "${backup_file}" 2>> "${LOG}" || logdie "chmod failed"
+}
+
 dorestore() {
 	output "Preparing to restore:"
 	if [ -r "${ENGINE_UP_MARK}" ]; then
@@ -1084,7 +1136,7 @@ dorestore() {
 
 	output "- Unpacking file '${FILE}'"
 	log "Opening tarball ${FILE} to ${TEMP_FOLDER}"
-	tar -C "${TEMP_FOLDER}" -pSsxf "${FILE}" || logdie "cannot open ${TEMP_FOLDER}"
+	tar -C "${TEMP_FOLDER}" -pSsxf "${FILE}" 2>> "${LOG}" || logdie "cannot open ${TEMP_FOLDER}"
 	log "Verifying hash"
 	verifyhash "${TEMP_FOLDER}"
 	log "Verifying version"
@@ -1100,6 +1152,12 @@ dorestore() {
 	[ -s "${TEMP_FOLDER}/db/${DB_BACKUP_FILE_NAME}" ] || SCOPE_ENGINE_DB=
 	[ -s "${TEMP_FOLDER}/db/${DWHDB_BACKUP_FILE_NAME}" ] || SCOPE_DWH_DB=
 	[ -s "${TEMP_FOLDER}/db/${CINDERLIBDB_BACKUP_FILE_NAME}" ] || SCOPE_CINDERLIB_DB=
+	[ -s "${TEMP_FOLDER}/db/${GRAFANA_BACKUP_FILE_NAME}" ] || SCOPE_GRAFANA_DB=
+
+	log 'Scope after checking backup content:'
+	for v in SCOPE_FILES SCOPE_ENGINE_DB SCOPE_DWH_DB SCOPE_CINDERLIB_DB SCOPE_GRAFANA_DB; do
+		log "$v:${!v}"
+	done
 
 	if [ -n "${PROVISION_ALL_DBS}" ]; then
 		[ -n "${SCOPE_ENGINE_DB}" ] && PROVISION_DB=1
@@ -1178,6 +1236,10 @@ __EOF__
 		log "Restoring Cinderlib database backup at ${TEMP_FOLDER}/db/${CINDERLIBDB_BACKUP_FILE_NAME}"
 		restoreDB "${TEMP_FOLDER}/db/${CINDERLIBDB_BACKUP_FILE_NAME}" "${CINDERLIB_DB_USER}" "${CINDERLIB_DB_HOST}" "${CINDERLIB_DB_PORT}" "${CINDERLIB_DB_DATABASE}" "${ORIG_CINDERLIB_DB_USER}" "${CINDERLIB_DB_DUMP_COMPRESSOR}" "${CINDERLIB_DB_DUMP_FORMAT}" "${CINDERLIB_DB_RESTORE_JOBS}"
 	fi
+	if [ -n "${SCOPE_GRAFANA_DB}" ]; then
+		output "- Grafana database '"${GRAFANA_DB_FILENAME}"'"
+		restoreSQLiteDB "${TEMP_FOLDER}/db/${GRAFANA_BACKUP_FILE_NAME}" "${GRAFANA_DB_FILENAME}" "grafana:grafana"
+	fi
 	[ -n "${CHANGE_DB_CREDENTIALS}" ] && changeEngineDBConf
 	[ -n "${CHANGE_DWH_DB_CREDENTIALS}" -o -n "${CHANGE_DB_CREDENTIALS}" -a "${DWH_DB_USER}" ] && changeDwhDBConf
 	[ -n "${CHANGE_CINDERLIB_DB_CREDENTIALS}" -o -n "${CHANGE_DB_CREDENTIALS}" -a "${CINDERLIB_DB_USER}" ] && changeCinderlibDBConf
@@ -1218,15 +1280,27 @@ __EOF
 }
 
 verifyVersion() {
-	INSTALLED_VERSION="$(echo ${PACKAGE_VERSION} | cut -d . -f 1-2)"
-	BACKUP_VERSION="$(cat ${TEMP_FOLDER}/${PACKAGE_VERSION_FILENAME} | cut -d . -f 1-2)"
+	INSTALLED_VERSION="${PACKAGE_VERSION}"
+	INSTALLED_VERSION_X_Y="$(echo ${INSTALLED_VERSION} | cut -d . -f 1-2)"
+	BACKUP_VERSION="$(cat ${TEMP_FOLDER}/${PACKAGE_VERSION_FILENAME})"
+	BACKUP_VERSION_X_Y="$(echo ${BACKUP_VERSION} | cut -d . -f 1-2)"
 	local ok=
 	while read validbck validres; do
-		[ "${BACKUP_VERSION}" = "${validbck}" -a "${INSTALLED_VERSION}" = "${validres}" ] && ok=1
+		[ "${BACKUP_VERSION_X_Y}" = "${validbck}" -a "${INSTALLED_VERSION_X_Y}" = "${validres}" ] && ok=1
 	done << __EOF__
 ${VALID_BACKUP_RESTORE_PAIRS}
 __EOF__
-	[ "${INSTALLED_VERSION}" == "${BACKUP_VERSION}" ] && ok=1
+	[ "${INSTALLED_VERSION_X_Y}" == "${BACKUP_VERSION_X_Y}" ] && looseVersion_le "${BACKUP_VERSION}" "${INSTALLED_VERSION}" && ok=1
+	if [ "${BACKUP_VERSION_X_Y}" = "4.3" ]; then
+		# Prevent upgrading from < 4.3.10.
+		# We already document to upgrade first to latest 4.3, before upgrading to 4.4.
+		# Also, specifically, cinderlib backup was added in 4.3.10,
+		# So a backup taken with 4.3.9 on a setup with cinderlib,
+		# will not include its db, and engine-setup will fail, and
+		# this will leave the system in a broken state. Prevent that.
+		local z="$(echo ${BACKUP_VERSION} | cut -d . -f 3)"
+		[ "${z}" -lt 10 ] && ok=
+	fi
 	[ -z "${ok}" ] && logdie "Backup was created by version '${BACKUP_VERSION}' and can not be restored using the installed version ${INSTALLED_VERSION}"
 }
 
@@ -1256,6 +1330,8 @@ provisionDB() {
 
 	cat << __EOF__ > "${answerfile}"
 [environment:default]
+OVESETUP_PROVISIONDB_CONFIG/provisionDb=bool:True
+OVESETUP_PROVISIONDB_CONFIG/provisionUser=bool:True
 OVESETUP_PROVISION_DB/host=str:localhost
 OVESETUP_PROVISION_DB/port=int:5432
 OVESETUP_PROVISION_DB/secured=bool:False
@@ -1296,11 +1372,11 @@ __EOF__
 		elif [ "${format}" = "custom" ]; then
 			local no_perms=
 			if [ -z "${compressor}" ]; then
-				pg_restore "${backupfile}" -s 2> "${pgrestorelog}"
+				pg_restore "${backupfile}" -s -f - 2> "${pgrestorelog}"
 			else
 				# Requires the compressor to support '-d'. All our current ones do.
 				"${compressor}" -d < "${backupfile}" | \
-					pg_restore -s 2> "${pgrestorelog}"
+					pg_restore -s -f - 2> "${pgrestorelog}"
 			fi
 		else
 			logdie "Unsupported format ${format}"
@@ -1310,8 +1386,32 @@ __EOF__
 				grep -Ev "^${user}\$|^postgres\$|^PUBLIC\$" > "${extra_users}"
 
 		for extrau in $(cat "${extra_users}"); do
-			output "- extra user '${extrau}' having grants on database ${database}, created with a random password"
-			/usr/share/ovirt-engine/setup/bin/ovirt-engine-provisiondb --otopi-environment="OVESETUP_PROVISION_DB/user=str:${extrau}" < /dev/null > "${pgprovisionlog}" 2>&1
+			cat << __EOF__ > "${answerfile}"
+[environment:default]
+OVESETUP_PROVISIONDB_CONFIG/provisionDb=bool:False
+OVESETUP_PROVISIONDB_CONFIG/provisionUser=bool:True
+OVESETUP_PROVISION_DB/host=str:localhost
+OVESETUP_PROVISION_DB/port=int:5432
+OVESETUP_PROVISION_DB/secured=bool:False
+OVESETUP_PROVISION_DB/securedHostValidation=bool:False
+OVESETUP_PROVISION_DB/database=str:${database}
+OVESETUP_PROVISION_DB/user=str:${extrau}
+OVESETUP_PROVISION_DB/dumper=str:pg_custom
+OVESETUP_PROVISION_DB/filter=none:None
+OVESETUP_PROVISION_DB/restoreJobs=int:2
+OVESETUP_CORE/engineStop=bool:False
+__EOF__
+			if [ "${extrau}" = "${GRAFANA_DB_USER}" -a "${database}" = "${DWH_DB_DATABASE}" ]; then
+				output "- user '${extrau}' on database '${database}'"
+				cat << __EOF__ >> "${answerfile}"
+OVESETUP_PROVISION_DB/password=str:${GRAFANA_DB_PASSWORD}
+OVESETUP_PROVISIONDB_CONFIG/addToPGHBA=bool:True
+OVESETUP_PROVISIONDB_CONFIG/grantReadOnly=bool:True
+__EOF__
+			else
+				output "- extra user '${extrau}' having grants on database ${database}, created with a random password"
+			fi
+			/usr/share/ovirt-engine/setup/bin/ovirt-engine-provisiondb --config-append="${answerfile}" < /dev/null > "${pgprovisionlog}" 2>&1
 			provrc=$?
 			cat "${pgprovisionlog}" >> "${LOG}"  2>&1 \
 				|| logdie "Failed to append pg provisioning log to restore log"
@@ -1374,6 +1474,11 @@ language "plpgsql" already exists
 must be owner of language plpgsql
 must be owner of extension plpgsql
 must be owner of extension uuid-ossp
+# PG 11 does not dump "public" schema creation, and emits errors
+# when restoring backups from older versions, that do include this
+schema "public" already exists
+must be owner of schema public
+must be member of role "postgres"
 #
 # engine uses uuid-ossp PG extension, which requires special privs,
 permission denied for language c
@@ -1387,6 +1492,9 @@ function public.uuid_ns_dns\(\) does not exist
 function public.uuid_ns_oid\(\) does not exist
 function public.uuid_ns_url\(\) does not exist
 function public.uuid_ns_x500\(\) does not exist
+# Ignore errors caused by custom extensions in backed up db
+permission denied to create extension
+extension .* does not exist
 __EOF
 )
 	grep 'ERROR: ' "${pgrestorelog}" | grep -Ev "${IGNORED_ERRORS}" > "${non_ignored_errors}" 2>&1
@@ -1398,6 +1506,22 @@ __EOF
 	fi
 }
 
+restoreSQLiteDB() {
+	local backupfile="$1"
+	local db_file="$2"
+	local dir_owner="$3"
+
+	local db_dir=$(dirname ${db_file})
+	if ! [ -d "${db_dir}" ]; then
+		# Can happen if using scope=grafanadb only, without scope=files.
+		# Not very likely, but better safe than sorry.
+		mkdir -p "${db_dir}" 2>> "${LOG}" || logdie "mkdir failed"
+		chmod 0750 "${db_dir}" 2>> "${LOG}" || logdie "chmod failed"
+		chown "${dir_owner}" "${db_dir}" 2>> "${LOG}" || output "Warning: ${dir_owner} user or group missing"
+	fi
+	cp -a "${backupfile}" "${db_file}" 2>> "${LOG}" || "cp failed"
+}
+
 verifyEngineDb() {
 	local backupfile="$1"
 	local compressor="$2"
@@ -1406,6 +1530,7 @@ verifyEngineDb() {
 	log "verifyEngineDb: backupfile ${backupfile} compressor ${compressor} format ${format}"
 	local pgrestorelog="${TEMP_FOLDER}/pg-restore-log"
 	local vdc_options_dump="${TEMP_FOLDER}/vdc_options_dump"
+	local pg_restore_errors="${TEMP_FOLDER}/pg_restore_errors"
 
 	# TODO perhaps refactor out the format/compressor logic and reuse in restoreDB
 	if [ "${format}" = "plain" ]; then
@@ -1418,11 +1543,11 @@ verifyEngineDb() {
 	elif [ "${format}" = "custom" ]; then
 		local no_perms=
 		if [ -z "${compressor}" ]; then
-			pg_restore "${backupfile}" -t vdc_options 2> "${pgrestorelog}"
+			pg_restore "${backupfile}" -f - -t vdc_options 2> "${pgrestorelog}"
 		else
 			# Requires the compressor to support '-d'. All our current ones do.
 			"${compressor}" -d < "${backupfile}" | \
-				pg_restore -t vdc_options 2> "${pgrestorelog}"
+				pg_restore -f - -t vdc_options 2> "${pgrestorelog}"
 		fi
 	else
 		logdie "Unsupported format ${format}"
@@ -1436,6 +1561,14 @@ verifyEngineDb() {
 
 	[ -z "$(awk '$2=="DomainName" {print $3}' < ${vdc_options_dump})" ] || \
 		logdie "legacy kerberos/ldap directory integration was in use. Please migrate to ovirt-engine-extension-aaa-ldap and backup/restore again"
+
+	grep -i 'error: ' "${pgrestorelog}" > "${pg_restore_errors}" 2>&1
+	local numerrors=$(cat "${pg_restore_errors}" | wc -l)
+	if [ ${numerrors} -ne 0 ]; then
+		log "Errors in pg_restore log:"
+		cat "${pg_restore_errors}" >> "${LOG}"
+		logdie "Errors while running pg_restore ${database}"
+	fi
 }
 
 cleanDbTempData() {
@@ -1564,7 +1697,7 @@ restoreFiles() {
 	# Extract files to temp dir
 	local temp_files="${TEMP_FOLDER}/files.d"
 	mkdir -p "${temp_files}"
-	tar -C "${temp_files}" -pSsx -f "${archive}" || \
+	tar -C "${temp_files}" -pSsx -f "${archive}" 2>> "${LOG}" || \
 		logdie "Failed extracting ${archive}"
 
 	# Do not restore/overwrite some files
@@ -1594,7 +1727,7 @@ __EOF__
 	fi
 
 	# Restore!
-	tar -C / -pSsx --exclude-from "${excluded_files}" -f "${archive}" || \
+	tar -C / -pSsx --exclude-from "${excluded_files}" -f "${archive}" 2>> "${LOG}" || \
 		logdie "Failed restoring ${paths}"
 
 	# Make next engine-setup ask about apache
@@ -1873,6 +2006,7 @@ notify_engine() {
 	[ -n "${SCOPE_ENGINE_DB}" ] && do_notify 'db'
 	[ -n "${SCOPE_DWH_DB}" ] && do_notify 'dwhdb'
 	[ -n "${SCOPE_CINDERLIB_DB}" ] && do_notify 'cinderlib'
+	[ -n "${SCOPE_GRAFANA_DB}" ] && do_notify 'grafanadb'
 
 	unset -f do_notify
 }
@@ -1882,7 +2016,7 @@ doverify() {
 
 	output "- Unpacking file '${FILE}'"
 	log "Opening tarball ${FILE} to ${TEMP_FOLDER}"
-	tar -C "${TEMP_FOLDER}" -pSsxf "${FILE}" || logdie "cannot open ${TEMP_FOLDER}"
+	tar -C "${TEMP_FOLDER}" -pSsxf "${FILE}" 2>> "${LOG}" || logdie "cannot open ${TEMP_FOLDER}"
 	log "Verifying hash"
 	verifyhash "${TEMP_FOLDER}"
 	log "Verifying version"
@@ -1896,6 +2030,7 @@ doverify() {
 	[ -s "${TEMP_FOLDER}/db/${DB_BACKUP_FILE_NAME}" ] || SCOPE_ENGINE_DB=
 	[ -s "${TEMP_FOLDER}/db/${DWHDB_BACKUP_FILE_NAME}" ] || SCOPE_DWH_DB=
 	[ -s "${TEMP_FOLDER}/db/${CINDERLIBDB_BACKUP_FILE_NAME}" ] || SCOPE_CINDERLIB_DB=
+	[ -s "${TEMP_FOLDER}/db/${GRAFANA_BACKUP_FILE_NAME}" ] || SCOPE_GRAFANA_DB=
 
 	if [ -n "${SCOPE_ENGINE_DB}" -a -n "${ENGINE_DB_USER}" ]; then
 		output "- Engine database '"${ENGINE_DB_DATABASE}"'"
@@ -1922,11 +2057,6 @@ output "Start of engine-backup with mode '${MODE}'"
 output "scope: ${SCOPE}"
 output "archive file: ${FILE}"
 output "log file: ${LOG}"
-
-if ! [ -z "$sclenv" ]; then
-	log "Setting scl env for ${sclenv}"
-	. scl_source enable ${sclenv}
-fi
 
 generatePgPass
 do${MODE}

@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.ovirt.engine.core.common.ActionUtils;
 import org.ovirt.engine.core.common.action.ActionParametersBase;
@@ -221,7 +222,6 @@ public class StorageDataCenterListModel extends SearchableListModel<StorageDomai
                             addToAttachCandidateDatacenters(dataCenter, addDatacenter);
                             break;
                         case ManagedBlockStorage:
-                        case Volume:
                             addDatacenter = dataCenter.getStatus() == StoragePoolStatus.Up;
                             addToAttachCandidateDatacenters(dataCenter, addDatacenter);
                             break;
@@ -443,15 +443,15 @@ public class StorageDataCenterListModel extends SearchableListModel<StorageDomai
         model.setTitle(ConstantsManager.getInstance().getConstants().detachStorageTitle());
         model.setHelpTag(HelpTag.detach_storage);
         model.setHashName("detach_storage"); //$NON-NLS-1$
-        model.setMessage(ConstantsManager.getInstance().getConstants().areYouSureYouWantDetachStorageFromDcsMsg());
+        setMsgOnDetach(model);
 
         ArrayList<String> items = new ArrayList<>();
-        boolean shouldAddressWarnning = false;
+        boolean shouldAddressWarning = false;
         for (Object item : getSelectedItems()) {
             StorageDomain a = (StorageDomain) item;
             items.add(a.getStoragePoolName());
             if (a.getStorageDomainType().isDataDomain()) {
-                shouldAddressWarnning = true;
+                shouldAddressWarning = true;
                 break;
             }
         }
@@ -461,17 +461,51 @@ public class StorageDataCenterListModel extends SearchableListModel<StorageDomai
             model.getForce().setIsAvailable(true);
             model.getForce().setIsChangeable(true);
             model.setForceLabel(ConstantsManager.getInstance().getConstants().storageRemovePopupFormatLabel());
-            shouldAddressWarnning = false;
+            shouldAddressWarning = false;
             model.setNote(ConstantsManager.getInstance().getMessages().detachNote(getLocalStoragesFormattedString()));
         }
-        if (shouldAddressWarnning) {
-            model.setNote(ConstantsManager.getInstance().getConstants().detachWarnningNote());
+        if (shouldAddressWarning) {
+            model.setNote(ConstantsManager.getInstance().getConstants().detachWarningNote());
         }
 
         UICommand tempVar = UICommand.createDefaultOkUiCommand("OnDetach", this); //$NON-NLS-1$
         model.getCommands().add(tempVar);
         UICommand tempVar2 = UICommand.createCancelUiCommand("Cancel", this); //$NON-NLS-1$
         model.getCommands().add(tempVar2);
+    }
+
+    private void setMsgOnDetach(ConfirmationModel model) {
+        StringBuilder warningMsgBuilder = new StringBuilder();
+
+        model.setMessage(ConstantsManager.getInstance().getConstants().areYouSureYouWantDetachStorageFromDcsMsg());
+
+        // Checks if the selected Storage Domain contains entities with disks on other Storage Domains.
+        AsyncDataProvider.getInstance().doesStorageDomainContainEntityWithDisksOnMultipleSDs(
+                new AsyncQuery<>(returnValue -> {
+                    if (returnValue) {
+                        warningMsgBuilder.append(ConstantsManager.getInstance().getMessages()
+                                .detachStorageDomainContainsEntitiesWithDisksOnMultipleSDsFromDC());
+                        model.setMessage(warningMsgBuilder.toString());
+                    }
+                }), getEntity().getId());
+
+        // Checks if the selected data center contains a storage domain with dumps or metadata
+        // memory disks of snapshots on other Storage Domains.
+        AsyncDataProvider.getInstance().getAllMetadataAndMemoryDisksOfSnapshotsOnDifferentStorageDomains(
+                new AsyncQuery<>(returnValue -> {
+                    if (returnValue != null && !returnValue.isEmpty()) {
+                        if (warningMsgBuilder.length() > 0) {
+                            warningMsgBuilder.append("\n\n"); //$NON-NLS-1$
+                        }
+                        warningMsgBuilder.append(ConstantsManager.getInstance().getMessages()
+                                .removeStorageDomainFromDataCenterWithMemoryVolumesOnMultipleSDs(
+                                        getEntity().getStorageName(),
+                                        returnValue.stream()
+                                                .map(id -> String.valueOf(id))
+                                                .collect(Collectors.joining(", ")))); //$NON-NLS-1$
+                        model.setMessage(warningMsgBuilder.toString());
+                    }
+                }), getEntity().getId());
     }
 
     private String getLocalStoragesFormattedString() {

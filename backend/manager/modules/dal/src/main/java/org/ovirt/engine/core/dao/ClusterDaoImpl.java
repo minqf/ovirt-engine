@@ -13,6 +13,7 @@ import org.ovirt.engine.core.common.businessentities.ArchitectureType;
 import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.ClusterHostsAndVMs;
+import org.ovirt.engine.core.common.businessentities.FipsMode;
 import org.ovirt.engine.core.common.businessentities.LogMaxMemoryUsedThresholdType;
 import org.ovirt.engine.core.common.businessentities.MigrateOnErrorOptions;
 import org.ovirt.engine.core.common.businessentities.MigrationBandwidthLimitType;
@@ -289,13 +290,15 @@ public class ClusterDaoImpl extends BaseDao implements ClusterDao {
                 .addValue("log_max_memory_used_threshold", cluster.getLogMaxMemoryUsedThreshold())
                 .addValue("log_max_memory_used_threshold_type", cluster.getLogMaxMemoryUsedThresholdType().getValue())
                 .addValue("vnc_encryption_enabled", cluster.isVncEncryptionEnabled())
-                .addValue("managed", cluster.isManaged());
+                .addValue("managed", cluster.isManaged())
+                .addValue("fips_mode", cluster.getFipsMode());
     }
 
     private static final RowMapper<ClusterHostsAndVMs> clusterHostsAndVMsRowMapper = (rs, rowNum) -> {
         ClusterHostsAndVMs entity = new ClusterHostsAndVMs();
         entity.setHosts(rs.getInt("hosts"));
         entity.setVms(rs.getInt("vms"));
+        entity.setHostsWithUpdateAvailable(rs.getInt("hosts_with_update_available"));
         entity.setClusterId(getGuid(rs, "cluster_id"));
         return entity;
     };
@@ -361,6 +364,7 @@ public class ClusterDaoImpl extends BaseDao implements ClusterDao {
         entity.setLogMaxMemoryUsedThresholdType(LogMaxMemoryUsedThresholdType.forValue(rs.getInt("log_max_memory_used_threshold_type")));
         entity.setVncEncryptionEnabled(rs.getBoolean("vnc_encryption_enabled"));
         entity.setManaged(rs.getBoolean("managed"));
+        entity.setFipsMode(FipsMode.forValue(rs.getInt("fips_mode")));
         return entity;
     };
 
@@ -377,10 +381,10 @@ public class ClusterDaoImpl extends BaseDao implements ClusterDao {
         for (Cluster cluster : clusters) {
             clustersById.put(cluster.getId(), cluster);
         }
-        List<ClusterHostsAndVMs> dataList = getCallsHandler().executeReadList("GetHostsAndVmsForClusters",
+        List<ClusterHostsAndVMs> dataList = getCallsHandler().executeReadList(
+                "GetHostsAndVmsForClusters",
                 clusterHostsAndVMsRowMapper,
-                getCustomMapSqlParameterSource()
-                        .addValue("cluster_ids", createArrayOf("uuid", clustersById.keySet().toArray())));
+                getCustomMapSqlParameterSource().addValue("cluster_ids", createArrayOf("uuid", clustersById.keySet().toArray())));
 
         for (ClusterHostsAndVMs clusterDetail : dataList) {
             clustersById.get(clusterDetail.getClusterId()).setClusterHostsAndVms(clusterDetail);
@@ -388,7 +392,6 @@ public class ClusterDaoImpl extends BaseDao implements ClusterDao {
         //The VDS clusters have been updated, but we want to keep the order, so return the original list which is
         //in the right order.
         return clusters;
-
     }
 
     @Override
@@ -412,5 +415,14 @@ public class ClusterDaoImpl extends BaseDao implements ClusterDao {
         return getCallsHandler().executeReadList("GetAllClustersByDefaultNetworkProviderId",
                 clusterRowMapper,
                 getCustomMapSqlParameterSource().addValue("id", defaultNetworkProviderId));
+    }
+
+    @Override
+    public Guid getClusterIdForHostByNameOrAddress(String hostName, String hostAddress) {
+        return getCallsHandler().executeRead("GetClusterIdForHostByNameOrAddress",
+                SingleColumnRowMapper.newInstance(Guid.class),
+                getCustomMapSqlParameterSource()
+                   .addValue("vds_name", hostName)
+                   .addValue("host_address", hostAddress));
     }
 }

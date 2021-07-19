@@ -445,6 +445,7 @@ public class HostMonitoring implements HostMonitoringInterface {
 
             if (refreshedCapabilities) {
                 getVdsEventListener().handleVdsVersion(vds.getId());
+                getVdsEventListener().handleVdsFips(vds.getId());
                 markIsSetNonOperationalExecuted();
             }
 
@@ -640,8 +641,9 @@ public class HostMonitoring implements HostMonitoringInterface {
 
         Map<String, Set<String>> problematicNicsWithNetworks = new HashMap<>();
         try {
+            NetworkMonitoringHelper networkMonitoringHelper = new NetworkMonitoringHelper();
             reportNicStatusChanges();
-            problematicNicsWithNetworks = NetworkMonitoringHelper.determineProblematicNics(vds.getInterfaces(),
+            problematicNicsWithNetworks = networkMonitoringHelper.determineProblematicNics(vds.getInterfaces(),
                     networkDao.getAllForCluster(vds.getClusterId()));
         } catch (Exception e) {
             log.error("Failure on checkInterfaces on update runtime info for host '{}': {}",

@@ -5,6 +5,7 @@ import java.util.stream.Collectors;
 
 import org.ovirt.engine.api.model.Backup;
 import org.ovirt.engine.api.model.BackupPhase;
+import org.ovirt.engine.api.model.Host;
 import org.ovirt.engine.api.model.Vm;
 import org.ovirt.engine.api.restapi.utils.GuidUtils;
 import org.ovirt.engine.core.common.businessentities.VmBackup;
@@ -22,9 +23,6 @@ public class VmBackupMapper {
         }
         if (model.isSetToCheckpointId()) {
             entity.setToCheckpointId(GuidUtils.asGuid(model.getToCheckpointId()));
-        }
-        if (model.isSetPhase()) {
-            entity.setPhase(map(model.getPhase()));
         }
         if (model.isSetDisks()) {
             List<DiskImage> disks = model.getDisks().getDisks().stream().map(
@@ -55,12 +53,22 @@ public class VmBackupMapper {
             vm.setId(entity.getVmId().toString());
             model.setVm(vm);
         }
+        if (entity.getHostId() != null) {
+            Host host = new Host();
+            host.setId(entity.getHostId().toString());
+            model.setHost(host);
+        }
         return model;
     }
 
     public static BackupPhase map(org.ovirt.engine.core.common.businessentities.VmBackupPhase action) {
         switch (action) {
+        // Creating and preparing scratch disks should be considered
+        // as the backup is still in INITIALIZING phase, scratch disks
+        // should be created before the backup can start.
         case INITIALIZING:
+        case CREATING_SCRATCH_DISKS:
+        case PREPARING_SCRATCH_DISK:
             return BackupPhase.INITIALIZING;
         case STARTING:
             return BackupPhase.STARTING;
@@ -68,24 +76,12 @@ public class VmBackupMapper {
             return BackupPhase.READY;
         case FINALIZING:
             return BackupPhase.FINALIZING;
+        case SUCCEEDED:
+            return BackupPhase.SUCCEEDED;
+        case FAILED:
+            return BackupPhase.FAILED;
         default:
             return null;
         }
     }
-
-    public static org.ovirt.engine.core.common.businessentities.VmBackupPhase map(BackupPhase action) {
-        switch (action) {
-        case INITIALIZING:
-            return org.ovirt.engine.core.common.businessentities.VmBackupPhase.INITIALIZING;
-        case STARTING:
-            return org.ovirt.engine.core.common.businessentities.VmBackupPhase.STARTING;
-        case READY:
-            return org.ovirt.engine.core.common.businessentities.VmBackupPhase.READY;
-        case FINALIZING:
-            return org.ovirt.engine.core.common.businessentities.VmBackupPhase.FINALIZING;
-        default:
-            return null;
-        }
-    }
-
 }

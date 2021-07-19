@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.ConsoleDisconnectAction;
 import org.ovirt.engine.core.common.businessentities.SerialNumberPolicy;
@@ -47,7 +48,6 @@ public abstract class BaseVmModelBehaviorTest extends BaseVmTest {
         vm.setMigrationDowntime(MIGRATION_DOWNTIME);
         vm.setSmartcardEnabled(true);
         vm.setDefaultBootSequence(BOOT_SEQUENCE);
-        vm.setSingleQxlPci(true);
         vm.setAutoConverge(true);
         vm.setMigrateCompressed(true);
         vm.setMigrateEncrypted(true);
@@ -89,10 +89,10 @@ public abstract class BaseVmModelBehaviorTest extends BaseVmTest {
     protected UnitVmModel initModel(VmModelBehaviorBase behavior) {
         final Cluster cluster = new Cluster();
         cluster.setCompatibilityVersion(CLUSTER_VERSION);
+        cluster.setBiosType(BiosType.Q35_SEA_BIOS);
 
         UnitVmModel model = spy(createModel(behavior));
         doReturn(cluster).when(model).getSelectedCluster();
-        doReturn(true).when(model).isSingleQxlEnabled();
         model.initialize();
         model.getInstanceImages().setItems(new ArrayList<InstanceImageLineModel>());
 
@@ -162,9 +162,8 @@ public abstract class BaseVmModelBehaviorTest extends BaseVmTest {
     protected void verifyBuiltHardware(UnitVmModel model) {
         assertEquals(MEM_SIZE, (int) model.getMemSize().getEntity());
         assertEquals(MIN_MEM, (int) model.getMinAllocatedMemory().getEntity());
-        assertEquals(USB_POLICY, model.getUsbPolicy().getSelectedItem());
+        assertEquals(USB_ENABLED, model.getIsUsbEnabled().getEntity());
         assertEquals(NUM_OF_MONITORS, (int) model.getNumOfMonitors().getSelectedItem());
-        assertTrue(model.isSingleQxlEnabled());
         assertEquals(BOOT_SEQUENCE, model.getBootSequence());
         assertEquals(Integer.toString(TOTAL_CPU), model.getTotalCPUCores().getEntity());
         assertEquals(NUM_OF_SOCKETS, (int) model.getNumOfSockets().getSelectedItem());

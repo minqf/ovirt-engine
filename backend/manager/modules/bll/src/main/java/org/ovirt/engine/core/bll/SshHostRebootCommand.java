@@ -6,13 +6,13 @@ import java.io.IOException;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.utils.EngineSSHClient;
 import org.ovirt.engine.core.common.AuditLogType;
-import org.ovirt.engine.core.common.action.VdsActionParameters;
+import org.ovirt.engine.core.common.action.SshHostRebootParameters;
 import org.ovirt.engine.core.common.businessentities.VDSStatus;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
 
 @NonTransactiveCommandAttribute
-public class SshHostRebootCommand <T extends VdsActionParameters> extends VdsCommand<T> {
+public class SshHostRebootCommand<T extends SshHostRebootParameters> extends VdsCommand<T> {
 
     public SshHostRebootCommand(T parameters, CommandContext commandContext) {
         super(parameters, commandContext);
@@ -28,15 +28,19 @@ public class SshHostRebootCommand <T extends VdsActionParameters> extends VdsCom
             setVdsStatus(VDSStatus.Reboot);
 
             // preserve maintenance status after reboot or set non-responsive for letting the monitor control the host
-            runSleepOnReboot(getStatusAfterReboot());
+            runSleepOnReboot(getParameters().isWaitOnRebootSynchronous(), getStatusAfterReboot());
         }
         setSucceeded(result);
     }
 
     private VDSStatus getStatusAfterReboot() {
-        return getParameters().getPrevVdsStatus() == VDSStatus.Maintenance
-                ? VDSStatus.Maintenance
-                : VDSStatus.NonResponsive;
+        switch(getParameters().getPrevVdsStatus()) {
+            case Maintenance:
+            case Installing:
+                return getParameters().getPrevVdsStatus();
+            default:
+                return VDSStatus.NonResponsive;
+        }
     }
 
     /**

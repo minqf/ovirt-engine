@@ -19,20 +19,24 @@ public class ImageTransfer implements BusinessEntity<Guid>, Queryable {
     private Boolean active;
     private Date lastUpdated;
     private String message;
+    private TransferClientType transferClientType;
 
     private Guid vdsId;
     private Guid diskId;
     private Guid imagedTicketId;
     private String proxyUri;
     private String daemonUri;
-    private String signedTicket;
     private Guid backupId;
 
     private Long bytesSent;
     private Long bytesTotal;
     private Integer clientInactivityTimeout;
+    private TimeoutPolicyType timeoutPolicy;
     private VolumeFormat imageFormat;
     private ImageTransferBackend backend;
+
+    // Transfer specified image data instead of data from entire image chain.
+    private Boolean shallow;
 
     public ImageTransfer(Guid commandId) {
         this.commandId = commandId;
@@ -136,14 +140,6 @@ public class ImageTransfer implements BusinessEntity<Guid>, Queryable {
         this.daemonUri = daemonUri;
     }
 
-    public String getSignedTicket() {
-        return signedTicket;
-    }
-
-    public void setSignedTicket(String signedTicket) {
-        this.signedTicket = signedTicket;
-    }
-
     public Long getBytesSent() {
         return bytesSent;
     }
@@ -176,6 +172,14 @@ public class ImageTransfer implements BusinessEntity<Guid>, Queryable {
         this.clientInactivityTimeout = clientInactivityTimeout;
     }
 
+    public TimeoutPolicyType getTimeoutPolicy() {
+        return timeoutPolicy;
+    }
+
+    public void setTimeoutPolicy(TimeoutPolicyType timeoutPolicy) {
+        this.timeoutPolicy = timeoutPolicy;
+    }
+
     public VolumeFormat getImageFormat() {
         return imageFormat;
     }
@@ -200,6 +204,22 @@ public class ImageTransfer implements BusinessEntity<Guid>, Queryable {
         this.backupId = backupId;
     }
 
+    public TransferClientType getTransferClientType() {
+        return transferClientType;
+    }
+
+    public void setTransferClientType(TransferClientType transferClientType) {
+        this.transferClientType = transferClientType;
+    }
+
+    public Boolean isShallow() {
+        return shallow;
+    }
+
+    public void setShallow(Boolean shallow) {
+        this.shallow = shallow;
+    }
+
     @Override
     public boolean equals(Object obj) {
         if (this == obj) {
@@ -221,11 +241,13 @@ public class ImageTransfer implements BusinessEntity<Guid>, Queryable {
                 && Objects.equals(diskId, other.diskId)
                 && Objects.equals(imagedTicketId, other.imagedTicketId)
                 && Objects.equals(proxyUri, other.proxyUri)
-                && Objects.equals(signedTicket, other.signedTicket)
                 && Objects.equals(bytesSent, other.bytesSent)
                 && Objects.equals(bytesTotal, other.bytesTotal)
                 && Objects.equals(clientInactivityTimeout, other.clientInactivityTimeout)
+                && Objects.equals(timeoutPolicy, other.timeoutPolicy)
                 && Objects.equals(imageFormat, other.imageFormat)
+                && Objects.equals(transferClientType, other.transferClientType)
+                && Objects.equals(shallow, other.shallow)
                 && type == other.type;
     }
 
@@ -242,11 +264,13 @@ public class ImageTransfer implements BusinessEntity<Guid>, Queryable {
                 diskId,
                 imagedTicketId,
                 proxyUri,
-                signedTicket,
                 bytesSent,
                 bytesTotal,
                 clientInactivityTimeout,
-                imageFormat
+                timeoutPolicy,
+                imageFormat,
+                transferClientType,
+                shallow
         );
     }
 
@@ -263,11 +287,13 @@ public class ImageTransfer implements BusinessEntity<Guid>, Queryable {
                 .append("diskId", getDiskId())
                 .append("imagedTicketId", getImagedTicketId())
                 .append("proxyUri", getProxyUri())
-                .append("signedTicket", getSignedTicket())
                 .append("bytesSent", getBytesSent())
                 .append("bytesTotal", getBytesTotal())
                 .append("clientInactivityTimeout", getClientInactivityTimeout())
+                .append("timeoutPolicy", getTimeoutPolicy())
                 .append("imageFormat", getImageFormat())
+                .append("transferClientType", getTransferClientType())
+                .append("shallow", isShallow())
                 .build();
     }
 

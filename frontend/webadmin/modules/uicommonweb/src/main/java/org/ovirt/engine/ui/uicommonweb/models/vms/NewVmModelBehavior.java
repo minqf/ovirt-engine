@@ -5,10 +5,12 @@ import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.ovirt.engine.core.common.businessentities.AutoPinningPolicy;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.InstanceType;
 import org.ovirt.engine.core.common.businessentities.StoragePool;
 import org.ovirt.engine.core.common.businessentities.StoragePoolStatus;
+import org.ovirt.engine.core.common.businessentities.UsbPolicy;
 import org.ovirt.engine.core.common.businessentities.VmBase;
 import org.ovirt.engine.core.common.businessentities.VmTemplate;
 import org.ovirt.engine.core.common.businessentities.VmType;
@@ -174,7 +176,7 @@ public class NewVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
 
             getModel().getAllowConsoleReconnect().setEntity(template.isAllowConsoleReconnect());
             getModel().getVmType().setSelectedItem(template.getVmType());
-            getModel().getUsbPolicy().setSelectedItem(template.getUsbPolicy());
+            getModel().getIsUsbEnabled().setEntity(template.getUsbPolicy() != UsbPolicy.DISABLED);
             updateRngDevice(template.getId());
 
             if (isHostCpuValueStillBasedOnTemp()) {
@@ -268,7 +270,7 @@ public class NewVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
         getModel().getDisksAllocationModel().setIsVolumeFormatAvailable(true);
         getModel().getDisksAllocationModel().setIsVolumeFormatChangeable(provisioning);
         getModel().getDisksAllocationModel().setIsThinProvisioning(!provisioning);
-        getModel().getDisksAllocationModel().setIsAliasChangable(true);
+        getModel().getDisksAllocationModel().setIsAliasChangeable(true);
 
         initStorageDomains();
     }
@@ -352,12 +354,6 @@ public class NewVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
     }
 
     @Override
-    public void enableSinglePCI(boolean enabled) {
-        super.enableSinglePCI(enabled);
-        getModel().setSingleQxlEnabled(enabled);
-    }
-
-    @Override
     protected void updateNumaEnabled() {
         super.updateNumaEnabled();
         updateNumaEnabledHelper();
@@ -407,5 +403,25 @@ public class NewVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
         return oldTemplateToSelect != null
                 ? oldTemplateToSelect
                 : computeNewTemplateWithVersionToSelect(newItems, addLatest);
+    }
+
+    @Override
+    protected void updateAutoPinning() {
+        getModel().getAutoPinningPolicy().setSelectedItem(AutoPinningPolicy.NONE);
+        if (getModel().getIsAutoAssign().getEntity() == null) {
+            return;
+        }
+
+        if (!isAutoPinningPossible()) {
+            getModel().getAutoPinningPolicy().setIsChangeable(false);
+        } else {
+            getModel().getAutoPinningPolicy().setIsChangeable(true);
+        }
+    }
+
+    @Override
+    protected void updateBiosType() {
+        super.updateBiosType();
+        super.selectBiosTypeFromTemplate();
     }
 }

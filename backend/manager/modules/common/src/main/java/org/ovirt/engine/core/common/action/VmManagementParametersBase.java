@@ -7,6 +7,7 @@ import java.util.Map;
 
 import javax.validation.Valid;
 
+import org.ovirt.engine.core.common.businessentities.AutoPinningPolicy;
 import org.ovirt.engine.core.common.businessentities.EditableDeviceOnVmStatusField;
 import org.ovirt.engine.core.common.businessentities.GraphicsDevice;
 import org.ovirt.engine.core.common.businessentities.GraphicsType;
@@ -80,6 +81,7 @@ public class VmManagementParametersBase extends VmOperationParameterBase
     private boolean updateNuma;
     private String vmLargeIcon;
     private Version clusterLevelChangeFromVersion;
+    private Map<VmExternalDataKind, String> vmExternalData;
 
     /**
      * Extra flag to allow memory hot unplug. Memory hot unplug requires both this flag and {@link #applyChangesLater}
@@ -88,9 +90,6 @@ public class VmManagementParametersBase extends VmOperationParameterBase
      * <p>Hot unplug memory should only be allowed from REST API.</p>
      */
     private boolean memoryHotUnplugEnabled;
-
-    @EditableDeviceOnVmStatusField(generalType = VmDeviceGeneralType.BALLOON, type = VmDeviceType.MEMBALLOON)
-    private Boolean balloonEnabled;
 
     @EditableDeviceOnVmStatusField(generalType = VmDeviceGeneralType.WATCHDOG, type = VmDeviceType.WATCHDOG)
     private Optional<VmWatchdog> watchdog = new Optional<>();
@@ -106,6 +105,15 @@ public class VmManagementParametersBase extends VmOperationParameterBase
      */
     @EditableDeviceOnVmStatusField(generalType = VmDeviceGeneralType.SOUND, type = VmDeviceType.UNKNOWN, name="sound", isReadOnly = true)
     private Boolean soundDeviceEnabled;
+
+    /*
+     * This parameter is used to decide if to create TPM device or not if it is null then:
+     * for add vm don't add TPM device
+     * for unsupported configuration don't add TPM device
+     * for other update the current configuration will remain
+     */
+    @EditableDeviceOnVmStatusField(generalType = VmDeviceGeneralType.TPM, type = VmDeviceType.TPM, name="tpm")
+    private Boolean tpmEnabled;
 
     /*
      * This parameter is used to decide if to create console device or not if it is null then: for add vm don't add
@@ -142,6 +150,7 @@ public class VmManagementParametersBase extends VmOperationParameterBase
      *  Update VM - if null preserve current configuration
      */
     private List<Label> affinityLabels;
+    private AutoPinningPolicy autoPinningPolicy = AutoPinningPolicy.NONE;
 
     public VmManagementParametersBase() {
     }
@@ -168,7 +177,6 @@ public class VmManagementParametersBase extends VmOperationParameterBase
 
         setSoundDeviceEnabled(baseParams.isSoundDeviceEnabled());
         setConsoleEnabled(baseParams.isConsoleEnabled());
-        setBalloonEnabled(baseParams.isBalloonEnabled());
         setVirtioScsiEnabled(baseParams.isVirtioScsiEnabled());
         setUpdateNuma(baseParams.isUpdateNuma());
         setUpdateRngDevice(baseParams.isUpdateRngDevice());
@@ -246,14 +254,6 @@ public class VmManagementParametersBase extends VmOperationParameterBase
         this.clearPayload = clearPayload;
     }
 
-    public Boolean isBalloonEnabled() {
-        return balloonEnabled;
-    }
-
-    public void setBalloonEnabled(Boolean isBallonEnabled) {
-        this.balloonEnabled = isBallonEnabled;
-    }
-
     public VmWatchdog getWatchdog() {
         return watchdog.getValue();
     }
@@ -303,6 +303,14 @@ public class VmManagementParametersBase extends VmOperationParameterBase
 
     public void setSoundDeviceEnabled(boolean soundDeviceEnabled) {
         this.soundDeviceEnabled = soundDeviceEnabled;
+    }
+
+    public Boolean isTpmEnabled() {
+        return tpmEnabled;
+    }
+
+    public void setTpmEnabled(Boolean tpmEnabled) {
+        this.tpmEnabled = tpmEnabled;
     }
 
     public boolean isCopyTemplatePermissions() {
@@ -384,5 +392,21 @@ public class VmManagementParametersBase extends VmOperationParameterBase
 
     public void setMemoryHotUnplugEnabled(boolean memoryHotUnplugEnabled) {
         this.memoryHotUnplugEnabled = memoryHotUnplugEnabled;
+    }
+
+    public void setAutoPinningPolicy(AutoPinningPolicy autoPinningPolicy) {
+        this.autoPinningPolicy = autoPinningPolicy;
+    }
+
+    public AutoPinningPolicy getAutoPinningPolicy() {
+        return autoPinningPolicy;
+    }
+
+    public Map<VmExternalDataKind, String> getVmExternalData() {
+        return vmExternalData;
+    }
+
+    public void setVmExternalData(Map<VmExternalDataKind, String> vmExternalData) {
+        this.vmExternalData = vmExternalData;
     }
 }

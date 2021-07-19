@@ -4,12 +4,13 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import org.apache.commons.lang.StringUtils;
+import org.ovirt.engine.core.common.action.VmExternalDataKind;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
-import org.ovirt.engine.core.common.businessentities.DisplayType;
 import org.ovirt.engine.core.common.businessentities.StorageServerConnections;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.businessentities.network.VmNetworkInterface;
@@ -65,10 +66,6 @@ public abstract class OvfOvirtReader extends OvfReader {
             XmlNode node = getNode(list, "xsi:type", "ovf:OperatingSystemSection_Type");
             if (node != null) {
                 readOsSection(node);
-                if (!osRepository.isLinux(fullEntityOvfData.getVmBase().getOsId())
-                        || fullEntityOvfData.getVmBase().getDefaultDisplayType() != DisplayType.qxl) {
-                    fullEntityOvfData.getVmBase().setSingleQxlPci(false);
-                }
             }
 
             node = getNode(list, "xsi:type", "ovf:VirtualHardwareSection_Type");
@@ -95,6 +92,16 @@ public abstract class OvfOvirtReader extends OvfReader {
             if (node != null) {
                 readUserDomainsSection(node);
             }
+
+            node = getNode(list, "xsi:type", "ovf:VmExternalDataSection_Type");
+            if (node != null) {
+                readExternalDataSection(node);
+            }
+
+            node = getNode(list, "xsi:type", "ovf:NumaNodeSection_Type");
+            if (node != null) {
+                readNumaNodeListSection(node);
+            }
         }
 
         readGeneralData(virtualSystem);
@@ -104,6 +111,22 @@ public abstract class OvfOvirtReader extends OvfReader {
         super.readGeneralData(content);
         consumeReadProperty(content, CLUSTER_NAME, val -> fullEntityOvfData.setClusterName(val));
     }
+
+    protected List<Integer> readIntegerList(XmlNode node, String label) {
+        List<Integer> integerList = new ArrayList<>();
+        XmlNode xmlNode = selectSingleNode(node, label, _xmlNS);
+        if (xmlNode != null) {
+            String valueList = xmlNode.innerText;
+            if (valueList != null && !valueList.isEmpty()) {
+                String[] values = valueList.split(",");
+                for (String value : values) {
+                    integerList.add(Integer.valueOf(value));
+                }
+            }
+        }
+        return integerList;
+    }
+
 
     @Override
     protected void readLunDisk(XmlNode node, LunDisk lun) {
@@ -151,6 +174,11 @@ public abstract class OvfOvirtReader extends OvfReader {
         // The affinity label section only has meaning for VMs, and is overridden in OvfVmReader.
     }
 
+    protected void readNumaNodeListSection(@SuppressWarnings("unused") XmlNode section) {
+        // The numa node list label section only has meaning for VMs, and is overridden in OvfVmReader.
+    }
+
+
     protected void readUserDomainsSection(@SuppressWarnings("unused") XmlNode section) {
         XmlNodeList list = selectNodes(section, OvfProperties.USER);
         Set<DbUser> dbUsers = new HashSet<>();
@@ -174,6 +202,16 @@ public abstract class OvfOvirtReader extends OvfReader {
 
         fullEntityOvfData.setDbUsers(dbUsers);
         fullEntityOvfData.setUserToRoles(userToRoles);
+    }
+
+    private void readExternalDataSection(@SuppressWarnings("unused") XmlNode section) {
+        Map<VmExternalDataKind, String> vmExternalData = fullEntityOvfData.getVmExternalData();
+        XmlNodeList list = selectNodes(section, OvfProperties.VM_EXTERNAL_DATA_ITEM);
+        for (XmlNode node : list) {
+            String kind = node.attributes.get(OvfProperties.VM_EXTERNAL_DATA_KIND).getValue();
+            String data = selectSingleNode(node, OvfProperties.VM_EXTERNAL_DATA_CONTENT).innerText;
+            vmExternalData.put(VmExternalDataKind.fromExternal(kind), data);
+        }
     }
 
     @Override
@@ -239,7 +277,7 @@ public abstract class OvfOvirtReader extends OvfReader {
     @Override
     protected VmNetworkInterface getNetworkInterface(XmlNode node) {
         // prior to 3.0 the instanceId is int , in 3.1 and on this is Guid
-        String str = selectSingleNode(node, "rasd:InstanceId", _xmlNS).innerText;
+        String str = selectSingleNode(node, VMD_ID, _xmlNS).innerText;
         if (!StringUtils.isNumeric(str)) { // 3.1 and above OVF format
             final Guid guid = new Guid(str);
             VmNetworkInterface iface = interfaces.stream().filter(i -> i.getId().equals(guid)).findFirst().orElse(null);
@@ -292,6 +330,10 @@ public abstract class OvfOvirtReader extends OvfReader {
         XmlNode node = selectSingleNode(section, "Description");
         if (node != null) {
             int osId = osRepository.getOsIdByUniqueName(node.innerText);
+            if ("Alma Linux 8+".equals(node.innerText)) {
+                // map AlmaLinux 8+ that was dropped to Other Linux (kernel 4.x)
+                osId = 33;
+            }
             fullEntityOvfData.getVmBase().setOsId(osId);
             setClusterArch(osRepository.getArchitectureFromOS(osId));
         } else {
@@ -303,7 +345,7 @@ public abstract class OvfOvirtReader extends OvfReader {
 
     @Override
     protected void readDiskImageItem(XmlNode node) {
-        final Guid guid = new Guid(selectSingleNode(node, "rasd:InstanceId", _xmlNS).innerText);
+        final Guid guid = new Guid(selectSingleNode(node, VMD_ID, _xmlNS).innerText);
         DiskImage image = _images.stream().filter(d -> d.getImageId().equals(guid)).findFirst().orElse(null);
         if (image == null) {
             return;

@@ -171,6 +171,7 @@ public final class Cloner {
         vm.setVmMemSizeMb(instance.getVmMemSizeMb());
         vm.setMaxMemorySizeMb(instance.getMaxMemorySizeMb());
         vm.setName(instance.getName());
+        vm.setNamespace(instance.getNamespace());
         vm.setVmOs(instance.getVmOsId());
         vm.setVmType(instance.getVmType());
         vm.setVmPoolId(instance.getVmPoolId());
@@ -195,7 +196,6 @@ public final class Cloner {
         vm.setPredefinedProperties(instance.getPredefinedProperties());
         vm.setUserDefinedProperties(instance.getUserDefinedProperties());
         vm.setCustomProperties(instance.getCustomProperties());
-        vm.setSingleQxlPci(instance.getSingleQxlPci());
         vm.setMinAllocatedMem(instance.getMinAllocatedMem());
         vm.setGuestOsArch(instance.getGuestOsArch());
         vm.setGuestOsCodename(instance.getGuestOsCodename());
@@ -212,6 +212,9 @@ public final class Cloner {
         vm.setRuntimeDeviceCustomProperties(instance.getRuntimeDeviceCustomProperties());
         vm.setLeaseStorageDomainId(instance.getLeaseStorageDomainId());
         vm.setVmInit(instance.getVmInit());
+        vm.setSmallIconId(instance.getSmallIconId());
+        vm.setLargeIconId(instance.getLargeIconId());
+        vm.setVirtioScsiMultiQueuesEnabled(instance.isVirtioScsiMultiQueuesEnabled());
         return vm;
     }
 
@@ -326,6 +329,7 @@ public final class Cloner {
         obj.setAutoConverge(instance.getAutoConverge());
         obj.setMigrateCompressed(instance.getMigrateCompressed());
         obj.setMigrateEncrypted(instance.getMigrateEncrypted());
+        obj.setFipsMode(instance.getFipsMode());
         return obj;
     }
 
@@ -484,6 +488,8 @@ public final class Cloner {
         obj.setLeaseStorageDomainId(instance.getLeaseStorageDomainId());
         obj.setMultiQueuesEnabled(instance.isMultiQueuesEnabled());
         obj.setSealed(instance.isSealed());
+        obj.setClusterBiosType(instance.getClusterBiosType());
+        obj.setVirtioScsiMultiQueuesEnabled(instance.isVirtioScsiMultiQueuesEnabled());
         return obj;
     }
 
@@ -539,6 +545,7 @@ public final class Cloner {
         obj.setLeaseStorageDomainId(instance.getLeaseStorageDomainId());
         obj.setVmInit(instance.getVmInit());
         obj.setMultiQueuesEnabled(instance.isMultiQueuesEnabled());
+        obj.setVirtioScsiMultiQueuesEnabled(instance.isVirtioScsiMultiQueuesEnabled());
         return obj;
     }
 
