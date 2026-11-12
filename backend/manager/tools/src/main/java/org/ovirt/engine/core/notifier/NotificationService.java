@@ -52,7 +52,7 @@ public class NotificationService implements Runnable {
         eventsManager.markOldEventsAsProcessed(prop.getInteger(NotificationProperties.DAYS_TO_SEND_ON_STARTUP));
     }
 
-    public void registerTransport(Transport transport){
+    public void registerTransport(Transport transport) {
         if (transport.isActive()) {
             firstMatchSimpleFilter.registerTransport(transport);
             transport.registerObserver(this.eventsManager);
@@ -86,6 +86,12 @@ public class NotificationService implements Runnable {
                         TimeUnit.SECONDS
                 )
         );
+        try {
+            int boots = eventsManager.getNotificationServiceBoots();
+            eventsManager.setNotificationServiceBoots(++boots);
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
     }
 
     /**
@@ -121,7 +127,7 @@ public class NotificationService implements Runnable {
                 // Add configurations subscription
                 firstMatchSimpleFilter.addFilterEntries(
                         configurationFilters
-                        );
+                );
 
                 for (AuditLogEvent event : eventsManager.getAuditLogEvents()) {
                     firstMatchSimpleFilter.processEvent(event);
@@ -154,7 +160,7 @@ public class NotificationService implements Runnable {
         firstMatchSimpleFilter.clearFilterEntries();
         firstMatchSimpleFilter.addFilterEntries(
                 configurationFilters
-                );
+        );
         if (failedQueries == 0) {
             try {
                 firstMatchSimpleFilter.processEvent(eventsManager.createDBDownEvent());

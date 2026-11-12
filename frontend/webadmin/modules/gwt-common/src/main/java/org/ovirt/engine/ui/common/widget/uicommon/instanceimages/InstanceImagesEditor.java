@@ -51,9 +51,9 @@ public class InstanceImagesEditor extends AddRemoveRowWidget<InstanceImagesModel
     public void setUsePatternFly(boolean use) {
         super.setUsePatternFly(use);
         if (use) {
-            title.removeStyleName(((InstanceImagesWidgetStyle)style).titleStylePadding());
-            mainPanel.removeStyleName(((InstanceImagesWidgetStyle)style).mainPanel());
-            contentPanel.removeStyleName(((InstanceImagesWidgetStyle)style).contentPanel());
+            title.removeStyleName(((InstanceImagesWidgetStyle) style).titleStylePadding());
+            mainPanel.removeStyleName(((InstanceImagesWidgetStyle) style).mainPanel());
+            contentPanel.removeStyleName(((InstanceImagesWidgetStyle) style).contentPanel());
         }
     }
 
@@ -93,7 +93,22 @@ public class InstanceImagesEditor extends AddRemoveRowWidget<InstanceImagesModel
     @Override
     public void edit(final InstanceImagesModel model) {
         this.model = model;
+        model.getPropertyChangedEvent().addListener((ev, sender, args) -> {
+            if ("IsAvailable".equals(args.propertyName)) { //$NON-NLS-1$
+                title.setVisible(model.getIsAvailable());
+                mainPanel.setVisible(model.getIsAvailable());
+                contentPanel.setVisible(model.getIsAvailable());
+            }
+        });
         super.edit(model);
+    }
+
+    @Override
+    protected void doRemoveItem(Pair<InstanceImageLineModel, InstanceImageLineEditor> item,
+            InstanceImageLineModel value,
+            InstanceImageLineEditor widget) {
+        super.doRemoveItem(item, value, widget);
+        model.updateActionsAvailability();
     }
 
     @Override

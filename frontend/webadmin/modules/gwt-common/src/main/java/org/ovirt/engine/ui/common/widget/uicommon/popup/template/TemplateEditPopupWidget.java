@@ -38,7 +38,9 @@ public class TemplateEditPopupWidget extends AbstractVmPopupWidget {
         if (getModel() instanceof BlankTemplateModel) {
             popupWidgetConfigMap = popupWidgetConfigMap.
                 putOne(dataCenterWithClusterEditor, hiddenField()).
+                putOne(biosTypeEditor, hiddenField()).
                 putOne(startRunningOnPanel, hiddenField()).
+                putOne(leaseRow, hiddenField()).
                 putOne(attachCdRow, hiddenField());
         }
 
@@ -47,7 +49,6 @@ public class TemplateEditPopupWidget extends AbstractVmPopupWidget {
 
     protected List<Widget> resourceAllocationTemplateHiddenFields() {
         return Arrays.asList(
-                cpuPinningRow,
                 storageAllocationPanel,
                 disksAllocationPanel);
     }

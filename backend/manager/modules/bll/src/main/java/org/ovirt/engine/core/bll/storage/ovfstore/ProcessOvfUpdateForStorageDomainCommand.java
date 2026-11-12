@@ -45,6 +45,7 @@ import org.ovirt.engine.core.common.businessentities.StoragePool;
 import org.ovirt.engine.core.common.businessentities.VMStatus;
 import org.ovirt.engine.core.common.businessentities.VmDynamic;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
+import org.ovirt.engine.core.common.businessentities.storage.DiskImageDynamic;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.constants.StorageConstants;
@@ -57,6 +58,7 @@ import org.ovirt.engine.core.common.vdscommands.VDSCommandType;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dao.DiskDao;
+import org.ovirt.engine.core.dao.DiskImageDynamicDao;
 import org.ovirt.engine.core.dao.ImageDao;
 import org.ovirt.engine.core.dao.StorageDomainDao;
 import org.ovirt.engine.core.dao.StorageDomainOvfInfoDao;
@@ -93,6 +95,8 @@ public class ProcessOvfUpdateForStorageDomainCommand<T extends ProcessOvfUpdateP
     private StorageDomainDao storageDomainDao;
     @Inject
     private ImageDao imageDao;
+    @Inject
+    private DiskImageDynamicDao diskImageDynamicDao;
     @Inject
     @Typed(SerialChildCommandsExecutionCallback.class)
     private Instance<SerialChildCommandsExecutionCallback> callbackProvider;
@@ -276,6 +280,8 @@ public class ProcessOvfUpdateForStorageDomainCommand<T extends ProcessOvfUpdateP
             return true;
         }
 
+        log.debug("Updating OVF stores: {}", domainOvfStoresInfoForUpdate);
+
         updateDate = new Date();
 
         List<Guid> vmAndTemplatesIds =
@@ -294,6 +300,7 @@ public class ProcessOvfUpdateForStorageDomainCommand<T extends ProcessOvfUpdateP
         // we'll
         // possibly have some ovf data on storage)
         if (lastOvfStoreForUpdate.getFirst().getLastUpdated() != null) {
+            log.debug("Removing last OVF store from list: {}", lastOvfStoreForUpdate);
             domainOvfStoresInfoForUpdate.removeLast();
         } else {
             lastOvfStoreForUpdate = null;
@@ -389,6 +396,15 @@ public class ProcessOvfUpdateForStorageDomainCommand<T extends ProcessOvfUpdateP
                         diskId, volumeId, getPostUpdateOvfStoreDescription(size));
                 storageDomainOvfInfoDao.update(storageDomainOvfInfo);
                 ovfDisk.setLastModified(updateDate);
+                if (storageDomainDao.get(storageDomainId).getStorageType().isFileDomain()) {
+                    ovfDisk.setSize(size);
+                    ovfDisk.setActualSize(size);
+                    DiskImageDynamic destinationDiskDynamic = diskImageDynamicDao.get(ovfDisk.getImageId());
+                    if (destinationDiskDynamic != null) {
+                        destinationDiskDynamic.setActualSize(size);
+                        diskImageDynamicDao.update(destinationDiskDynamic);
+                    }
+                }
                 imageDao.update(ovfDisk.getImage());
                 return true;
             }
@@ -448,7 +464,7 @@ public class ProcessOvfUpdateForStorageDomainCommand<T extends ProcessOvfUpdateP
         return false;
     }
 
-    private void setOvfUpdateStep(OvfUpdateStep step){
+    private void setOvfUpdateStep(OvfUpdateStep step) {
         getParameters().setOvfUpdateStep(step);
         persistCommand(getParameters().getParentCommand(), true);
     }

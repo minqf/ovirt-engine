@@ -1,5 +1,8 @@
 package org.ovirt.engine.api.restapi.types;
 
+import static org.ovirt.engine.core.common.businessentities.StorageServerConnections.DEFAULT_ISCSI_PORT;
+
+
 import java.util.ArrayList;
 
 import org.ovirt.engine.api.model.HostStorage;
@@ -16,16 +19,16 @@ public class StorageLogicalUnitMapper {
     public static LogicalUnit map(LUNs entity, LogicalUnit template) {
         LogicalUnit model = template != null ? template : new LogicalUnit();
         model.setId(entity.getLUNId());
-        if (entity.getVendorId()!=null && !entity.getVendorId().isEmpty()) {
+        if (entity.getVendorId() != null && !entity.getVendorId().isEmpty()) {
             model.setVendorId(entity.getVendorId());
         }
-        if (entity.getProductId()!=null && !entity.getProductId().isEmpty()) {
+        if (entity.getProductId() != null && !entity.getProductId().isEmpty()) {
             model.setProductId(entity.getProductId());
         }
-        if (entity.getSerial()!=null && !entity.getSerial().isEmpty()) {
+        if (entity.getSerial() != null && !entity.getSerial().isEmpty()) {
             model.setSerial(entity.getSerial());
         }
-        if (entity.getLunMapping()!=null) {
+        if (entity.getLunMapping() != null) {
             model.setLunMapping(entity.getLunMapping());
         }
         if (entity.getVolumeGroupId() != null && !entity.getVolumeGroupId().isEmpty()) {
@@ -45,9 +48,17 @@ public class StorageLogicalUnitMapper {
         }
         // Not supported by sysfs since kernel version 4.12, and thus deprecated.
         model.setDiscardZeroesData(false);
-        model.setSize(SizeConverter.convert((long)entity.getDeviceSize(),
+        model.setSize(SizeConverter.convert((long) entity.getDeviceSize(),
                 SizeConverter.SizeUnit.GiB, SizeConverter.SizeUnit.BYTES).longValue());
 
+        if (entity.getLunConnections() != null && !entity.getLunConnections().isEmpty()) {
+            StorageServerConnections lunConnection = entity.getLunConnections().get(0);
+            model.setAddress(lunConnection.getConnection());
+            model.setPort(Integer.valueOf(lunConnection.getPort()));
+            model.setTarget(lunConnection.getIqn());
+        }
+
+        model.setActivePaths(entity.getActivePathCount());
         model.setPaths(entity.getPathCount());
         return model;
     }
@@ -59,7 +70,7 @@ public class StorageLogicalUnitMapper {
         model.setTarget(entity.getIqn());
         model.setPort(Integer.parseInt(entity.getPort()));
         model.setUsername(entity.getUserName());
-        if (entity.getConnection()!=null && entity.getPort()!=null && entity.getPortal()!=null) {
+        if (entity.getConnection() != null && entity.getPort() != null && entity.getPortal() != null) {
             model.setPortal(entity.getConnection() + ":" + entity.getPort() + "," + entity.getPortal());
         }
         return model;
@@ -105,6 +116,9 @@ public class StorageLogicalUnitMapper {
         }
         if (logicalUnit.isSetPort()) {
             entity.setPort(logicalUnit.getPort().toString());
+        } else {
+            // Setting default port to please the StorageLogicalUnitMapperTest#testRoundtrip test
+            entity.setPort(DEFAULT_ISCSI_PORT);
         }
         if (logicalUnit.isSetUsername()) {
             entity.setUserName(logicalUnit.getUsername());
@@ -112,20 +126,21 @@ public class StorageLogicalUnitMapper {
         if (logicalUnit.isSetPassword()) {
             entity.setPassword(logicalUnit.getPassword());
         }
+
         return entity;
     }
 
     @Mapping(from = org.ovirt.engine.core.common.businessentities.storage.LunStatus.class, to = LunStatus.class)
     public static LunStatus map(org.ovirt.engine.core.common.businessentities.storage.LunStatus status, LunStatus template) {
         switch (status) {
-        case Free:
-            return LunStatus.FREE;
-        case Used:
-            return LunStatus.USED;
-        case Unusable:
-            return LunStatus.UNUSABLE;
-        default:
-            return null;
+            case Free:
+                return LunStatus.FREE;
+            case Used:
+                return LunStatus.USED;
+            case Unusable:
+                return LunStatus.UNUSABLE;
+            default:
+                return null;
         }
     }
 }

@@ -10,6 +10,7 @@ import javax.validation.constraints.Min;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Size;
 
+import org.ovirt.engine.core.common.migration.ParallelMigrationsType;
 import org.ovirt.engine.core.common.network.FirewallType;
 import org.ovirt.engine.core.common.network.SwitchType;
 import org.ovirt.engine.core.common.scheduling.ClusterPolicy;
@@ -33,7 +34,7 @@ public class Cluster implements Queryable, BusinessEntity<Guid>, HasStoragePool,
     @NotNull(message = "VALIDATION_CLUSTER_NAME_NOT_NULL", groups = { CreateEntity.class, UpdateEntity.class })
     @Size(min = 1, max = BusinessEntitiesDefinitions.CLUSTER_NAME_SIZE, message = "VALIDATION_CLUSTER_NAME_MAX",
             groups = {
-            CreateEntity.class, UpdateEntity.class })
+                CreateEntity.class, UpdateEntity.class })
     @ValidI18NName(message = "VALIDATION_CLUSTER_NAME_INVALID", groups = { CreateEntity.class, UpdateEntity.class })
     private String name;
 
@@ -67,6 +68,10 @@ public class Cluster implements Queryable, BusinessEntity<Guid>, HasStoragePool,
     private boolean countThreadsAsCores;
 
     private boolean upgradeRunning;
+
+    private int upgradePercentComplete;
+
+    private String upgradeCorrelationId;
 
     private boolean smtDisabled;
 
@@ -153,6 +158,8 @@ public class Cluster implements Queryable, BusinessEntity<Guid>, HasStoragePool,
 
     private boolean vncEncryptionEnabled;
 
+    private FipsMode fipsMode;
+
     /**
      * How max sum of bandwidths of both outgoing and incoming migrations on one host are limited
      */
@@ -168,6 +175,7 @@ public class Cluster implements Queryable, BusinessEntity<Guid>, HasStoragePool,
     @Min(1)
     private Integer customMigrationNetworkBandwidth;
 
+    private Integer parallelMigrations;
     private Guid migrationPolicyId;
     private Guid macPoolId;
     private Guid defaultNetworkProviderId;
@@ -182,8 +190,10 @@ public class Cluster implements Queryable, BusinessEntity<Guid>, HasStoragePool,
         additionalRngSources = new HashSet<>();
         fencingPolicy = new FencingPolicy();
         addtionalFeaturesSupported = new HashSet<>();
+        enableKsm = true;
         ksmMergeAcrossNumaNodes = true;
         migrationBandwidthLimitType = MigrationBandwidthLimitType.DEFAULT;
+        parallelMigrations = ParallelMigrationsType.DISABLED.getValue();
         requiredSwitchTypeForCluster = SwitchType.LEGACY;
         logMaxMemoryUsedThresholdType = LogMaxMemoryUsedThresholdType.PERCENTAGE;
         description = "";
@@ -192,6 +202,8 @@ public class Cluster implements Queryable, BusinessEntity<Guid>, HasStoragePool,
         vncEncryptionEnabled = true;
         hostNamesOutOfSync = "";
         managed = true;
+        enableBallooning = true;
+        fipsMode = FipsMode.UNDEFINED;
     }
 
     @Override
@@ -315,6 +327,22 @@ public class Cluster implements Queryable, BusinessEntity<Guid>, HasStoragePool,
         this.upgradeRunning = upgradeRunning;
     }
 
+    public int getUpgradePercentComplete() {
+        return upgradePercentComplete;
+    }
+
+    public void setUpgradePercentComplete(int upgradePercentComplete) {
+        this.upgradePercentComplete = upgradePercentComplete;
+    }
+
+    public String getUpgradeCorrelationId() {
+        return upgradeCorrelationId;
+    }
+
+    public void setUpgradeCorrelationId(String upgradeCorrelationId) {
+        this.upgradeCorrelationId = upgradeCorrelationId;
+    }
+
     public boolean getSmtDisabled() {
         return smtDisabled;
     }
@@ -425,7 +453,7 @@ public class Cluster implements Queryable, BusinessEntity<Guid>, HasStoragePool,
         this.hasHostWithMissingCpuFlags = hasHostWithMissingCpuFlags;
     }
 
-    public boolean isInUpgradeMode(){
+    public boolean isInUpgradeMode() {
         return ClusterPolicy.UPGRADE_POLICY_GUID.equals(clusterPolicyId);
     }
 
@@ -618,6 +646,16 @@ public class Cluster implements Queryable, BusinessEntity<Guid>, HasStoragePool,
         this.migrationBandwidthLimitType = migrationBandwidthLimitType;
     }
 
+    @Override
+    public Integer getParallelMigrations() {
+        return parallelMigrations;
+    }
+
+    @Override
+    public void setParallelMigrations(Integer parallelMigrations) {
+        this.parallelMigrations = parallelMigrations;
+    }
+
     public Guid getMigrationPolicyId() {
         return migrationPolicyId;
     }
@@ -707,7 +745,7 @@ public class Cluster implements Queryable, BusinessEntity<Guid>, HasStoragePool,
     }
 
     public String getHostNamesOutOfSync() {
-            return hostNamesOutOfSync;
+        return hostNamesOutOfSync;
     }
 
     public void setHostNamesOutOfSync(String hostNamesOutOfSync) {
@@ -721,6 +759,14 @@ public class Cluster implements Queryable, BusinessEntity<Guid>, HasStoragePool,
 
     public void setManaged(boolean managed) {
         this.managed = managed;
+    }
+
+    public FipsMode getFipsMode() {
+        return fipsMode;
+    }
+
+    public void setFipsMode(FipsMode fipsMode) {
+        this.fipsMode = fipsMode;
     }
 
     @Override
@@ -776,7 +822,11 @@ public class Cluster implements Queryable, BusinessEntity<Guid>, HasStoragePool,
                 logMaxMemoryUsedThresholdType,
                 vncEncryptionEnabled,
                 hostNamesOutOfSync,
-                managed
+                managed,
+                fipsMode,
+                upgradeRunning,
+                upgradePercentComplete,
+                upgradeCorrelationId
         );
     }
 
@@ -843,7 +893,11 @@ public class Cluster implements Queryable, BusinessEntity<Guid>, HasStoragePool,
                 && logMaxMemoryUsedThresholdType == other.logMaxMemoryUsedThresholdType
                 && vncEncryptionEnabled == other.vncEncryptionEnabled
                 && Objects.equals(hostNamesOutOfSync, other.hostNamesOutOfSync)
-                && managed == other.managed;
+                && managed == other.managed
+                && fipsMode == other.fipsMode
+                && upgradeRunning == other.upgradeRunning
+                && upgradePercentComplete == other.upgradePercentComplete
+                && Objects.equals(upgradeCorrelationId, other.upgradeCorrelationId);
     }
 
     @Override

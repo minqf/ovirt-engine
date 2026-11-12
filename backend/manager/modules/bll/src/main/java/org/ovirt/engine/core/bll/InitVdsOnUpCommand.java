@@ -17,6 +17,7 @@ import org.ovirt.engine.core.bll.pm.FenceProxyLocator;
 import org.ovirt.engine.core.bll.pm.HostFenceActionExecutor;
 import org.ovirt.engine.core.bll.storage.StorageHandlingCommandBase;
 import org.ovirt.engine.core.common.AuditLogType;
+import org.ovirt.engine.core.common.FeatureSupported;
 import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.ConnectHostToStoragePoolServersParameters;
@@ -25,6 +26,7 @@ import org.ovirt.engine.core.common.action.SetNonOperationalVdsParameters;
 import org.ovirt.engine.core.common.action.VdsActionParameters;
 import org.ovirt.engine.core.common.businessentities.AttestationResultEnum;
 import org.ovirt.engine.core.common.businessentities.Cluster;
+import org.ovirt.engine.core.common.businessentities.FipsMode;
 import org.ovirt.engine.core.common.businessentities.KdumpStatus;
 import org.ovirt.engine.core.common.businessentities.NonOperationalReason;
 import org.ovirt.engine.core.common.businessentities.StorageDomain;
@@ -55,7 +57,10 @@ import org.ovirt.engine.core.common.vdscommands.VDSReturnValue;
 import org.ovirt.engine.core.common.vdscommands.VdsIdAndVdsVDSCommandParametersBase;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
+import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogable;
+import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogableImpl;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.MessageBundler;
+import org.ovirt.engine.core.dao.ClusterDao;
 import org.ovirt.engine.core.dao.StorageDomainDao;
 import org.ovirt.engine.core.dao.StorageDomainStaticDao;
 import org.ovirt.engine.core.dao.StoragePoolDao;
@@ -95,6 +100,8 @@ public class InitVdsOnUpCommand extends StorageHandlingCommandBase<HostStoragePo
     private IrsProxyManager irsProxyManager;
     @Inject
     private VdsDynamicDao vdsDynamicDao;
+    @Inject
+    private ClusterDao clusterDao;
     @Inject
     private StoragePoolIsoMapDao storagePoolIsoMapDao;
     @Inject
@@ -146,32 +153,39 @@ public class InitVdsOnUpCommand extends StorageHandlingCommandBase<HostStoragePo
 
         boolean initSucceeded = true;
 
-        // make sure the CPU flags are stored in the DB
-        vdsDynamicDao.updateCpuFlags(getVds().getId(), getVds().getCpuFlags());
-        clusterCpuFlagsManager.updateClusterCpuFlags(getCluster());
+        if (isHeHostBeingMovedToForeignCluster(getVds())) {
+            setNonOperational(NonOperationalReason.HE_HOST_IN_NON_HE_CLUSTER, null);
+            logHeHostInForeignClusterAudit(cluster);
+            initSucceeded = false;
+        } else {
+            // make sure the CPU flags are stored in the DB
+            vdsDynamicDao.updateCpuFlags(getVds().getId(), getVds().getCpuFlags());
+            clusterCpuFlagsManager.updateClusterCpuFlags(getCluster());
 
-        initHostKdumpDetectionStatus();
+            initHostKdumpDetectionStatus();
 
-        /* Host is UP, re-set the policy controlled power management flag */
-        getVds().setPowerManagementControlledByPolicy(true);
-        vdsDynamicDao.updateVdsDynamicPowerManagementPolicyFlag(
-                getVds().getId(),
-                getVds().isPowerManagementControlledByPolicy());
+            /* Host is UP, re-set the policy controlled power management flag */
+            getVds().setPowerManagementControlledByPolicy(true);
+            vdsDynamicDao.updateVdsDynamicPowerManagementPolicyFlag(
+                    getVds().getId(),
+                    getVds().isPowerManagementControlledByPolicy());
 
-        if (getVds().getHighlyAvailableIsConfigured()) {
-            haMaintenanceFailed = !hostedEngineHelper.updateHaLocalMaintenanceMode(getVds(), false);
-        }
+            if (getVds().getHighlyAvailableIsConfigured()) {
+                haMaintenanceFailed = !hostedEngineHelper.updateHaLocalMaintenanceMode(getVds(), false);
+            }
 
-        if (cluster.supportsTrustedService()) {
-            initSucceeded = initTrustedService();
-        }
+            initSucceeded = checkFipsMode();
+            if (initSucceeded && cluster.supportsTrustedService()) {
+                initSucceeded = initTrustedService();
+            }
 
-        if (initSucceeded && cluster.supportsVirtService()) {
-            initSucceeded = initVirtResources();
-        }
+            if (initSucceeded && cluster.supportsVirtService()) {
+                initSucceeded = initVirtResources();
+            }
 
-        if (initSucceeded && cluster.supportsGlusterService()) {
-            initSucceeded = glusterCommandHelper.initGlusterHost(getVds());
+            if (initSucceeded && cluster.supportsGlusterService()) {
+                initSucceeded = glusterCommandHelper.initGlusterHost(getVds());
+            }
         }
 
         setSucceeded(initSucceeded);
@@ -182,6 +196,15 @@ public class InitVdsOnUpCommand extends StorageHandlingCommandBase<HostStoragePo
         }
     }
 
+    private void logHeHostInForeignClusterAudit(Cluster cluster) {
+        AuditLogable event = new AuditLogableImpl();
+        event.setVdsId(getVdsId());
+        event.setVdsName(getVdsName());
+        event.setClusterId(cluster.getId());
+        event.setClusterName(cluster.getName());
+        auditLogDirector.log(event, AuditLogType.HOSTED_ENGINE_CONFIGURED_HOST_IN_NON_HE_CLUSTER);
+    }
+
     private boolean initVirtResources() {
         resourceManager.clearLastStatusEventStampsFromVds(getVdsId());
         if (initializeStorage()) {
@@ -189,17 +212,37 @@ public class InitVdsOnUpCommand extends StorageHandlingCommandBase<HostStoragePo
             processStoragePoolStatus();
             runUpdateMomPolicy(getCluster(), getVds());
             refreshHostDeviceList();
-        } else {
-            Map<String, String> customLogValues = new HashMap<>();
-            customLogValues.put("StoragePoolName", getStoragePoolName());
-            if (problematicDomains != null && !problematicDomains.isEmpty()) {
-                customLogValues.put("StorageDomainNames",
-                        problematicDomains.stream().map(StorageDomainStatic::getName).collect(Collectors.joining(", ")));
-            }
-            setNonOperational(NonOperationalReason.STORAGE_DOMAIN_UNREACHABLE, customLogValues);
-            return false;
+            return true;
         }
-        return true;
+
+        return false;
+    }
+
+    private boolean checkFipsMode() {
+        if (!FeatureSupported.isFipsModeSupported(getCluster().getCompatibilityVersion())) {
+            return true;
+        }
+
+        FipsMode hostFipsMode = getVds().isFipsEnabled() ? FipsMode.ENABLED : FipsMode.DISABLED;
+        if (getCluster().getFipsMode() == hostFipsMode) {
+            return true;
+        }
+
+        if (getCluster().getFipsMode() == FipsMode.UNDEFINED) {
+            // cluster is not configured yet, initiate by the first VDS
+            getCluster().setFipsMode(hostFipsMode);
+            log.info("Updating FIPS mode configuration of the cluster {} to {}",
+                     getCluster().getName(), getVds().isFipsEnabled());
+
+            clusterDao.update(getCluster());
+            return true;
+        }
+
+        Map<String, String> customLogValues = new HashMap<>();
+        customLogValues.put("VdsFips", String.valueOf(getVds().isFipsEnabled()));
+        customLogValues.put("ClusterFips", getCluster().getFipsMode().name());
+        setNonOperational(NonOperationalReason.FIPS_INCOMPATIBLE_WITH_CLUSTER, customLogValues);
+        return false;
     }
 
     private void refreshHostDeviceList() {
@@ -240,6 +283,11 @@ public class InitVdsOnUpCommand extends StorageHandlingCommandBase<HostStoragePo
                 ExecutionHandler.createInternalJobContext(getContext()));
     }
 
+    private boolean isHeHostBeingMovedToForeignCluster(VDS vds) {
+        return hostedEngineHelper.isVmManaged() && vds.isHostedEngineDeployed()
+                && !hostedEngineHelper.getClusterId().equals(vds.getClusterId());
+    }
+
     private boolean initializeStorage() {
         boolean returnValue = false;
 
@@ -264,7 +312,16 @@ public class InitVdsOnUpCommand extends StorageHandlingCommandBase<HostStoragePo
             } else {
                 connectPoolSucceeded = false;
             }
+        }
 
+        if (!returnValue) {
+            Map<String, String> customLogValues = new HashMap<>();
+            customLogValues.put("StoragePoolName", getStoragePoolName());
+            if (problematicDomains != null && !problematicDomains.isEmpty()) {
+                customLogValues.put("StorageDomainNames",
+                        problematicDomains.stream().map(StorageDomainStatic::getName).collect(Collectors.joining(", ")));
+            }
+            setNonOperational(NonOperationalReason.STORAGE_DOMAIN_UNREACHABLE, customLogValues);
         }
         return returnValue;
     }

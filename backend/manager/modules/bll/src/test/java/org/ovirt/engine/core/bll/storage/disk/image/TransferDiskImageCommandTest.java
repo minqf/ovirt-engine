@@ -38,6 +38,7 @@ import org.ovirt.engine.core.common.businessentities.ActionGroup;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.ImageTransferBackend;
 import org.ovirt.engine.core.common.businessentities.storage.StorageType;
+import org.ovirt.engine.core.common.businessentities.storage.TransferClientType;
 import org.ovirt.engine.core.common.businessentities.storage.TransferType;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.common.config.ConfigValues;
@@ -75,13 +76,18 @@ public class TransferDiskImageCommandTest extends BaseCommandTest {
     @Mock
     private VmBackupDao vmBackupDao;
 
+    @Mock
+    private ImageTransferUpdater imageTransferUpdater;
+
     @Spy
     @InjectMocks
-    private  TransferDiskImageCommand<TransferDiskImageParameters> transferImageCommand =
+    private TransferDiskImageCommand<TransferDiskImageParameters> transferImageCommand =
             new TransferDiskImageCommand<>(new TransferDiskImageParameters(), null);
 
     public static Stream<MockConfigDescriptor<?>> mockConfiguration() {
-        return Stream.of(MockConfigDescriptor.of(ConfigValues.TransferImageClientInactivityTimeoutInSeconds, 600));
+        return Stream.of(
+            MockConfigDescriptor.of(ConfigValues.TransferImageClientInactivityTimeoutInSeconds, 600),
+            MockConfigDescriptor.of(ConfigValues.ImageTransferProxyEnabled, Boolean.TRUE));
     }
 
     @BeforeEach
@@ -89,7 +95,7 @@ public class TransferDiskImageCommandTest extends BaseCommandTest {
         doNothing().when(transferImageCommand).createImage();
         doNothing().when(transferImageCommand).persistCommand(any(), anyBoolean());
         doNothing().when(transferImageCommand).lockImage();
-        doNothing().when(transferImageCommand).startImageTransferSession();
+        doReturn(true).when(transferImageCommand).startImageTransferSession();
     }
 
     private void initializeSuppliedImage() {
@@ -245,7 +251,7 @@ public class TransferDiskImageCommandTest extends BaseCommandTest {
     @Test
     public void testNotCreatingImageIfSupplied() {
         initializeSuppliedImage();
-        doNothing().when(transferImageCommand).handleImageIsReadyForTransfer();
+        doReturn(true).when(transferImageCommand).handleImageIsReadyForTransfer();
         transferImageCommand.executeCommand();
 
         // Make sure no image is created if an image Guid is supplied.
@@ -338,7 +344,7 @@ public class TransferDiskImageCommandTest extends BaseCommandTest {
 
         transferImageCommand.getParameters().setTransferType(TransferType.Upload);
         transferImageCommand.getParameters().setTransferSize(readyImage.getSize());
-        transferImageCommand.getParameters().setTransferringViaBrowser(true);
+        transferImageCommand.getParameters().setTransferClientType(TransferClientType.TRANSFER_VIA_BROWSER);
         transferImageCommand.handleImageIsReadyForTransfer();
 
         assertEquals(transferImageCommand.getParameters().getTransferSize(), readyImage.getSize());

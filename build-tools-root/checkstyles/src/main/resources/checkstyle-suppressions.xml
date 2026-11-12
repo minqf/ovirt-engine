@@ -3,7 +3,7 @@
     "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
     "https://checkstyle.org/dtds/suppressions_1_2.dtd">
 <suppressions>
-    <!-- Suppress checks on properties files brought from Zanata-->
+    <!-- Suppress checks on translated properties files -->
     <suppress checks="RegexpSingleline" files="[\\/].*.properties"/>
     <suppress checks="NewlineAtEndOfFile" files="[\\/].*.properties"/>
     <suppress checks="FileTabCharacter" files="[\\/].*.properties"/>
@@ -55,6 +55,7 @@
     <suppress checks="MethodName" files="ApplicationResources.java"/>
     <suppress checks="MethodName" files="ApplicationResourcesWithLookup.java"/>
     <suppress checks="MethodName" files="LocalizedEnums.java"/>
+    <suppress checks="MethodName" files="LocalizedMigrationPolicies.java"/>
     <suppress checks="MethodName" files="SpiceRedKeys.java"/>
 
     <!-- Other GWT-related classes -->
@@ -90,6 +91,9 @@
     <suppress checks="IllegalType" files="TestCollectionsParams.java"/>
     <suppress checks="IllegalType" files="ConvergenceScheduleTest.java"/>
     <suppress checks="IllegalType" files="AbstractBackendBaseTest.java"/>
+
+    <!-- Visually better with multiple spaces -->
+    <suppress checks="SingleSpaceSeparator" files="NetworkStatisticsBuilderTest.java"/>
 
     <!-- Most of the classes in the authentication package aren't used in the
          GWT client, and those that are used have special versions or custom

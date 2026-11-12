@@ -23,6 +23,7 @@ import org.mockito.quality.Strictness;
 import org.ovirt.engine.core.bll.scheduling.PolicyUnitImpl;
 import org.ovirt.engine.core.bll.scheduling.SchedulingContext;
 import org.ovirt.engine.core.bll.scheduling.pending.PendingResourceManager;
+import org.ovirt.engine.core.bll.scheduling.utils.VdsCpuUnitPinningHelper;
 import org.ovirt.engine.core.common.businessentities.BusinessEntity;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.VDS;
@@ -33,6 +34,8 @@ import org.ovirt.engine.core.common.utils.Pair;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.utils.MockConfigDescriptor;
 import org.ovirt.engine.core.utils.MockConfigExtension;
+import org.ovirt.engine.core.vdsbroker.ResourceManager;
+import org.ovirt.engine.core.vdsbroker.VdsManager;
 
 @ExtendWith({MockitoExtension.class, MockConfigExtension.class})
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -51,15 +54,29 @@ public class EvenDistributionWeightPolicyUnitTest extends AbstractPolicyUnitTest
     @Mock
     private VmOverheadCalculator vmOverheadCalculator;
 
+    @Mock
+    private ResourceManager resourceManager;
+
+    @Mock
+    private VdsCpuUnitPinningHelper vdsCpuUnitPinningHelper;
+
+    @Mock
+    private PendingResourceManager pendingResourceManager;
+
+    @Mock
+    private VdsManager vdsManager;
+
     @InjectMocks
     private EvenDistributionCPUWeightPolicyUnit evenDistributionCPUWeightPolicyUnit = new EvenDistributionCPUWeightPolicyUnit(null, new PendingResourceManager());
 
     @InjectMocks
-    private EvenDistributionMemoryWeightPolicyUnit evenDistributionMemoryWeightPolicyUnit =  new EvenDistributionMemoryWeightPolicyUnit(null, new PendingResourceManager());
+    private EvenDistributionMemoryWeightPolicyUnit evenDistributionMemoryWeightPolicyUnit = new EvenDistributionMemoryWeightPolicyUnit(null, new PendingResourceManager());
 
     @BeforeEach
     public void setUp() {
         when(vmOverheadCalculator.getTotalRequiredMemMb(any(VM.class))).thenAnswer(invocation -> invocation.<VM>getArgument(0).getMemSizeMb());
+        when(resourceManager.getVdsManager(any())).thenReturn(vdsManager);
+        when(vdsManager.getCpuTopology()).thenReturn(Collections.emptyList());
     }
 
     @Test
@@ -89,7 +106,7 @@ public class EvenDistributionWeightPolicyUnitTest extends AbstractPolicyUnitTest
         }
     }
 
-    protected  <T extends PolicyUnitImpl> Guid selectedBestHost(T unit, VM vm, ArrayList<VDS> hosts) {
+    protected <T extends PolicyUnitImpl> Guid selectedBestHost(T unit, VM vm, ArrayList<VDS> hosts) {
         List<Pair<Guid, Integer>> scores = unit.score(
                 new SchedulingContext(new Cluster(), Collections.emptyMap()),
                 hosts,

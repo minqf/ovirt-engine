@@ -17,20 +17,20 @@ public class RefresherFactory {
 
     public HostConnectionRefresherInterface createHostConnectionRefresher(VdsManager vdsManager,
             ResourceManager resourceManager) {
-        switch(vdsManager.getVdsType()) {
-        case KubevirtNode:
-            return Injector.injectMembers(new KubevirtHostConnectionRefresher(vdsManager));
-        default:
-            return new HostConnectionRefresher(vdsManager, resourceManager);
+        switch (vdsManager.getVdsType()) {
+            case KubevirtNode:
+                return Injector.injectMembers(new KubevirtHostConnectionRefresher(vdsManager));
+            default:
+                return new HostConnectionRefresher(vdsManager, resourceManager);
         }
     }
 
     private VmStatsRefresher getVmStatsRefresher(VdsManager vdsManager, ResourceManager resourceManager) {
-        switch(vdsManager.getVdsType()) {
-        case KubevirtNode:
-            return new KubevirtVmStatsRefresher(vdsManager);
-        default:
-            return new EventVmStatsRefresher(vdsManager, resourceManager);
+        switch (vdsManager.getVdsType()) {
+            case KubevirtNode:
+                return new KubevirtVmStatsRefresher(vdsManager);
+            default:
+                return new EventVmStatsRefresher(vdsManager, resourceManager);
         }
     }
 }

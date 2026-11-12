@@ -9,7 +9,7 @@ import javax.inject.Singleton;
 
 import org.ovirt.engine.core.common.businessentities.network.VmNic;
 import org.ovirt.engine.core.compat.Guid;
-import org.ovirt.engine.core.dao.DefaultGenericDao;
+import org.ovirt.engine.core.dao.MassOperationsGenericDao;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.RowMapper;
@@ -18,7 +18,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 
 @Named
 @Singleton
-public class VmNicDaoImpl extends DefaultGenericDao<VmNic, Guid> implements VmNicDao {
+public class VmNicDaoImpl extends MassOperationsGenericDao<VmNic, Guid> implements VmNicDao {
 
     private final Logger log = LoggerFactory.getLogger(VmNicDaoImpl.class);
 
@@ -46,6 +46,22 @@ public class VmNicDaoImpl extends DefaultGenericDao<VmNic, Guid> implements VmNi
     public List<VmNic> getAllForNetwork(Guid networkId) {
         return getCallsHandler().executeReadList("GetVmInterfacesByNetworkId",
                 VnicRowMapper.INSTANCE, getCustomMapSqlParameterSource().addValue("network_id", networkId));
+    }
+
+    public List<VmNic> getActiveForNetwork(Guid networkId) {
+        return getCallsHandler().executeReadList("GetActiveVmInterfacesByNetworkId",
+            VnicRowMapper.INSTANCE, getCustomMapSqlParameterSource().addValue("network_id", networkId));
+    }
+
+    public List<VmNic> getActiveForVnicProfile(Guid profileId) {
+        return getCallsHandler().executeReadList("GetActiveVmInterfacesByProfileId",
+                VnicRowMapper.INSTANCE, getCustomMapSqlParameterSource().addValue("profile_id", profileId));
+    }
+
+    @Override
+    public void setVmInterfacesSyncedForVm(Guid vmId) {
+        getCallsHandler().executeModification("SetVmInterfacesSyncedForVm",
+            getCustomMapSqlParameterSource().addValue("vm_id", vmId));
     }
 
     @Override
@@ -82,7 +98,8 @@ public class VmNicDaoImpl extends DefaultGenericDao<VmNic, Guid> implements VmNi
                 .addValue("vm_guid", entity.getVmId())
                 .addValue("vnic_profile_id", entity.getVnicProfileId())
                 .addValue("type", entity.getType())
-                .addValue("linked", entity.isLinked());
+                .addValue("linked", entity.isLinked())
+                .addValue("synced", entity.isSynced());
     }
 
     @Override
@@ -108,6 +125,7 @@ public class VmNicDaoImpl extends DefaultGenericDao<VmNic, Guid> implements VmNi
             entity.setVnicProfileId(getGuid(rs, "vnic_profile_id"));
             entity.setSpeed((Integer) rs.getObject("speed"));
             entity.setLinked(rs.getBoolean("linked"));
+            entity.setSynced(rs.getBoolean("synced"));
             return entity;
         }
 

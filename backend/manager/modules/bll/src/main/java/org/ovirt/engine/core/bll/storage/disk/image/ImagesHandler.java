@@ -1,5 +1,6 @@
 package org.ovirt.engine.core.bll.storage.disk.image;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -22,12 +23,14 @@ import org.ovirt.engine.core.bll.context.CompensationContext;
 import org.ovirt.engine.core.bll.profiles.DiskProfileHelper;
 import org.ovirt.engine.core.bll.storage.connection.StorageHelperDirector;
 import org.ovirt.engine.core.bll.storage.utils.VdsCommandsHelper;
-import org.ovirt.engine.core.bll.utils.ClusterUtils;
 import org.ovirt.engine.core.bll.utils.VmDeviceUtils;
 import org.ovirt.engine.core.bll.validator.storage.StorageDomainValidator;
+import org.ovirt.engine.core.common.FeatureSupported;
 import org.ovirt.engine.core.common.businessentities.Snapshot;
 import org.ovirt.engine.core.common.businessentities.StorageDomain;
 import org.ovirt.engine.core.common.businessentities.StorageDomainStatic;
+import org.ovirt.engine.core.common.businessentities.StoragePool;
+import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VmDeviceId;
 import org.ovirt.engine.core.common.businessentities.VmTemplate;
@@ -40,6 +43,7 @@ import org.ovirt.engine.core.common.businessentities.storage.DiskImageBase;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImageDynamic;
 import org.ovirt.engine.core.common.businessentities.storage.DiskLunMapId;
 import org.ovirt.engine.core.common.businessentities.storage.FullEntityOvfData;
+import org.ovirt.engine.core.common.businessentities.storage.Image;
 import org.ovirt.engine.core.common.businessentities.storage.ImageStatus;
 import org.ovirt.engine.core.common.businessentities.storage.ImageStorageDomainMap;
 import org.ovirt.engine.core.common.businessentities.storage.LUNs;
@@ -48,11 +52,14 @@ import org.ovirt.engine.core.common.businessentities.storage.QemuImageInfo;
 import org.ovirt.engine.core.common.businessentities.storage.StorageType;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeType;
+import org.ovirt.engine.core.common.config.Config;
+import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.constants.StorageConstants;
 import org.ovirt.engine.core.common.errors.EngineError;
 import org.ovirt.engine.core.common.errors.EngineException;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.interfaces.VDSBrokerFrontend;
+import org.ovirt.engine.core.common.utils.SizeConverter;
 import org.ovirt.engine.core.common.utils.VmDeviceType;
 import org.ovirt.engine.core.common.vdscommands.GetImageInfoVDSCommandParameters;
 import org.ovirt.engine.core.common.vdscommands.GetVolumeInfoVDSCommandParameters;
@@ -71,7 +78,11 @@ import org.ovirt.engine.core.dao.DiskVmElementDao;
 import org.ovirt.engine.core.dao.ImageDao;
 import org.ovirt.engine.core.dao.ImageStorageDomainMapDao;
 import org.ovirt.engine.core.dao.StorageDomainDao;
+import org.ovirt.engine.core.dao.StoragePoolDao;
 import org.ovirt.engine.core.dao.StorageServerConnectionDao;
+import org.ovirt.engine.core.dao.VdsDao;
+import org.ovirt.engine.core.dao.VmCheckpointDao;
+import org.ovirt.engine.core.dao.VmDao;
 import org.ovirt.engine.core.dao.VmDeviceDao;
 import org.ovirt.engine.core.utils.ovf.OvfManager;
 import org.ovirt.engine.core.utils.ovf.OvfReaderException;
@@ -124,9 +135,6 @@ public class ImagesHandler {
     private StorageHelperDirector storageHelperDirector;
 
     @Inject
-    private ClusterUtils clusterUtils;
-
-    @Inject
     private VdsCommandsHelper vdsCommandsHelper;
 
     @Inject
@@ -137,6 +145,21 @@ public class ImagesHandler {
 
     @Inject
     private DiskProfileHelper diskProfileHelper;
+
+    @Inject
+    private VmDao vmDao;
+
+    @Inject
+    private VdsDao vdsDao;
+
+    @Inject
+    private StoragePoolDao storagePoolDao;
+
+    @Inject
+    private VmCheckpointDao vmCheckpointDao;
+
+    @Inject
+    private MetadataDiskDescriptionHandler metadataDiskDescriptionHandler;
 
     /**
      * The following method will find all images and storages where they located for provide template and will fill an
@@ -192,7 +215,7 @@ public class ImagesHandler {
             return false;
         }
 
-        String vmName =  nullSafeGetVmName(vm);
+        String vmName = nullSafeGetVmName(vm);
         disk.setDiskAlias(getSuggestedDiskAlias(disk, vmName, count));
         return true;
     }
@@ -262,11 +285,7 @@ public class ImagesHandler {
         for (DiskImage disk : images) {
             DiskImage diskImage = diskInfoDestinationMap.get(disk.getId());
             Guid storageDomainId = diskImage.getStorageIds().get(0);
-            List<DiskImage> diskList = storageToDisksMap.get(storageDomainId);
-            if (diskList == null) {
-                diskList = new ArrayList<>();
-                storageToDisksMap.put(storageDomainId, diskList);
-            }
+            List<DiskImage> diskList = storageToDisksMap.computeIfAbsent(storageDomainId, k -> new ArrayList<>());
             diskList.add(disk);
         }
         return storageToDisksMap;
@@ -301,7 +320,7 @@ public class ImagesHandler {
      * @return map object is the collection is not null
      */
     public static Map<Guid, DiskImage> getDiskImagesByIdMap(Collection<DiskImage> diskImages) {
-        return diskImages.stream().collect(Collectors.toMap(d -> d.getImageId(), Function.identity()));
+        return diskImages.stream().collect(Collectors.toMap(DiskImage::getImageId, Function.identity()));
     }
 
     /**
@@ -319,7 +338,7 @@ public class ImagesHandler {
      * */
     public static double getTotalActualSizeOfDisk(DiskImage diskImage, StorageDomainStatic storageDomain) {
         double sizeForDisk = diskImage.getSize();
-        if ((storageDomain.getStorageType().isFileDomain() && diskImage.getVolumeType() == VolumeType.Sparse) ||
+        if (storageDomain.getStorageType().isFileDomain() && diskImage.getVolumeType() == VolumeType.Sparse ||
                 storageDomain.getStorageType().isBlockDomain() && diskImage.getVolumeFormat() == VolumeFormat.COW) {
             double usedSpace = diskImage.getActualDiskWithSnapshotsSizeInBytes();
             sizeForDisk = Math.min(diskImage.getSize(), usedSpace);
@@ -491,22 +510,34 @@ public class ImagesHandler {
     }
 
     public static boolean checkImageConfiguration(StorageDomainStatic storageDomain,
-            DiskImageBase diskInfo, List<String> messages) {
-        if (!checkImageConfiguration(storageDomain, diskInfo.getVolumeType(), diskInfo.getVolumeFormat(), diskInfo.getBackup())) {
+            VolumeType volumeType,
+            VolumeFormat volumeFormat,
+            DiskBackup diskBackup,
+            List<String> messages) {
+        if (!checkImageConfiguration(storageDomain, volumeType, volumeFormat, diskBackup)) {
             // not supported
             messages.add(EngineMessage.ACTION_TYPE_FAILED_DISK_CONFIGURATION_NOT_SUPPORTED.toString());
-            messages.add(String.format("$%1$s %2$s", "volumeFormat", diskInfo.getVolumeFormat()));
-            messages.add(String.format("$%1$s %2$s", "volumeType", diskInfo.getVolumeType()));
-            messages.add(String.format("$%1$s %2$s", "backup", diskInfo.getBackup()));
+            messages.add(String.format("$%1$s %2$s", "volumeFormat", volumeFormat));
+            messages.add(String.format("$%1$s %2$s", "volumeType", volumeType));
+            messages.add(String.format("$%1$s %2$s", "backup", diskBackup));
             return false;
         }
         return true;
     }
 
+    public static boolean checkImageConfiguration(StorageDomainStatic storageDomain,
+            DiskImageBase diskInfo, List<String> messages) {
+        return checkImageConfiguration(storageDomain,
+                diskInfo.getVolumeType(),
+                diskInfo.getVolumeFormat(),
+                diskInfo.getBackup(),
+                messages);
+    }
+
     private static boolean checkImageConfiguration(StorageDomainStatic storageDomain, VolumeType volumeType, VolumeFormat volumeFormat, DiskBackup diskBackup) {
-        return !((volumeType == VolumeType.Preallocated && volumeFormat == VolumeFormat.COW && diskBackup != DiskBackup.Incremental)
-                || (volumeFormat == VolumeFormat.RAW && diskBackup == DiskBackup.Incremental)
-                || (storageDomain.getStorageType().isBlockDomain() && volumeType == VolumeType.Sparse && volumeFormat == VolumeFormat.RAW)
+        return !(volumeType == VolumeType.Preallocated && volumeFormat == VolumeFormat.COW && diskBackup != DiskBackup.Incremental
+                || volumeFormat == VolumeFormat.RAW && diskBackup == DiskBackup.Incremental
+                || storageDomain.getStorageType().isBlockDomain() && volumeType == VolumeType.Sparse && volumeFormat == VolumeFormat.RAW
                 || volumeFormat == VolumeFormat.Unassigned
                 || volumeType == VolumeType.Unassigned);
     }
@@ -534,7 +565,7 @@ public class ImagesHandler {
      *            List of Disk objects to aggregate their snapshots
      * @return List of active DiskImages objects which related to their snapshots
      */
-    public Collection<DiskImage> aggregateDiskImagesSnapshots(Collection<DiskImage> images){
+    public Collection<DiskImage> aggregateDiskImagesSnapshots(Collection<DiskImage> images) {
         Map<Guid, DiskImage> diskImagesMap = new HashMap<>();
 
         // Get active diskImages
@@ -827,7 +858,7 @@ public class ImagesHandler {
         return diskDummies;
     }
 
-    protected DiskImage getVolumeInfoFromVdsm(Guid storagePoolId, Guid newStorageDomainID, Guid newImageGroupId,
+    public DiskImage getVolumeInfoFromVdsm(Guid storagePoolId, Guid newStorageDomainID, Guid newImageGroupId,
                                       Guid newImageId) {
         return (DiskImage) vdsCommandsHelper.runVdsCommandWithFailover(
                 VDSCommandType.GetVolumeInfo,
@@ -927,6 +958,15 @@ public class ImagesHandler {
                 : actualSize;
     }
 
+    public static long computeImageInitialSizeInBytes(Image image) {
+        // Used in Live Storage Migration flow to calculate initial image size (cluster version 4.7 and above).
+        int volumeUtilizationChunkInMB = Config.getValue(ConfigValues.VolumeUtilizationChunkInMB);
+        long volumeUtilizationChunkInBytes = SizeConverter.convert(volumeUtilizationChunkInMB,
+                SizeConverter.SizeUnit.MiB,
+                SizeConverter.SizeUnit.BYTES).longValue();
+        return Math.min(3 * volumeUtilizationChunkInBytes, image.getSize());
+    }
+
     /**
      * This method is use to compute the initial size of a disk image based on the source disk image size,
      * including all the existing snapshots.
@@ -947,7 +987,7 @@ public class ImagesHandler {
         if (isInitialSizeSupportedForFormat(destFormat, dstDomain)) {
 
             double totalSizeForClonedDisk = getTotalActualSizeOfDisk(sourceImage,
-            storageDomainDao.get(srcDomain).getStorageStaticData());
+                storageDomainDao.get(srcDomain).getStorageStaticData());
 
             return computeCowImageNeededSize(sourceImage.getVolumeFormat(), Double.valueOf(totalSizeForClonedDisk).longValue());
         }
@@ -986,7 +1026,7 @@ public class ImagesHandler {
     }
 
     public Set<Guid> getVolumeChain(Guid vmId, Guid vdsId, DiskImage activeImage) {
-        Map[] vms = null;
+        Map<String, Object>[] vms = null;
         try {
             vms = getVms(vdsId, vmId);
         } catch (EngineException e) {
@@ -998,7 +1038,7 @@ public class ImagesHandler {
             return null;
         }
 
-        Map vm = vms[0];
+        Map<String, Object> vm = vms[0];
         if (vm == null || vm.get(VdsProperties.vm_guid) == null) {
             log.error("Received incomplete VM information");
             return null;
@@ -1013,7 +1053,7 @@ public class ImagesHandler {
 
         Set<Guid> images = new HashSet<>();
         for (Object o : (Object[]) vm.get(VdsProperties.Devices)) {
-            Map device = (Map<String, Object>) o;
+            Map<String, Object> device = (Map<String, Object>) o;
             if (VmDeviceType.DISK.getName().equals(device.get(VdsProperties.Device))
                     && !device.get(VdsProperties.ImageId).equals("mapper")
                     && activeImage.getId().equals(Guid.createGuidFromString(
@@ -1029,8 +1069,24 @@ public class ImagesHandler {
         return images;
     }
 
-    private Map[] getVms(Guid vdsId, Guid vmId) {
-        return (Map[]) fullListAdapter.getVmFullList(
+    public boolean isSnapshotUsed(VM vm, DiskImage image) {
+        if (vm.isRunningOrPaused()) {
+            Set<Guid> volumeChain = getVolumeChain(vm.getId(),
+                    vm.getRunOnVds(),
+                    image);
+
+            if (volumeChain != null && !volumeChain.contains(image.getImageId())) {
+                return false;
+            } else {
+                log.warn("Can not get image chain or image '{}' is still in the chain", image.getImageId());
+            }
+        }
+
+        return true;
+    }
+
+    private Map<String, Object>[] getVms(Guid vdsId, Guid vmId) {
+        return (Map<String, Object>[]) fullListAdapter.getVmFullList(
                 vdsId,
                 Collections.singletonList(vmId),
                 true)
@@ -1050,7 +1106,7 @@ public class ImagesHandler {
             DiskImage newImage = DiskImage.copyOf(diskImage);
             newImage.setParentId(nextParentId);
             newImage.setId(newImageGroupID);
-            newImage.setStorageIds(List.of(targetStorageDomainID));
+            newImage.setStorageIds(Collections.singletonList(targetStorageDomainID));
             nextParentId = Guid.newGuid();
             newImage.setImageId(nextParentId);
             newImage.setVmSnapshotId(null);
@@ -1059,5 +1115,42 @@ public class ImagesHandler {
         }
 
         return oldToNewChain;
+    }
+
+    public Guid getHostForMeasurement(Guid storagePoolID, Guid imageGroupID) {
+        Map<Boolean, List<VM>> vms = vmDao.getForDisk(imageGroupID, true);
+        if (vms != null && !vms.computeIfAbsent(Boolean.TRUE, b -> new ArrayList<>()).isEmpty()) {
+            Optional<VM> runningVM = vms.get(Boolean.TRUE)
+                    .stream()
+                    .filter(VM::isRunning)
+                    .findAny();
+            if (runningVM.isPresent()) {
+                Guid hostId = runningVM.get().getRunOnVds();
+                return FeatureSupported.isMeasureVolumeSupported(vdsDao.get(hostId)) ? hostId : null;
+            }
+        }
+
+        return vdsCommandsHelper.getHostForExecution(storagePoolID, FeatureSupported::isMeasureVolumeSupported);
+    }
+
+    public Version getSpmCompatibilityVersion(Guid storagePoolId) {
+        StoragePool storagePool = storagePoolDao.get(storagePoolId);
+        VDS vds = vdsDao.get(storagePool.getSpmVdsId());
+        return vds.getClusterCompatibilityVersion();
+    }
+
+    public String getJsonDiskDescription(Disk disk) {
+        try {
+            return metadataDiskDescriptionHandler.generateJsonDiskDescription(disk);
+        } catch (IOException e) {
+            log.error("Exception while generating json for disk. ERROR: '{}'", e.getMessage());
+            return StringUtils.EMPTY;
+        }
+    }
+
+    public boolean shouldUseDiskBitmaps(Version version, DiskImage diskImage) {
+        return FeatureSupported.isBackupModeAndBitmapsOperationsSupported(version) &&
+                vmCheckpointDao.isDiskIncludedInCheckpoint(diskImage.getId()) &&
+                diskImage.isQcowFormat();
     }
 }

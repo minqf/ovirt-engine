@@ -228,7 +228,7 @@ public class SessionDataContainer {
 
     public final void cleanExpiredUsersSessionsImpl() {
         Date now = new Date();
-        Iterator<Entry<String, SessionInfo>>  iter = sessionInfoMap.entrySet().iterator();
+        Iterator<Entry<String, SessionInfo>> iter = sessionInfoMap.entrySet().iterator();
         Set<String> tokens = sessionInfoMap.values().stream()
                 .map(sessionInfo -> (String) sessionInfo.contentOfSession.get(SSO_ACCESS_TOKEN_PARAMETER_NAME))
                 .collect(Collectors.toSet());
@@ -248,7 +248,7 @@ public class SessionDataContainer {
                 continue;
             }
             boolean sessionValid = StringUtils.isEmpty(token) ? false : sessionStatuses.get(token);
-            if (((hardLimit != null && hardLimit.before(now)) || (softLimit != null && softLimit.before(now))) ||
+            if (hardLimit != null && hardLimit.before(now) || softLimit != null && softLimit.before(now) ||
                     !(boolean) sessionMap.get(SESSION_VALID_PARAMETER_NAME) ||
                     !sessionValid) {
                 removeSessionImpl(entry.getKey(),
@@ -256,7 +256,7 @@ public class SessionDataContainer {
                         "Session has expired for principal %1$s",
                         getUserName(entry.getKey()));
                 if (sessionValid) {
-                   SsoOAuthServiceUtils.revoke((String) sessionMap.get(SSO_ACCESS_TOKEN_PARAMETER_NAME), "");
+                    SsoOAuthServiceUtils.revoke((String) sessionMap.get(SSO_ACCESS_TOKEN_PARAMETER_NAME), "");
                 }
             }
         }
@@ -402,7 +402,7 @@ public class SessionDataContainer {
 
     public boolean isSsoOvirtAppApiScope(String engineSessionId) {
         return isSessionExists(engineSessionId) ?
-                (boolean) getData(engineSessionId, SSO_IS_OVIRT_APP_API_SCOPE_PARAMETER_NAME, false):
+                (boolean) getData(engineSessionId, SSO_IS_OVIRT_APP_API_SCOPE_PARAMETER_NAME, false) :
                 false;
     }
 
@@ -450,7 +450,7 @@ public class SessionDataContainer {
                 getPrincipalName(sessionId),
                 message,
                 msgArgs
-                );
+        );
         engineSessionDao.remove(getEngineSessionSeqId(sessionId));
         sessionInfoMap.remove(sessionId);
     }

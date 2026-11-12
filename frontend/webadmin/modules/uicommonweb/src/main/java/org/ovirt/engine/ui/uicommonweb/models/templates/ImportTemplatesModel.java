@@ -124,7 +124,7 @@ public class ImportTemplatesModel extends ListWithSimpleDetailsModel {
             validateSource();
             clearTemplates();
         });
-        importSources.setSelectedItem(ImportSource.EXPORT_DOMAIN);
+        importSources.setSelectedItem(ImportSource.OVA);
     }
 
     public void init() {
@@ -200,19 +200,19 @@ public class ImportTemplatesModel extends ListWithSimpleDetailsModel {
         return returnValue -> {
             List<StorageDomain> storageDomains = returnValue.getReturnValue();
 
-           exportDomain.setEntity(getExportDomain(storageDomains));
-           if (exportDomain.getEntity() == null) {
-               stopProgress();
-           } else {
-               setExportName(exportDomain.getEntity().getName());
-               setExportDescription(exportDomain.getEntity().getDescription());
-               // get export-path
-               AsyncDataProvider.getInstance().getStorageConnectionById(new AsyncQuery<>(connection -> {
-                   setExportPath(connection == null ? null : connection.getConnection());
-                   stopProgress();
-               }), exportDomain.getEntity().getStorage(), true);
-           }
-           validateSource();
+            exportDomain.setEntity(getExportDomain(storageDomains));
+            if (exportDomain.getEntity() == null) {
+                stopProgress();
+            } else {
+                setExportName(exportDomain.getEntity().getName());
+                setExportDescription(exportDomain.getEntity().getDescription());
+                // get export-path
+                AsyncDataProvider.getInstance().getStorageConnectionById(new AsyncQuery<>(connection -> {
+                    setExportPath(connection == null ? null : connection.getConnection());
+                    stopProgress();
+                }), exportDomain.getEntity().getStorage(), true);
+            }
+            validateSource();
         };
     }
 
@@ -418,24 +418,25 @@ public class ImportTemplatesModel extends ListWithSimpleDetailsModel {
 
         selectedImportVmModel = null;
 
-        switch(importSources.getSelectedItem()) {
-        case EXPORT_DOMAIN:
-            importFromExportDomainModel.setEntity(null);
-            importFromExportDomainModel.init(templates, exportDomain.getEntity().getId());
-            importFromExportDomainModel.setEntity(exportDomain.getEntity().getId());
-            TemplateImportDiskListModel templateImportDiskListModel = (TemplateImportDiskListModel)
-                    importFromExportDomainModel.getImportDiskListModel();
-            templateImportDiskListModel.setExtendedItems(items1);
-            selectedImportVmModel = importFromExportDomainModel;
-            break;
-        case OVA:
-            importFromOvaModel.init(templates, getDataCenters().getSelectedItem().getId());
-            importFromOvaModel.setIsoName(getOvaPath().getEntity());
-            importFromOvaModel.setHostId(getHosts().getSelectedItem().getId());
-            importFromOvaModel.setTemplateNameToOva(getTemplateNameToOva());
-            selectedImportVmModel = importFromOvaModel;
-            break;
-        default:
+        switch (importSources.getSelectedItem()) {
+            case EXPORT_DOMAIN:
+                importFromExportDomainModel.setEntity(null);
+                importFromExportDomainModel.init(templates, exportDomain.getEntity().getId());
+                importFromExportDomainModel.setEntity(exportDomain.getEntity().getId());
+                TemplateImportDiskListModel templateImportDiskListModel = (TemplateImportDiskListModel)
+                        importFromExportDomainModel.getImportDiskListModel();
+                templateImportDiskListModel.setExtendedItems(items1);
+                selectedImportVmModel = importFromExportDomainModel;
+                break;
+            case OVA:
+                importFromOvaModel.init(templates, getDataCenters().getSelectedItem().getId());
+                String ovaPathEntity = getOvaPath().getEntity();
+                importFromOvaModel.setIsoName(ovaPathEntity == null ? null : ovaPathEntity.trim());
+                importFromOvaModel.setHostId(getHosts().getSelectedItem().getId());
+                importFromOvaModel.setTemplateNameToOva(getTemplateNameToOva());
+                selectedImportVmModel = importFromOvaModel;
+                break;
+            default:
         }
         return selectedImportVmModel;
     }
@@ -586,8 +587,8 @@ public class ImportTemplatesModel extends ListWithSimpleDetailsModel {
 
     private boolean validateOvaConfiguration() {
         getOvaPath().validateEntity(new IValidation[]{
-                new NotEmptyValidation()});
-
+            new NotEmptyValidation()
+        });
         return getOvaPath().getIsValid();
     }
 

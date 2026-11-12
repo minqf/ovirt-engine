@@ -162,7 +162,7 @@ public class IsoDomainListSynchronizer implements BackendService {
     }
 
     private boolean shouldForceRefresh(Boolean forceRefresh) {
-        return Boolean.TRUE.equals(forceRefresh) || (forceRefresh == null && getShouldForceRefreshByDefault());
+        return Boolean.TRUE.equals(forceRefresh) || forceRefresh == null && getShouldForceRefreshByDefault();
     }
 
     private boolean shouldInvalidateCache(long lastRefreshed) {
@@ -264,17 +264,17 @@ public class IsoDomainListSynchronizer implements BackendService {
 
     private boolean updateFileList(Guid storageDomainId, Guid storagePoolId, ImageFileType imageType) {
         switch (imageType) {
-        case All:
-            return updateAllFileListFromVDSM(storagePoolId, storageDomainId);
-        case ISO:
-            return updateIsoListFromVDSM(storagePoolId, storageDomainId);
-        case Floppy:
-            return updateFloppyListFromVDSM(storagePoolId, storageDomainId);
-        case Unknown:
-            return updateUnknownFileListFromVDSM(storagePoolId, storageDomainId);
-        default:
-            log.warn("Refreshing Iso domain using unsupported imageType: {}", imageType);
-            return false;
+            case All:
+                return updateAllFileListFromVDSM(storagePoolId, storageDomainId);
+            case ISO:
+                return updateIsoListFromVDSM(storagePoolId, storageDomainId);
+            case Floppy:
+                return updateFloppyListFromVDSM(storagePoolId, storageDomainId);
+            case Unknown:
+                return updateUnknownFileListFromVDSM(storagePoolId, storageDomainId);
+            default:
+                log.warn("Refreshing Iso domain using unsupported imageType: {}", imageType);
+                return false;
         }
     }
 
@@ -366,7 +366,7 @@ public class IsoDomainListSynchronizer implements BackendService {
      */
     public void refresheIsoDomainWhenActivateDomain(final Guid isoStorageDomainId,
             final Guid storagePoolId) {
-        if (storagePoolId != null && (isoStorageDomainId != null)) {
+        if (storagePoolId != null && isoStorageDomainId != null) {
             ThreadPoolUtil.execute(() -> refreshActivatedStorageDomainFromVdsm(storagePoolId, isoStorageDomainId));
         }
     }

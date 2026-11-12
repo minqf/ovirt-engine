@@ -1,5 +1,6 @@
 package org.ovirt.engine.core.common.action;
 
+import org.ovirt.engine.core.common.businessentities.storage.DiskBackup;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeType;
 import org.ovirt.engine.core.compat.Guid;
@@ -11,6 +12,11 @@ public class CreateVolumeContainerCommandParameters extends StorageJobCommandPar
     private Guid srcImageGroupId;
     private Guid srcImageId;
     private Long initialSize;
+    private boolean legal = true;
+
+    private Integer sequenceNumber;
+
+    private DiskBackup backup;
 
     public CreateVolumeContainerCommandParameters() {
     }
@@ -18,7 +24,7 @@ public class CreateVolumeContainerCommandParameters extends StorageJobCommandPar
     public CreateVolumeContainerCommandParameters(Guid storagePoolId, Guid storageDomainId, Guid srcImageGroupId,
                                                   Guid srcImageId, Guid imageGroupId, Guid imageId,
                                                   VolumeFormat volumeFormat, VolumeType volumeType, String description, long size,
-                                                  Long initialSize) {
+                                                  Long initialSize, Integer sequenceNumber) {
         setStoragePoolId(storagePoolId);
         setStorageDomainId(storageDomainId);
         setImageGroupID(imageGroupId);
@@ -30,6 +36,7 @@ public class CreateVolumeContainerCommandParameters extends StorageJobCommandPar
         this.volumeFormat = volumeFormat;
         this.volumeType = volumeType;
         this.initialSize = initialSize;
+        this.sequenceNumber = sequenceNumber;
         fillEntityInfo(imageId);
     }
 
@@ -79,5 +86,29 @@ public class CreateVolumeContainerCommandParameters extends StorageJobCommandPar
 
     public void setVolumeType(VolumeType volumeType) {
         this.volumeType = volumeType;
+    }
+
+    public boolean isLegal() {
+        return legal;
+    }
+
+    public void setLegal(boolean legal) {
+        this.legal = legal;
+    }
+
+    public Integer getSequenceNumber() {
+        return sequenceNumber;
+    }
+
+    public void setSequenceNumber(Integer sequenceNumber) {
+        this.sequenceNumber = sequenceNumber;
+    }
+
+    public DiskBackup getBackup() {
+        return backup;
+    }
+
+    public void setBackup(DiskBackup backup) {
+        this.backup = backup;
     }
 }

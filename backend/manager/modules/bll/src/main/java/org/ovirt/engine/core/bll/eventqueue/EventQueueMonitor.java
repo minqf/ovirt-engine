@@ -70,30 +70,30 @@ public class EventQueueMonitor implements EventQueue {
             Event currentEvent = poolCurrentEventMap.get(storagePoolId);
             if (currentEvent != null) {
                 switch (currentEvent.getEventType()) {
-                case RECOVERY:
-                    if (event.getEventType() == EventType.VDSCONNECTTOPOOL
-                            || event.getEventType() == EventType.VDSCLEARCACHE
-                            || event.getEventType() == EventType.DOMAINFAILOVER) {
+                    case RECOVERY:
+                        if (event.getEventType() == EventType.VDSCONNECTTOPOOL
+                                || event.getEventType() == EventType.VDSCLEARCACHE
+                                || event.getEventType() == EventType.DOMAINFAILOVER) {
+                            task = addTaskToQueue(event, callable, storagePoolId, isEventShouldBeFirst(event));
+                        } else {
+                            log.debug("Current event was skipped because of recovery is running now for pool '{}', event '{}'",
+                                    storagePoolId, event);
+                        }
+                        break;
+                    case RECONSTRUCT:
+                        if (event.getEventType() == EventType.VDSCONNECTTOPOOL
+                                || event.getEventType() == EventType.RECOVERY
+                                || event.getEventType() == EventType.DOMAINFAILOVER
+                                || event.getEventType() == EventType.VDSCLEARCACHE) {
+                            task = addTaskToQueue(event, callable, storagePoolId, isEventShouldBeFirst(event));
+                        } else {
+                            log.debug("Current event was skipped because of reconstruct is running now for pool '{}', event '{}'",
+                                    storagePoolId, event);
+                        }
+                        break;
+                    default:
                         task = addTaskToQueue(event, callable, storagePoolId, isEventShouldBeFirst(event));
-                    } else {
-                        log.debug("Current event was skipped because of recovery is running now for pool '{}', event '{}'",
-                                storagePoolId, event);
-                    }
-                    break;
-                case RECONSTRUCT:
-                    if (event.getEventType() == EventType.VDSCONNECTTOPOOL
-                            || event.getEventType() == EventType.RECOVERY
-                            || event.getEventType() == EventType.DOMAINFAILOVER
-                            || event.getEventType() == EventType.VDSCLEARCACHE) {
-                        task = addTaskToQueue(event, callable, storagePoolId, isEventShouldBeFirst(event));
-                    } else {
-                        log.debug("Current event was skipped because of reconstruct is running now for pool '{}', event '{}'",
-                                storagePoolId, event);
-                    }
-                    break;
-                default:
-                    task = addTaskToQueue(event, callable, storagePoolId, isEventShouldBeFirst(event));
-                    break;
+                        break;
                 }
             } else {
                 task = addTaskToQueue(event, callable, storagePoolId, false);
@@ -192,7 +192,7 @@ public class EventQueueMonitor implements EventQueue {
                                     EventType eventType = task.getFirst().getEventType();
                                     if (eventType == EventType.VDSCONNECTTOPOOL
                                             ||
-                                            ((eventType == EventType.RECOVERY || eventType == EventType.DOMAINFAILOVER || eventType == EventType.VDSCLEARCACHE) && !result.isSuccess())) {
+                                            (eventType == EventType.RECOVERY || eventType == EventType.DOMAINFAILOVER || eventType == EventType.VDSCLEARCACHE) && !result.isSuccess()) {
                                         queue.add(task);
                                     } else {
                                         log.info("The following operation '{}' was cancelled, because of reconstruct was run before",

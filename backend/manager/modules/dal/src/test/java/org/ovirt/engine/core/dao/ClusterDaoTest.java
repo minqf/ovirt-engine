@@ -22,7 +22,6 @@ import javax.inject.Inject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
-import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.LogMaxMemoryUsedThresholdType;
 import org.ovirt.engine.core.common.businessentities.MigrationBandwidthLimitType;
@@ -71,7 +70,6 @@ public class ClusterDaoTest extends BaseDaoTestCase<ClusterDao> {
         newGroup.setClusterPolicyProperties(new LinkedHashMap<>());
         newGroup.setDetectEmulatedMachine(true);
         newGroup.setEmulatedMachine("rhel6.4.0");
-        newGroup.setBiosType(BiosType.CLUSTER_DEFAULT);
         newGroup.setArchitecture(ArchitectureType.x86_64);
         newGroup.setGlusterCliBasedSchedulingOn(true);
         newGroup.setMigrationBandwidthLimitType(MigrationBandwidthLimitType.CUSTOM);
@@ -396,7 +394,7 @@ public class ClusterDaoTest extends BaseDaoTestCase<ClusterDao> {
 
         assertNotSame(updatedValue, preUpdate);
 
-        dao.setUpgradeRunning(existingCluster.getId());
+        dao.setUpgradeRunning(existingCluster.getId(), null);
 
         assertEquals(updatedValue, dao.get(existingCluster.getId()).isUpgradeRunning());
     }
@@ -408,7 +406,7 @@ public class ClusterDaoTest extends BaseDaoTestCase<ClusterDao> {
 
         assertNotSame(updatedValue, preUpdate);
 
-        boolean updated = dao.setUpgradeRunning(upgradeRunningCluster.getId());
+        boolean updated = dao.setUpgradeRunning(upgradeRunningCluster.getId(), null);
         assertEquals(updated, false);
     }
 
@@ -432,7 +430,7 @@ public class ClusterDaoTest extends BaseDaoTestCase<ClusterDao> {
 
         assertNotSame(updatedValue, preUpdate);
 
-        dao.setUpgradeRunning(existingCluster.getId());
+        dao.setUpgradeRunning(existingCluster.getId(), null);
 
         assertEquals(updatedValue, dao.get(existingCluster.getId()).isUpgradeRunning());
 
@@ -520,7 +518,7 @@ public class ClusterDaoTest extends BaseDaoTestCase<ClusterDao> {
         // get a cluster with migrating VMs
         List<VM> vms = vmDao.getAllRunningByCluster(FixturesTool.CLUSTER_RHEL6_ISCSI);
         // set every VM to UP
-        for(VM migratingVM : vms) {
+        for (VM migratingVM : vms) {
             vmDynamicDao.updateStatus(migratingVM.getId(), VMStatus.Up);
             migrationFreeClusters = dao.getWithoutMigratingVms();
         }

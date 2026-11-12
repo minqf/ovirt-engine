@@ -10,7 +10,6 @@ import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.common.BackendService;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.VDS;
-import org.ovirt.engine.core.common.businessentities.VDSStatus;
 import org.ovirt.engine.core.dao.ClusterDao;
 import org.ovirt.engine.core.dao.VdsDao;
 import org.slf4j.Logger;
@@ -44,6 +43,7 @@ public class ClusterCpuFlagsManager implements BackendService {
     public void updateClusterCpuFlags(Cluster cluster) {
         try {
             if (shouldUpdateFlags(cluster)) {
+                log.info("Updating cluster CPU flags and verb according to the configuration of the " + cluster.getCpuName() + " cpu");
                 updateCpuFlags(cluster);
                 clusterDao.update(cluster);
             }
@@ -53,6 +53,7 @@ public class ClusterCpuFlagsManager implements BackendService {
     }
 
     private boolean shouldUpdateFlags(Cluster cluster) {
+
         if (StringUtils.isEmpty(cluster.getCpuName())) {
             return false;
         }
@@ -70,7 +71,7 @@ public class ClusterCpuFlagsManager implements BackendService {
 
         List<VDS> vdss = vdsDao.getAllForCluster(cluster.getId());
         for (VDS vds : vdss) {
-            if (!VDSStatus.Up.equals(vds.getStatus())) {
+            if (!vds.getStatus().isEligibleForClusterCpuConfigurationChange()) {
                 return false;
             }
 

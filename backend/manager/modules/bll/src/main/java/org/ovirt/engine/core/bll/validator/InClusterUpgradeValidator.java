@@ -69,7 +69,7 @@ public class InClusterUpgradeValidator {
         if (vm.getStatus().isSuspended()) {
             errors.addAll(toVmEngineMessage(vm, EngineMessage.CLUSTER_UPGRADE_DETAIL_VM_SUSPENDED));
         }
-        if (!StringUtils.isEmpty(vm.getCpuPinning())) {
+        if (!StringUtils.isEmpty(vm.getVmPinning())) {
             errors.addAll(toVmEngineMessage(vm, EngineMessage.CLUSTER_UPGRADE_DETAIL_VM_CPUS_PINNED));
         }
         for (VmNumaNode vmNumaNode : vm.getvNumaNodeList()) {

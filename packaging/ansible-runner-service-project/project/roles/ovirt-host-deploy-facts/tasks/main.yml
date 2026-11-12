@@ -1,21 +1,16 @@
 ---
-- name: Detect host operating system
-  set_fact:
-    el_ver: "{{ ansible_distribution_major_version|int
-        if ansible_distribution == 'RedHat' or ansible_distribution == 'CentOS'
-        else 0 }}"
-    fc_ver: "{{ ansible_distribution_major_version|int
-        if ansible_distribution == 'Fedora'
-        else 0 }}"
+- ansible.builtin.include_tasks: "{{ item }}.yml"
+  with_items:
+    - host-os
+    - av-setup
+    - cinderlib-setup
 
-- name: Install Python3 for CentOS/RHEL8 hosts
-  yum:
+- name: Ensure Python3 is installed for CentOS/RHEL8 hosts
+  ansible.builtin.yum:
     name: python3
     state: present
-  when: el_ver|int >= 8
+  when: el_ver | int >= 8
 
-- name: Set facts
-  set_fact:
-    ansible_python_interpreter : "{{ '/usr/bin/python3'
-        if (fc_ver|int > 0 or el_ver|int >= 8)
-        else '/usr/bin/python2' }}"
+- name: Setup Ansible Python interpreter
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: /usr/bin/python3

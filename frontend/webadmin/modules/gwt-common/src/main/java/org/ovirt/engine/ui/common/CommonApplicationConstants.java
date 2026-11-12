@@ -3,6 +3,20 @@ package org.ovirt.engine.ui.common;
 import com.google.gwt.i18n.client.Constants;
 
 public interface CommonApplicationConstants extends Constants {
+
+    String homePage();
+
+    String homePageFormat();
+
+    String homePageIgnoreInvalid();
+
+    String resetGridSettings();
+
+    String changeColumnsVisibilityOrder();
+
+    String emailUser();
+
+    @DefaultStringValue("") // Use annotation and not a properties key to leave it out of translations
     String empty();
 
     String emptyListBoxText();
@@ -13,18 +27,22 @@ public interface CommonApplicationConstants extends Constants {
 
     String closeButtonLabel();
 
+    String confirmations();
+
     String unAvailablePropertyLabel();
 
+    @DefaultStringValue("<br/>") // Use annotation and not a properties key to leave it out of translations
     String lineBreak();
 
+    @DefaultStringValue("&nbsp;") // Use annotation and not a properties key to leave it out of translations
     String htmlNonBreakingSpace();
 
+    @DefaultStringValue("&emsp;") // Use annotation and not a properties key to leave it out of translations
     String htmlTab();
-
-    String commaBreak();
 
     String andBreak();
 
+    @DefaultStringValue(" ") // Use annotation and not a properties key to leave it out of translations
     String space();
 
     String missingColumnContextMenuTitle();
@@ -321,9 +339,17 @@ public interface CommonApplicationConstants extends Constants {
 
     String permanentlyRemoveLabel();
 
+    String persistGridSettingsOnServerTooltip();
+
+    String hideDisplayColumns();
+
+    String swapColumns();
+
     String approveOperation();
 
     String forceRemove();
+
+    String doNotShowAgain();
 
     String yes();
 
@@ -338,6 +364,8 @@ public interface CommonApplicationConstants extends Constants {
     String shutDownVm();
 
     String rebootVm();
+
+    String resetVm();
 
     String pluggedVm();
 
@@ -366,6 +394,8 @@ public interface CommonApplicationConstants extends Constants {
     String physMemGauranteedVm();
 
     String guestFreeCachedBufferedMemInfo();
+
+    String guestFreeCachedBufferedCombinedMemInfo();
 
     String numOfCpuCoresVm();
 
@@ -427,7 +457,7 @@ public interface CommonApplicationConstants extends Constants {
 
     String biosTypeGeneral();
 
-    String biosTypeLabel();
+    String customBiosTypeLabel();
 
     String emulatedMachineLabel();
 
@@ -509,6 +539,8 @@ public interface CommonApplicationConstants extends Constants {
 
     String consoleDisconnectActionVmPopup();
 
+    String consoleDisconnectActionDelayVmPopup();
+
     String monitorsVmPopup();
 
     String hostVmPopup();
@@ -565,6 +597,8 @@ public interface CommonApplicationConstants extends Constants {
 
     String memAllocVmPopup();
 
+    String trustedPlatformModuleVmPopup();
+
     String multiQueuesVmPopup();
 
     String ioThreadsVmPopup();
@@ -601,7 +635,7 @@ public interface CommonApplicationConstants extends Constants {
 
     String iconLimitationsIconVmPopup();
 
-    String inheritedPermission();
+    String inheritedFromPermission();
 
     String typePermission();
 
@@ -612,6 +646,8 @@ public interface CommonApplicationConstants extends Constants {
     String addPermission();
 
     String removePermission();
+
+    String removeDirectSystemPermissionsButtonLabel();
 
     String objectPermission();
 
@@ -801,8 +837,6 @@ public interface CommonApplicationConstants extends Constants {
 
     String originalAllocationDisk();
 
-    String cinderVolumeTypeDisk();
-
     String interfaceDisk();
 
     String logicalNameDisk();
@@ -814,6 +848,8 @@ public interface CommonApplicationConstants extends Constants {
     String creationDateDisk();
 
     String modificationDateDisk();
+
+    String diskSnapshotCreationDate();
 
     String diskSnapshotIDDisk();
 
@@ -834,6 +870,8 @@ public interface CommonApplicationConstants extends Constants {
     String provisionedSizeDisk();
 
     String sourceDisk();
+
+    String tables();
 
     String targetDisk();
 
@@ -1045,8 +1083,6 @@ public interface CommonApplicationConstants extends Constants {
 
     String directLunDisk();
 
-    String cinderDisk();
-
     String managedBlockDisk();
 
     String storageIscsiPopupLunToTargetsTabLabel();
@@ -1068,6 +1104,10 @@ public interface CommonApplicationConstants extends Constants {
     String storageIscsiDiscoverTargetsLabel();
 
     String storageIscsiPopupLoginButtonLabel();
+
+    String storageIscsiPopupDisconnectButtonLabel();
+
+    String storageIscsiLoginAllPersistenceHint();
 
     String storageIscsiSelectStorageLabel();
 
@@ -1147,13 +1187,21 @@ public interface CommonApplicationConstants extends Constants {
 
     String imageTransferringViaBrowser();
 
+    String imageTransferring();
+
     String notAvailableLabel();
 
     String illegalStatus();
 
     String cpuPinningLabel();
 
+    String cpuPinningPolicyLabel();
+
     String multiQueuesLabel();
+
+    String virtioScsiMultiQueuesEnabled();
+
+    String isVirtioScsiMultiQueuesInfoIcon();
 
     String cpuPinningLabelExplanation();
 
@@ -1180,8 +1228,6 @@ public interface CommonApplicationConstants extends Constants {
     String imageDisksLabel();
 
     String lunDisksLabel();
-
-    String cinderDisksLabel();
 
     String managedBlockDisksLabel();
 
@@ -1256,6 +1302,8 @@ public interface CommonApplicationConstants extends Constants {
     String browserPlugin();
 
     String noVnc();
+
+    String userSettingsLabel();
 
     String usbAutoshare();
 
@@ -1391,7 +1439,7 @@ public interface CommonApplicationConstants extends Constants {
 
     String down();
 
-    String newtools();
+    String newAgent();
 
     String volumeBricksDown();
 
@@ -1412,6 +1460,8 @@ public interface CommonApplicationConstants extends Constants {
     String unlimitedQos();
 
     String noneQos();
+
+    String noneFailover();
 
     String hostPasswordLabel();
 
@@ -1440,8 +1490,6 @@ public interface CommonApplicationConstants extends Constants {
     String ignitionScriptInfo();
 
     String diskInterfaceInfo();
-
-    String cinderVolumeTypeInfoIcon();
 
     String scsiReservationInfoIcon();
 
@@ -1593,6 +1641,10 @@ public interface CommonApplicationConstants extends Constants {
 
     String migrateEncryptedLabel();
 
+    String parallelMigrationsType();
+
+    String customParallelMigrations();
+
     String autoConverge();
 
     String dontAutoConverge();
@@ -1652,8 +1704,6 @@ public interface CommonApplicationConstants extends Constants {
     String addVmHostDevice();
 
     String removeVmHostDevice();
-
-    String repinVmHost();
 
     String updateAvailable();
 
@@ -1769,6 +1819,8 @@ public interface CommonApplicationConstants extends Constants {
 
     String hostRestartAfterUpgrade();
 
+    String tsxRemovalInsecureCpuWarning();
+
     String imageFormat();
 
     String imageBackingFile();
@@ -1800,6 +1852,8 @@ public interface CommonApplicationConstants extends Constants {
     String enableUsbSupportNotAvailable();
 
     String graphicalConsoleOptionsVmPopup();
+
+    String serialConsole();
 
     String serialConsoleOptionsVmPopup();
 
@@ -1898,4 +1952,24 @@ public interface CommonApplicationConstants extends Constants {
     String vmCustomSerialNumber();
 
     String k8s_namespace();
+
+    String targetStorageDomain();
+
+    String ppcChipset();
+
+    String s390xChipset();
+
+    String tpmDeviceLabel();
+
+    String typeToSearchPlaceHolder();
+
+    String configChangesPending();
+
+    String permissionFilter();
+
+    String propertyId();
+
+    String preferredVncOption();
+
+    String defaultClient();
 }

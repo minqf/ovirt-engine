@@ -18,12 +18,12 @@ import org.ovirt.engine.api.model.Cpu;
 import org.ovirt.engine.api.model.CpuTopology;
 import org.ovirt.engine.api.model.Display;
 import org.ovirt.engine.api.model.ExternalHostProvider;
-import org.ovirt.engine.api.model.ExternalNetworkProviderConfiguration;
 import org.ovirt.engine.api.model.ExternalStatus;
 import org.ovirt.engine.api.model.HardwareInformation;
 import org.ovirt.engine.api.model.Hook;
 import org.ovirt.engine.api.model.Hooks;
 import org.ovirt.engine.api.model.Host;
+import org.ovirt.engine.api.model.HostCpuUnit;
 import org.ovirt.engine.api.model.HostDevicePassthrough;
 import org.ovirt.engine.api.model.HostProtocol;
 import org.ovirt.engine.api.model.HostStatus;
@@ -57,6 +57,7 @@ import org.ovirt.engine.core.common.businessentities.AutoNumaBalanceStatus;
 import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VDSStatus;
 import org.ovirt.engine.core.common.businessentities.VDSType;
+import org.ovirt.engine.core.common.businessentities.VdsCpuUnit;
 import org.ovirt.engine.core.common.businessentities.VdsSpmStatus;
 import org.ovirt.engine.core.common.businessentities.VdsStatic;
 import org.ovirt.engine.core.common.businessentities.VdsTransparentHugePagesState;
@@ -122,17 +123,6 @@ public class HostMapper {
             mapOperatingSystem(model.getOs(), entity);
         }
 
-        if (model.isSetExternalNetworkProviderConfigurations()
-                && model.getExternalNetworkProviderConfigurations().isSetExternalNetworkProviderConfigurations()) {
-            List<ExternalNetworkProviderConfiguration> externalProviders =
-                    model.getExternalNetworkProviderConfigurations().getExternalNetworkProviderConfigurations();
-            if (externalProviders.size() > 0) {
-                // Ignore everything but the first external provider, because engine's VdsStatic currently supports
-                // only a single external network provider
-                String providerId = externalProviders.get(0).getExternalNetworkProvider().getId();
-                entity.setOpenstackNetworkProviderId(providerId == null ? null : GuidUtils.asGuid(providerId));
-            }
-        }
         return entity;
     }
 
@@ -156,6 +146,9 @@ public class HostMapper {
         }
         if (model.isSetFingerprint()) {
             entity.setSshKeyFingerprint(model.getFingerprint());
+        }
+        if (model.isSetPublicKey()) {
+            entity.setSshPublicKey(model.getPublicKey());
         }
         return entity;
     }
@@ -266,16 +259,16 @@ public class HostMapper {
             model.getIscsi().setInitiator(entity.getIScsiInitiatorName());
         }
         model.setPowerManagement(map(entity, (PowerManagement) null));
-        model.setHardwareInformation(map(entity, (HardwareInformation)null));
+        model.setHardwareInformation(map(entity, (HardwareInformation) null));
         model.setSsh(map(entity.getStaticData(), null));
         Cpu cpu = new Cpu();
         CpuTopology cpuTopology = new CpuTopology();
         if (entity.getCpuSockets() != null) {
             cpuTopology.setSockets(entity.getCpuSockets());
-            if (entity.getCpuCores()!=null) {
-                cpuTopology.setCores(entity.getCpuCores()/entity.getCpuSockets());
+            if (entity.getCpuCores() != null) {
+                cpuTopology.setCores(entity.getCpuCores() / entity.getCpuSockets());
                 if (entity.getCpuThreads() != null) {
-                    cpuTopology.setThreads(entity.getCpuThreads()/entity.getCpuCores());
+                    cpuTopology.setThreads(entity.getCpuThreads() / entity.getCpuCores());
                 }
             }
         }
@@ -284,7 +277,7 @@ public class HostMapper {
         if (entity.getCpuName() != null) {
             cpu.setType(entity.getCpuName().getCpuName());
         }
-        if (entity.getCpuSpeedMh()!=null) {
+        if (entity.getCpuSpeedMh() != null) {
             cpu.setSpeed(new BigDecimal(entity.getCpuSpeedMh()));
         }
         model.setCpu(cpu);
@@ -340,12 +333,15 @@ public class HostMapper {
         }
         devicePassthrough.setEnabled(entity.isHostDevicePassthroughEnabled());
 
-        if(entity.getHostName() != null) {
+        if (entity.getHostName() != null) {
             String subject = CertificateSubjectHelper.getCertificateSubject(entity.getHostName());
             model.setCertificate(new Certificate());
             model.getCertificate().setSubject(subject);
             model.getCertificate().setOrganization(subject.split(",")[0].replace("O=", ""));
         }
+
+        model.setReinstallationRequired(entity.getStaticData().isReinstallRequired());
+        model.setOvnConfigured(entity.isOvnConfigured());
 
         return model;
     }
@@ -382,6 +378,7 @@ public class HostMapper {
             model.setVersion(version);
             model.setType(hostOs.getName());
         }
+        model.setDescription(Objects.toString(entity.getPrettyName(), ""));
         model.setCustomKernelCmdline(Objects.toString(entity.getCurrentKernelCmdline(), ""));
         model.setReportedKernelCmdline(entity.getKernelArgs());
         return model;
@@ -413,6 +410,7 @@ public class HostMapper {
         model.setUser(new User());
         model.getUser().setUserName(entity.getSshUsername());
         model.setFingerprint(entity.getSshKeyFingerprint());
+        model.setPublicKey(entity.getSshPublicKey());
         return model;
     }
 
@@ -454,52 +452,52 @@ public class HostMapper {
     @Mapping(from = VDSStatus.class, to = HostStatus.class)
     public static HostStatus map(VDSStatus entityStatus, HostStatus template) {
         switch (entityStatus) {
-        case Unassigned:
-            return HostStatus.UNASSIGNED;
-        case Down:
-            return HostStatus.DOWN;
-        case Maintenance:
-            return HostStatus.MAINTENANCE;
-        case Up:
-            return HostStatus.UP;
-        case NonResponsive:
-            return HostStatus.NON_RESPONSIVE;
-        case Error:
-            return HostStatus.ERROR;
-        case Installing:
-            return HostStatus.INSTALLING;
-        case InstallFailed:
-            return HostStatus.INSTALL_FAILED;
-        case Reboot:
-            return HostStatus.REBOOT;
-        case PreparingForMaintenance:
-            return HostStatus.PREPARING_FOR_MAINTENANCE;
-        case NonOperational:
-            return HostStatus.NON_OPERATIONAL;
-        case PendingApproval:
-            return HostStatus.PENDING_APPROVAL;
-        case Initializing:
-            return HostStatus.INITIALIZING;
-        case Connecting:
-            return HostStatus.CONNECTING;
-        case InstallingOS:
-            return HostStatus.INSTALLING_OS;
-        case Kdumping:
-            return HostStatus.KDUMPING;
-        default:
-            return null;
+            case Unassigned:
+                return HostStatus.UNASSIGNED;
+            case Down:
+                return HostStatus.DOWN;
+            case Maintenance:
+                return HostStatus.MAINTENANCE;
+            case Up:
+                return HostStatus.UP;
+            case NonResponsive:
+                return HostStatus.NON_RESPONSIVE;
+            case Error:
+                return HostStatus.ERROR;
+            case Installing:
+                return HostStatus.INSTALLING;
+            case InstallFailed:
+                return HostStatus.INSTALL_FAILED;
+            case Reboot:
+                return HostStatus.REBOOT;
+            case PreparingForMaintenance:
+                return HostStatus.PREPARING_FOR_MAINTENANCE;
+            case NonOperational:
+                return HostStatus.NON_OPERATIONAL;
+            case PendingApproval:
+                return HostStatus.PENDING_APPROVAL;
+            case Initializing:
+                return HostStatus.INITIALIZING;
+            case Connecting:
+                return HostStatus.CONNECTING;
+            case InstallingOS:
+                return HostStatus.INSTALLING_OS;
+            case Kdumping:
+                return HostStatus.KDUMPING;
+            default:
+                return null;
         }
     }
 
     @Mapping(from = VDSType.class, to = HostType.class)
     public static HostType map(VDSType type, HostType template) {
         switch (type) {
-        case VDS:
-            return HostType.RHEL;
-        case oVirtNode:
-            return HostType.OVIRT_NODE;
-        default:
-            return null;
+            case VDS:
+                return HostType.RHEL;
+            case oVirtNode:
+                return HostType.OVIRT_NODE;
+            default:
+                return null;
         }
     }
 
@@ -520,14 +518,14 @@ public class HostMapper {
 
     private static VdsOperationActionParameters.AuthenticationMethod mapSshAuthenticationMethod(SshAuthenticationMethod method) {
         switch (method) {
-        case PASSWORD:
-            return VdsOperationActionParameters.AuthenticationMethod.Password;
+            case PASSWORD:
+                return VdsOperationActionParameters.AuthenticationMethod.Password;
 
-        case PUBLICKEY:
-            return VdsOperationActionParameters.AuthenticationMethod.PublicKey;
+            case PUBLICKEY:
+                return VdsOperationActionParameters.AuthenticationMethod.PublicKey;
 
-        default:
-            return VdsOperationActionParameters.AuthenticationMethod.Password;
+            default:
+                return VdsOperationActionParameters.AuthenticationMethod.Password;
         }
     }
 
@@ -543,7 +541,7 @@ public class HostMapper {
                     }
                 }
                 if (action.getSsh().getUser().isSetUserName()) {
-                      params.getvds().setSshUsername(action.getSsh().getUser().getUserName());
+                    params.getvds().setSshUsername(action.getSsh().getUser().getUserName());
                 }
             }
             if (action.getSsh().isSetPort()) {
@@ -551,6 +549,9 @@ public class HostMapper {
             }
             if (action.getSsh().isSetFingerprint()) {
                 params.getvds().setSshKeyFingerprint(action.getSsh().getFingerprint());
+            }
+            if (action.getSsh().isSetPublicKey()) {
+                params.getvds().setSshPublicKey(action.getSsh().getPublicKey());
             }
             if (action.getSsh().isSetAuthenticationMethod()) {
                 params.setAuthMethod(mapSshAuthenticationMethod(action.getSsh().getAuthenticationMethod()));
@@ -576,7 +577,7 @@ public class HostMapper {
                     }
                 }
                 if (host.getSsh().getUser().isSetUserName()) {
-                      params.getvds().setSshUsername(host.getSsh().getUser().getUserName());
+                    params.getvds().setSshUsername(host.getSsh().getUser().getUserName());
                 }
             }
             if (host.getSsh().isSetPort()) {
@@ -585,6 +586,10 @@ public class HostMapper {
             if (host.getSsh().isSetFingerprint()) {
                 params.getvds().setSshKeyFingerprint(host.getSsh().getFingerprint());
             }
+            if (host.getSsh().isSetPublicKey()) {
+                params.getvds().setSshPublicKey(host.getSsh().getPublicKey());
+            }
+
             if (host.getSsh().isSetAuthenticationMethod()) {
                 params.setAuthMethod(mapSshAuthenticationMethod(host.getSsh().getAuthenticationMethod()));
             }
@@ -659,17 +664,17 @@ public class HostMapper {
         AutoNumaStatus result = null;
         if (autoNumaStatus != null) {
             switch (autoNumaStatus) {
-            case DISABLE:
-                result = AutoNumaStatus.DISABLE;
-                break;
-            case ENABLE:
-                result = AutoNumaStatus.ENABLE;
-                break;
-            case UNKNOWN:
-                result = AutoNumaStatus.UNKNOWN;
-                break;
-            default:
-                break;
+                case DISABLE:
+                    result = AutoNumaStatus.DISABLE;
+                    break;
+                case ENABLE:
+                    result = AutoNumaStatus.ENABLE;
+                    break;
+                case UNKNOWN:
+                    result = AutoNumaStatus.UNKNOWN;
+                    break;
+                default:
+                    break;
             }
         }
         return result;
@@ -713,15 +718,23 @@ public class HostMapper {
     @Mapping(from = FenceProxySourceType.class, to = PmProxyType.class)
     private static PmProxyType map(FenceProxySourceType fenceProxySource, PmProxyType template) {
         switch (fenceProxySource) {
-        case CLUSTER :
-            return PmProxyType.CLUSTER;
-        case DC:
-            return PmProxyType.DC;
-        case OTHER_DC:
-            return PmProxyType.OTHER_DC;
-        default:
-            return null;
+            case CLUSTER :
+                return PmProxyType.CLUSTER;
+            case DC:
+                return PmProxyType.DC;
+            case OTHER_DC:
+                return PmProxyType.OTHER_DC;
+            default:
+                return null;
         }
     }
 
- }
+    @Mapping(from = VdsCpuUnit.class, to = HostCpuUnit.class)
+    public static HostCpuUnit map(VdsCpuUnit vdsCpuUnit, HostCpuUnit hostCpuUnit) {
+        HostCpuUnit cpuUnit = new HostCpuUnit();
+        cpuUnit.setSocketId(vdsCpuUnit.getSocket());
+        cpuUnit.setCoreId(vdsCpuUnit.getCore());
+        cpuUnit.setCpuId(vdsCpuUnit.getCpu());
+        return cpuUnit;
+    }
+}

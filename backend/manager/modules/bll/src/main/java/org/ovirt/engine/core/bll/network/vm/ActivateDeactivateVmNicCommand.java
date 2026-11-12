@@ -5,6 +5,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import javax.inject.Inject;
 
@@ -42,6 +44,7 @@ import org.ovirt.engine.core.common.businessentities.network.VmNic;
 import org.ovirt.engine.core.common.businessentities.network.VnicProfile;
 import org.ovirt.engine.core.common.errors.EngineException;
 import org.ovirt.engine.core.common.errors.EngineMessage;
+import org.ovirt.engine.core.common.utils.VmDeviceCommonUtils;
 import org.ovirt.engine.core.common.vdscommands.VDSReturnValue;
 import org.ovirt.engine.core.common.vdscommands.VmNicDeviceVDSParameters;
 import org.ovirt.engine.core.compat.Guid;
@@ -53,9 +56,12 @@ import org.ovirt.engine.core.dao.provider.HostProviderBindingDao;
 import org.ovirt.engine.core.dao.provider.ProviderDao;
 import org.ovirt.engine.core.utils.ReplacementUtils;
 import org.ovirt.engine.core.utils.StringMapUtils;
+import org.ovirt.engine.core.vdsbroker.ResourceManager;
 import org.ovirt.engine.core.vdsbroker.monitoring.VmDevicesMonitoring;
 import org.ovirt.engine.core.vdsbroker.vdsbroker.VdsProperties;
 import org.ovirt.engine.core.vdsbroker.vdsbroker.VmInfoReturn;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Activate or deactivate a virtual network interface of a VM in case it is in a valid status. If the VM is down, simply
@@ -64,6 +70,7 @@ import org.ovirt.engine.core.vdsbroker.vdsbroker.VmInfoReturn;
 @NonTransactiveCommandAttribute
 public class ActivateDeactivateVmNicCommand<T extends ActivateDeactivateVmNicParameters> extends VmCommand<T> {
 
+    private static final Logger log = LoggerFactory.getLogger(ActivateDeactivateVmNicCommand.class);
     private static List<VMStatus> ALLOWED_VM_STATES =
             Arrays.asList(VMStatus.Up, VMStatus.Down, VMStatus.ImageLocked, VMStatus.PoweringDown, VMStatus.PoweringUp);
 
@@ -116,6 +123,9 @@ public class ActivateDeactivateVmNicCommand<T extends ActivateDeactivateVmNicPar
 
     @Inject
     private NetworkDao networkDao;
+
+    @Inject
+    private ResourceManager resourceManager;
 
     public ActivateDeactivateVmNicCommand(T parameters, CommandContext commandContext) {
         super(parameters, commandContext);
@@ -221,11 +231,18 @@ public class ActivateDeactivateVmNicCommand<T extends ActivateDeactivateVmNicPar
 
     public Network getNetwork() {
         if (getParameters().getNic().getVnicProfileId() != null && network == null) {
-            vnicProfile = vnicProfileDao.get(getParameters().getNic().getVnicProfileId());
+            vnicProfile = getVnicProfile();
             network = networkHelper.getNetworkByVnicProfile(vnicProfile);
         }
 
         return network;
+    }
+
+    private VnicProfile getVnicProfile() {
+        if (getParameters().getNic().getVnicProfileId() != null && vnicProfile == null) {
+            vnicProfile = vnicProfileDao.get(getParameters().getNic().getVnicProfileId());
+        }
+        return vnicProfile;
     }
 
     public String getInterfaceName() {
@@ -240,20 +257,46 @@ public class ActivateDeactivateVmNicCommand<T extends ActivateDeactivateVmNicPar
 
     @Override
     protected void executeVmCommand() {
-        switch (getParameters().getAction()) {
-        case PLUG:
-            plugNic();
-            break;
-        case UNPLUG:
-            unplugNic();
-            break;
-        default:
-            throw new RuntimeException("Coding error: unknown enum value");
-        }
+        boolean hotPlug = getVm().getStatus().isUpOrPaused();
+        Lock vmDevicesLock = getVmDevicesLock(hotPlug, getParameters().getAction());
+        vmDevicesLock.lock();
+        try {
+            switch (getParameters().getAction()) {
+                case PLUG:
+                    plugNic();
+                    break;
+                case UNPLUG:
+                    unplugNic();
+                    break;
+                default:
+                    throw new RuntimeException("Coding error: unknown enum value");
+            }
 
-        // In any case, the device is updated
-        updateDevice();
-        setSucceeded(true);
+            var success = handleFailoverIfNeeded();
+            // In any case, the device is updated
+            updateDevice();
+            setSucceeded(success);
+        } finally {
+            vmDevicesLock.unlock();
+            log.debug("Released lock for {}", getParameters().getAction());
+        }
+    }
+
+    protected Lock getVmDevicesLock(boolean runningVmChanges, PlugAction action) {
+        if (!runningVmChanges) {
+            // dummy lock
+            log.debug("Acquired dummy lock for {}", action);
+            return new ReentrantLock() {
+                @Override
+                public void lock() {
+                }
+                @Override
+                public void unlock() {
+                }
+            };
+        }
+        log.debug("Acquired lock for {}", action);
+        return resourceManager.getVmManager(getVmId()).getVmDevicesLock();
     }
 
     private void plugNic() {
@@ -362,27 +405,27 @@ public class ActivateDeactivateVmNicCommand<T extends ActivateDeactivateVmNicPar
     }
 
     private void clearAddressIfPciSlotIsDuplicated(VmDevice vmDeviceToHotplug) {
-        if (searchForDuplicatesWithExistingVmDevices(vmDeviceToHotplug)){
+        if (searchForDuplicatesWithExistingVmDevices(vmDeviceToHotplug)) {
             vmDeviceToHotplug.setAddress("");
         }
     }
 
-    private boolean searchForDuplicatesWithExistingVmDevices(VmDevice vmDeviceToHotplug){
+    private boolean searchForDuplicatesWithExistingVmDevices(VmDevice vmDeviceToHotplug) {
         String deviceAddress = vmDeviceToHotplug.getAddress();
-        if (StringUtils.isEmpty(deviceAddress)){
+        if (StringUtils.isEmpty(deviceAddress)) {
             return false;
         }
         Map<String, String> addressMapToHotplug = StringMapUtils.string2Map(deviceAddress);
         List<VmDevice> allVmDevices = vmDeviceDao.getVmDeviceByVmId(getVm().getId());
         for (VmDevice vmDevice : allVmDevices) {
-            if (!vmDeviceToHotplug.getId().equals(vmDevice.getId())){
+            if (!vmDeviceToHotplug.getId().equals(vmDevice.getId())) {
                 Map<String, String> deviceAddressMap = StringMapUtils.string2Map(vmDevice.getAddress());
                 boolean duplicatedAddress = deviceAddressMap.equals(addressMapToHotplug);
 
                 boolean ambiguousInterfaceState = StringUtils.isEmpty(vmDevice.getAddress()) && vmDevice.isPlugged()
                         && VmDeviceGeneralType.INTERFACE.equals(vmDevice.getType());
 
-                if(duplicatedAddress || ambiguousInterfaceState) {
+                if (duplicatedAddress || ambiguousInterfaceState) {
                     return true;
                 }
             }
@@ -411,7 +454,7 @@ public class ActivateDeactivateVmNicCommand<T extends ActivateDeactivateVmNicPar
     }
 
     private Provider<?> getProvider() {
-        if (provider == null ) {
+        if (provider == null) {
             Network network = getNetwork();
             if (network != null && network.isExternal()) {
                 provider = providerDao.get(network.getProvidedBy().getProviderId());
@@ -430,14 +473,51 @@ public class ActivateDeactivateVmNicCommand<T extends ActivateDeactivateVmNicPar
     }
 
     private void updateDevice() {
-        if (getParameters().getAction() == PlugAction.PLUG
-                && hotPlugVmNicRequired(getVm().getStatus())) {
-            VmDevicesMonitoring.Change change = vmDevicesMonitoring.createChange(getVdsId(), System.nanoTime());
-            change.updateVm(getVmId(), VmDevicesMonitoring.UPDATE_HASH);
-            change.flush();
-        } else {
-            vmDevice.setPlugged(getParameters().getAction() == PlugAction.PLUG);
-            vmDeviceDao.update(vmDevice);
+        vmDevice.setPlugged(getParameters().getAction() == PlugAction.PLUG);
+        vmDeviceDao.update(vmDevice);
+    }
+
+    private boolean handleFailoverIfNeeded() {
+        var vnicProfile = getVnicProfile();
+        if (vnicProfile == null || vnicProfile.getFailoverVnicProfileId() == null || !getParameters().isWithFailover()
+                || !hotPlugVmNicRequired(getVm().getStatus())) {
+            return true;
+        }
+
+        var failoverId = vnicProfile.getFailoverVnicProfileId();
+        var failoverDevice = VmDeviceCommonUtils.createFailoverVmDevice(failoverId, getVmId());
+        var failoverNic = VmDeviceCommonUtils.createFailoverVmNic(failoverId,
+                getVmId(),
+                getParameters().getNic().getMacAddress());
+        boolean success;
+        try {
+            VDSReturnValue vdsReturnValue = runVdsCommand(getParameters().getAction().getvNicVdsCommandType(),
+                    new VmNicDeviceVDSParameters(getVdsId(),
+                            getVm(),
+                            failoverNic,
+                            failoverDevice));
+            success = vdsReturnValue.getSucceeded();
+        } catch (EngineException e) {
+            revertAfterFailoverOperationFail();
+            throw e;
+        }
+        if (!success) {
+            // Failover plug/unplug failed, we need to revert the VF action
+            revertAfterFailoverOperationFail();
+        }
+        return success;
+    }
+
+    private void revertAfterFailoverOperationFail() {
+        switch (getParameters().getAction()) {
+            case PLUG:
+                getParameters().setAction(PlugAction.UNPLUG);
+                unplugNic();
+                break;
+            case UNPLUG:
+                getParameters().setAction(PlugAction.PLUG);
+                plugNic();
+                break;
         }
     }
 

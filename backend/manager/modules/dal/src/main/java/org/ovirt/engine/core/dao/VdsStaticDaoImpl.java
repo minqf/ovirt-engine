@@ -1,23 +1,31 @@
 package org.ovirt.engine.core.dao;
 
-import java.io.IOException;
+import java.io.Serializable;
 import java.util.List;
 
 import javax.inject.Named;
 import javax.inject.Singleton;
 
-import org.codehaus.jackson.annotate.JsonAutoDetect;
-import org.codehaus.jackson.map.ObjectMapper;
+import org.apache.commons.lang.exception.ExceptionUtils;
 import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VDSStatus;
 import org.ovirt.engine.core.common.businessentities.VDSType;
 import org.ovirt.engine.core.common.businessentities.VdsStatic;
 import org.ovirt.engine.core.common.utils.pm.FenceProxySourceTypeHelper;
 import org.ovirt.engine.core.compat.Guid;
+import org.ovirt.engine.core.utils.SerializationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.SingleColumnRowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.simple.SimpleJdbcCall;
+
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.PropertyAccessor;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * {@code VdsDaoImpl} provides an implementation of {@link VdsDao}.
@@ -25,6 +33,8 @@ import org.springframework.jdbc.core.simple.SimpleJdbcCall;
 @Named
 @Singleton
 public class VdsStaticDaoImpl extends BaseDao implements VdsStaticDao {
+
+    private static final Logger log = LoggerFactory.getLogger(VdsStaticDaoImpl.class);
 
     @Override
     public VdsStatic get(Guid id) {
@@ -96,11 +106,11 @@ public class VdsStaticDaoImpl extends BaseDao implements VdsStaticDao {
                 .addValue("vds_spm_priority", vds.getVdsSpmPriority())
                 .addValue("console_address", vds.getConsoleAddress())
                 .addValue("sshKeyFingerprint", vds.getSshKeyFingerprint())
+                .addValue("ssh_public_key", vds.getSshPublicKey())
                 .addValue("ssh_port", vds.getSshPort())
                 .addValue("ssh_username", vds.getSshUsername())
                 .addValue("disable_auto_pm", vds.isDisablePowerManagementPolicy())
                 .addValue("host_provider_id", vds.getHostProviderId())
-                .addValue("openstack_network_provider_id", vds.getOpenstackNetworkProviderId())
                 .addValue("kernel_cmdline", KernelCmdlineColumn.fromVdsStatic(vds).toJson())
                 .addValue("last_stored_kernel_cmdline", vds.getLastStoredKernelCmdline())
                 .addValue("reinstall_required", vds.isReinstallRequired())
@@ -140,10 +150,10 @@ public class VdsStaticDaoImpl extends BaseDao implements VdsStaticDao {
         entity.setPmKdumpDetection(rs.getBoolean("pm_detect_kdump"));
         entity.setOtpValidity(rs.getLong("otp_validity"));
         entity.setSshKeyFingerprint(rs.getString("sshKeyFingerprint"));
+        entity.setSshPublicKey(rs.getString("ssh_public_key"));
         entity.setConsoleAddress(rs.getString("console_address"));
         entity.setDisablePowerManagementPolicy(rs.getBoolean("disable_auto_pm"));
         entity.setHostProviderId(getGuid(rs, "host_provider_id"));
-        entity.setOpenstackNetworkProviderId(getGuid(rs, "openstack_network_provider_id"));
         KernelCmdlineColumn.fromJson(rs.getString("kernel_cmdline")).toVdsStatic(entity);
         entity.setLastStoredKernelCmdline(rs.getString("last_stored_kernel_cmdline"));
         entity.setReinstallRequired(rs.getBoolean("reinstall_required"));
@@ -195,7 +205,9 @@ public class VdsStaticDaoImpl extends BaseDao implements VdsStaticDao {
     }
 
     @Override
-    public boolean checkIfExistsHostThatMissesNetworkInCluster(Guid clusterId, String networkName, VDSStatus hostStatus) {
+    public boolean checkIfExistsHostThatMissesNetworkInCluster(Guid clusterId,
+            String networkName,
+            VDSStatus hostStatus) {
         final MapSqlParameterSource customMapSqlParameterSource = getCustomMapSqlParameterSource()
                 .addValue("cluster_id", clusterId)
                 .addValue("network_name", networkName)
@@ -216,8 +228,7 @@ public class VdsStaticDaoImpl extends BaseDao implements VdsStaticDao {
     /**
      * Model of JSON structured column "kernel_cmdline"
      */
-    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
-    static class KernelCmdlineColumn {
+    static class KernelCmdlineColumn implements Serializable {
 
         private String current;
         private boolean parsable;
@@ -231,20 +242,27 @@ public class VdsStaticDaoImpl extends BaseDao implements VdsStaticDao {
 
         public String toJson() {
             try {
-                return new ObjectMapper().writeValueAsString(this);
-            } catch (IOException ex) {
-                throw new RuntimeException(
-                        "Error during JSON serialization of " + KernelCmdlineColumn.class.getCanonicalName(), ex);
+                return new ObjectMapper()
+                        .setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY)
+                        .setSerializationInclusion(JsonInclude.Include.ALWAYS)
+                        .writeValueAsString(this);
+            } catch (JsonProcessingException e) {
+                log.error("Cannot serialize {} because {}", this, ExceptionUtils.getRootCauseMessage(e));
+                log.debug("Cannot serialize {}. Details {}", this, ExceptionUtils.getFullStackTrace(e));
+                throw new SerializationException(e);
             }
         }
 
         public static KernelCmdlineColumn fromJson(String json) {
             final String nonSafeJson = json == null ? "{}" : json;
             try {
-                return new ObjectMapper().readValue(nonSafeJson, KernelCmdlineColumn.class);
-            } catch (IOException ex) {
-                throw new RuntimeException(
-                        "Error during JSON deserialization of " + KernelCmdlineColumn.class.getCanonicalName(), ex);
+                return new ObjectMapper()
+                        .setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY)
+                        .readValue(nonSafeJson, KernelCmdlineColumn.class);
+            } catch (JsonProcessingException e) {
+                log.error("Cannot deserialize {} because of {}", nonSafeJson, ExceptionUtils.getRootCauseMessage(e));
+                log.debug("Cannot deserialize {}. Details {}", nonSafeJson, ExceptionUtils.getFullStackTrace(e));
+                throw new SerializationException(e);
             }
         }
 

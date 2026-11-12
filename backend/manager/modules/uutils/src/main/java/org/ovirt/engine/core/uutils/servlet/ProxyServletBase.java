@@ -35,7 +35,7 @@ public class ProxyServletBase extends HttpServlet {
     private String url;
 
     protected static long copy(final InputStream input, final OutputStream output) throws IOException {
-        final byte[] buffer = new byte[8*1024];
+        final byte[] buffer = new byte[8 * 1024];
         long count = 0;
         int n;
         while ((n = input.read(buffer)) != -1) {
@@ -133,7 +133,7 @@ public class ProxyServletBase extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
-    throws ServletException, IOException {
+        throws ServletException, IOException {
 
         if (url == null) {
             response.sendError(response.SC_NOT_FOUND, "Cannot proxy, no URL is configured.");

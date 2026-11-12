@@ -128,7 +128,7 @@ public class StorageQosMetricParametersModel extends Model {
 
     private void validateValue(EntityModel<String> entity, Integer maxValue) {
         entity.validateEntity(new IValidation[] {
-                new IntegerValidation(0, maxValue) });
+            new IntegerValidation(0, maxValue) });
     }
 
     @Override
@@ -139,7 +139,7 @@ public class StorageQosMetricParametersModel extends Model {
             getChoiceGroupNone().setIsChangeable(getIsChangable());
             getChoiceGroupTotal().setIsChangeable(getIsChangable());
             getChoiceGroupReadWrite().setIsChangeable(getIsChangable());
-        } else if ((sender instanceof EntityModel) && Boolean.TRUE.equals(((EntityModel) sender).getEntity())) {
+        } else if (sender instanceof EntityModel && Boolean.TRUE.equals(((EntityModel) sender).getEntity())) {
             if (!getChoiceGroupNone().equals(sender)) {
                 getChoiceGroupNone().setEntity(false);
             }
@@ -161,9 +161,9 @@ public class StorageQosMetricParametersModel extends Model {
 
     private void updateChangeability() {
         //Suppress update of changeability when entities weren't constructed yet.
-        if(getChoiceGroupNone() == null || getChoiceGroupNone().getEntity() == null ||
-           getChoiceGroupTotal() == null || getChoiceGroupTotal().getEntity() == null ||
-           getChoiceGroupReadWrite() == null || getChoiceGroupReadWrite().getEntity() == null) {
+        if (getChoiceGroupNone() == null || getChoiceGroupNone().getEntity() == null ||
+            getChoiceGroupTotal() == null || getChoiceGroupTotal().getEntity() == null ||
+            getChoiceGroupReadWrite() == null || getChoiceGroupReadWrite().getEntity() == null) {
             return;
         }
 

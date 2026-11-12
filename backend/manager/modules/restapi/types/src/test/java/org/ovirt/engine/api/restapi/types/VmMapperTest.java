@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.stream.Stream;
@@ -75,6 +76,7 @@ public class VmMapperTest extends
         VmDynamic dynamic = new VmDynamic();
         dynamic.setStatus(VMStatus.Up);
         dynamic.setBootSequence(to.getDefaultBootSequence());
+        to.setDefaultDisplayType(org.ovirt.engine.core.common.businessentities.DisplayType.vga);
         dynamic.getGraphicsInfos().put(GraphicsType.SPICE, new GraphicsInfo());
         org.ovirt.engine.core.common.businessentities.VM ret =
                 new org.ovirt.engine.core.common.businessentities.VM(to,
@@ -124,6 +126,7 @@ public class VmMapperTest extends
         from.getMigration().setAutoConverge(InheritableBoolean.TRUE);
         from.getMigration().setCompressed(InheritableBoolean.TRUE);
         from.getDisplay().setDisconnectAction(DisplayDisconnectAction.LOCK_SCREEN.toString());
+        from.getDisplay().setDisconnectActionDelay(2);
         return from;
     }
 
@@ -170,7 +173,6 @@ public class VmMapperTest extends
         assertEquals(model.isSetDisplay(), transform.isSetDisplay());
         assertEquals(model.getDisplay().getType(), transform.getDisplay().getType());
         assertEquals(model.getDisplay().getMonitors(), transform.getDisplay().getMonitors());
-        assertEquals(model.getDisplay().isSingleQxlPci(), transform.getDisplay().isSingleQxlPci());
         assertEquals(model.getDisplay().isAllowOverride(), transform.getDisplay().isAllowOverride());
         // few hosts in Placement Policy, but unordered
         List<Host> modelHostsList = model.getPlacementPolicy().getHosts().getHosts();
@@ -191,13 +193,14 @@ public class VmMapperTest extends
         assertEquals(model.getMigration().getAutoConverge(), transform.getMigration().getAutoConverge());
         assertEquals(model.getMigration().getCompressed(), transform.getMigration().getCompressed());
         assertEquals(model.getDisplay().getDisconnectAction(), transform.getDisplay().getDisconnectAction());
+        assertEquals(model.getDisplay().getDisconnectActionDelay(), transform.getDisplay().getDisconnectActionDelay());
     }
 
     private void assertHostsListMatch(List<Host> modelHostsList, List<Host> trnsfHostsList) {
-        for (Host host : modelHostsList){
+        for (Host host : modelHostsList) {
             boolean foundInTransformation = false;
-            for (Host otherHost : trnsfHostsList){
-                if (host.getId().equals(otherHost.getId())){
+            for (Host otherHost : trnsfHostsList) {
+                if (host.getId().equals(otherHost.getId())) {
                     foundInTransformation = true;
                     break;
                 }
@@ -229,13 +232,13 @@ public class VmMapperTest extends
     @Test
     public void testUpdateHostPinningPolicy() {
         final VmStatic vmTemplate = new VmStatic();
-        vmTemplate.setDedicatedVmForVdsList(Guid.newGuid());
+        vmTemplate.setDedicatedVmForVdsList(Collections.singletonList(Guid.newGuid()));
         final Vm vm = new Vm();
         vm.setPlacementPolicy(createPlacementPolicy(Guid.newGuid(), Guid.newGuid()));
         final VmStatic mappedVm = VmMapper.map(vm, vmTemplate);
 
         final List<Guid> hosts = new ArrayList<>();
-        for (Host host : vm.getPlacementPolicy().getHosts().getHosts()){
+        for (Host host : vm.getPlacementPolicy().getHosts().getHosts()) {
             hosts.add(Guid.createGuidFromString(host.getId()));
         }
         assertEquals(new HashSet(hosts), new HashSet(mappedVm.getDedicatedVmForVdsList()));
@@ -310,10 +313,10 @@ public class VmMapperTest extends
         assertNull(map.getGuestOperatingSystem().getVersion().getRevision());
         assertEquals("x86_64", map.getGuestOperatingSystem().getArchitecture());
         assertEquals("2.6.32-431.el6.x86_64", map.getGuestOperatingSystem().getKernel().getVersion().getFullVersion());
-        assertEquals(2, (long)map.getGuestOperatingSystem().getKernel().getVersion().getMajor());
-        assertEquals(6, (long)map.getGuestOperatingSystem().getKernel().getVersion().getMinor());
-        assertEquals(32, (long)map.getGuestOperatingSystem().getKernel().getVersion().getBuild());
-        assertEquals(431, (long)map.getGuestOperatingSystem().getKernel().getVersion().getRevision());
+        assertEquals(2, (long) map.getGuestOperatingSystem().getKernel().getVersion().getMajor());
+        assertEquals(6, (long) map.getGuestOperatingSystem().getKernel().getVersion().getMinor());
+        assertEquals(32, (long) map.getGuestOperatingSystem().getKernel().getVersion().getBuild());
+        assertEquals(431, (long) map.getGuestOperatingSystem().getKernel().getVersion().getRevision());
     }
 
     @Test

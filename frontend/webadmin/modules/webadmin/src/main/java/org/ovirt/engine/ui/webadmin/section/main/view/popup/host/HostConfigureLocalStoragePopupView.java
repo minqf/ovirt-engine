@@ -32,7 +32,6 @@ import com.google.gwt.text.shared.AbstractRenderer;
 import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.Anchor;
-import com.google.gwt.user.client.ui.FlowPanel;
 import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.VerticalPanel;
 import com.google.inject.Inject;
@@ -145,9 +144,6 @@ public class HostConfigureLocalStoragePopupView extends AbstractTabbedModelBound
     EntityModelRadioButtonEditor optimizationCustomEditor;
 
     @UiField
-    FlowPanel cpuThreadsPanel;
-
-    @UiField
     @Ignore
     Label cpuThreadsPanelTitle;
 
@@ -221,7 +217,7 @@ public class HostConfigureLocalStoragePopupView extends AbstractTabbedModelBound
         clusterCpuTypeEditor = new ListModelListBoxEditor<>(new AbstractRenderer<ServerCpu>() {
             @Override
             public String render(ServerCpu object) {
-                return object != null  && object.getCpuName().length() > 0
+                return object != null && object.getCpuName().length() > 0
                         ?
                         object.getCpuName()
                         :
@@ -306,8 +302,6 @@ public class HostConfigureLocalStoragePopupView extends AbstractTabbedModelBound
             }
         });
 
-        model.getCluster().getVersionSupportsCpuThreads().getEntityChangedEvent().addListener((ev, sender, args) ->
-                cpuThreadsPanel.setVisible(model.getCluster().getVersionSupportsCpuThreads().getEntity()));
     }
 
     private void optimizationForDesktopFormatter(ConfigureLocalStorageModel model) {

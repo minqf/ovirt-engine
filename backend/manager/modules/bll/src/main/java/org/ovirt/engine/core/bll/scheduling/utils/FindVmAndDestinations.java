@@ -11,6 +11,7 @@ import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.MigrationSupport;
 import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VM;
+import org.ovirt.engine.core.common.utils.VmCpuCountHelper;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.VmDao;
 import org.ovirt.engine.core.vdsbroker.ResourceManager;
@@ -24,14 +25,27 @@ import org.slf4j.LoggerFactory;
 public class FindVmAndDestinations {
     private static final Logger log = LoggerFactory.getLogger(FindVmAndDestinations.class);
 
+    private ResourceManager resourceManager;
+
+    private VdsCpuUnitPinningHelper vdsCpuUnitPinningHelper;
+
     private Cluster cluster;
+
     private int highCpuUtilization;
+
     private long requiredMemory;
 
-    public FindVmAndDestinations(Cluster cluster, int highCpuUtilization, long requiredMemory) {
+    public FindVmAndDestinations(
+            Cluster cluster,
+            int highCpuUtilization,
+            long requiredMemory,
+            ResourceManager resourceManager,
+            VdsCpuUnitPinningHelper vdsCpuUnitPinningHelper) {
         this.cluster = cluster;
         this.highCpuUtilization = highCpuUtilization;
         this.requiredMemory = requiredMemory;
+        this.resourceManager = resourceManager;
+        this.vdsCpuUnitPinningHelper = vdsCpuUnitPinningHelper;
     }
 
     public List<BalanceResult> invoke(List<VDS> sourceHosts,
@@ -39,7 +53,7 @@ public class FindVmAndDestinations {
             VmDao vmDao,
             ResourceManager resourceManager) {
 
-        Map<Guid, List<VM>> vmsForHost =  getMigratableVmsRunningOnHosts(vmDao,
+        Map<Guid, List<VM>> vmsForHost = getMigratableVmsRunningOnHosts(vmDao,
                 sourceHosts.stream().map(VDS::getId).collect(Collectors.toList()));
 
         List<BalanceResult> results = new ArrayList<>();
@@ -50,12 +64,12 @@ public class FindVmAndDestinations {
             migratableVms.forEach(vm -> vm.setStatisticsData(resourceManager.getVmManager(vm.getId(), false).getStatistics()));
             migratableVms.sort(VmCpuUsageComparator.INSTANCE);
 
-            for (VM vm : migratableVms){
+            for (VM vm : migratableVms) {
                 // Check if vm not over utilize memory or CPU of destination hosts
                 List<VDS> validDestinationHosts = getValidHosts(
                         destinationHosts, cluster, vm, highCpuUtilization, requiredMemory);
 
-                if (!validDestinationHosts.isEmpty()){
+                if (!validDestinationHosts.isEmpty()) {
                     // Add the current host, it is possible it is the best host after all,
                     // because the balancer does not know about affinity for example
                     validDestinationHosts.add(sourceHost);
@@ -111,13 +125,35 @@ public class FindVmAndDestinations {
                 continue;
             }
 
+            HostCpuLoadHelper cpuLoadHelper = new HostCpuLoadHelper(vds,
+                    resourceManager,
+                    vdsCpuUnitPinningHelper);
+
+            int currentHostLoad = cpuLoadHelper.getEffectiveSharedCpuTotalLoad();
             // Using host threads, so the predicted VM cpu is consistent
             // with the percentage that vdsm returns
-            int predictedVmCpu = (vm.getStatisticsData() != null && vm.getUsageCpuPercent() != null && vds.getCpuThreads() != null) ?
-                    (vm.getUsageCpuPercent() * vm.getNumOfCpus()) / vds.getCpuThreads() :
-                    0;
+            int addedLoad = 0;
 
-            if (vds.getUsageCpuPercent() + predictedVmCpu <= highCpuUtilization
+            if (!vm.getCpuPinningPolicy().isExclusive()) {
+                addedLoad = (vm.getStatisticsData() != null && vm.getUsageCpuPercent() != null
+                        && vds.getCpuThreads() != null)
+                                ? (vm.getUsageCpuPercent() * VmCpuCountHelper.getDynamicNumOfCpu(vm))
+                                : 0;
+            }
+
+            int predictedSharedLoadTotal = currentHostLoad + addedLoad;
+
+            long currentHostSharedCpuCount = cpuLoadHelper.getEffectiveSharedPCpusCount();
+            int addedExclusivelyPinnedCpuCount = 0;
+
+            if (vm.getCpuPinningPolicy().isExclusive()) {
+                addedExclusivelyPinnedCpuCount = vm.getNumOfCpus();
+            }
+            long predictedSharedCpuCount = currentHostSharedCpuCount - addedExclusivelyPinnedCpuCount;
+
+            double predictedHostUsage = (double) predictedSharedLoadTotal / (double) predictedSharedCpuCount;
+
+            if (predictedHostUsage <= highCpuUtilization
                     && vds.getMaxSchedulingMemory() - vm.getMemSizeMb() > minimalFreeMemory) {
                 result.add(vds);
             }

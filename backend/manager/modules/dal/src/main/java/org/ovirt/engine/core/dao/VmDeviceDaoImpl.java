@@ -113,7 +113,7 @@ public class VmDeviceDaoImpl extends
 
     @Override
     public List<VmDevice> getVmDeviceByVmIdTypeAndDevice
-            (Guid vmId, VmDeviceGeneralType type, String device, Guid userID, boolean isFiltered) {
+    (Guid vmId, VmDeviceGeneralType type, String device, Guid userID, boolean isFiltered) {
         MapSqlParameterSource parameterSource = getCustomMapSqlParameterSource()
                 .addValue("vm_id", vmId)
                 .addValue("type", type.getValue())
@@ -127,7 +127,7 @@ public class VmDeviceDaoImpl extends
 
     @Override
     public List<VmDevice> getVmDeviceByTypeAndDevice
-            (List<Guid> vmsIds, VmDeviceGeneralType type, String device, Guid userID, boolean isFiltered) {
+    (List<Guid> vmsIds, VmDeviceGeneralType type, String device, Guid userID, boolean isFiltered) {
         MapSqlParameterSource parameterSource = getCustomMapSqlParameterSource()
                 .addValue("vm_ids", createArrayOfUUIDs(vmsIds))
                 .addValue("type", type.getValue())
@@ -242,27 +242,10 @@ public class VmDeviceDaoImpl extends
         getCallsHandler().executeModification("removeAllUnmanagedDevicesByVmId", parameterSource);
     }
 
-    @Override
-    public void updateRuntimeInfo(VmDevice vmDevice) {
-        MapSqlParameterSource paramsForUpdate = createParameterSourceForUpdate(vmDevice)
-                .addValue("address", vmDevice.getAddress())
-                .addValue("alias", vmDevice.getAlias());
-
-        getCallsHandler().executeModification("UpdateVmDeviceRuntimeInfo", paramsForUpdate);
-    }
-
     private MapSqlParameterSource createParameterSourceForUpdate(VmDevice vmDevice) {
         return getCustomMapSqlParameterSource()
                 .addValue("vm_id", vmDevice.getVmId())
                 .addValue("device_id", vmDevice.getDeviceId());
-    }
-
-    @Override
-    public void updateHotPlugDisk(VmDevice vmDevice) {
-        MapSqlParameterSource paramsForUpdate = createParameterSourceForUpdate(vmDevice)
-                .addValue("is_plugged", vmDevice.isPlugged())
-                .addValue("alias", vmDevice.getAlias());
-        getCallsHandler().executeModification("UpdateVmDeviceForHotPlugDisk", paramsForUpdate);
     }
 
 }

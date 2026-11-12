@@ -60,7 +60,7 @@
                                 <i class="fas fa-exclamation-triangle" aria-hidden="true"></i>
                             </div>
                             <h4 class="pf-c-alert__title">
-                                <span class="pf-screen-reader">Warning alert:</span>${sessionScope.error_description}
+                                <span class="pf-screen-reader">Warning alert:</span><c:out value="${sessionScope.error_description}"/>
                             </h4>
                             <div class="pf-c-alert__action">
                                 <button class="pf-c-button pf-m-plain" type="button" aria-label="Close warning alert">
@@ -73,8 +73,13 @@
                     <c:remove var="error_description" scope="session"/>
                 </c:if>
 
+                <div class="pf-l-stack__item welcome-preamble-template">
+                    <%-- This is where the __welcome-preamble__ template is inserted --%>
+                    ${requestScope['preamble'].toString()}
+                </div>
+
                 <div class="pf-l-stack__item welcome-template">
-                    <%-- This is where the __welcome__ page template is inserted --%>
+                    <%-- This is where the __welcome__ template is inserted --%>
                     ${requestScope['sections'].toString()}
                 </div>
 

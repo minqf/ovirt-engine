@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Locale;
+import java.util.Optional;
 
 import javax.ejb.EJB;
 import javax.servlet.RequestDispatcher;
@@ -16,12 +17,9 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.xml.bind.annotation.adapters.HexBinaryAdapter;
 
-import org.codehaus.jackson.map.ObjectMapper;
-import org.codehaus.jackson.node.ArrayNode;
-import org.codehaus.jackson.node.BooleanNode;
-import org.codehaus.jackson.node.ObjectNode;
 import org.ovirt.engine.core.branding.BrandingFilter;
 import org.ovirt.engine.core.branding.BrandingManager;
+import org.ovirt.engine.core.common.businessentities.UserProfileProperty;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigCommon;
@@ -29,11 +27,18 @@ import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.constants.SessionConstants;
 import org.ovirt.engine.core.common.interfaces.BackendLocal;
 import org.ovirt.engine.core.common.queries.GetConfigurationValueParameters;
+import org.ovirt.engine.core.common.queries.IdAndNameQueryParameters;
 import org.ovirt.engine.core.common.queries.QueryParametersBase;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
 import org.ovirt.engine.core.common.queries.QueryType;
+import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.utils.servlet.LocaleFilter;
 import org.ovirt.engine.core.utils.servlet.ServletUtils;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.BooleanNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
  * Renders the HTML host page of a GWT application.
@@ -56,7 +61,8 @@ public abstract class GwtDynamicHostPageServlet extends HttpServlet {
         ATTR_LOCALE(LocaleFilter.LOCALE),
         ATTR_APPLICATION_TYPE(BrandingFilter.APPLICATION_NAME),
         ATTR_ENGINE_RPM_VERSION("engineRpmVersion"), //$NON-NLS-1$
-        ATTR_DISPLAY_UNCAUGHT_UI_EXCEPTIONS("DISPLAY_UNCAUGHT_UI_EXCEPTIONS"); //$NON-NLS-1$
+        ATTR_DISPLAY_UNCAUGHT_UI_EXCEPTIONS("DISPLAY_UNCAUGHT_UI_EXCEPTIONS"), //$NON-NLS-1$
+        ATTR_CUSTOM_HOME_PAGE("customHomePage"); //$NON-NLS-1$
 
         private final String attributeKey;
 
@@ -80,6 +86,9 @@ public abstract class GwtDynamicHostPageServlet extends HttpServlet {
 
     private static final String HOST_JSP = "/GwtHostPage.jsp"; //$NON-NLS-1$
     private static final String UTF_CONTENT_TYPE = "text/html; charset=UTF-8"; //$NON-NLS-1$
+    private static final String USER_OPTION_WEBADMIN = "webAdmin"; //$NON-NLS-1$
+    private static final String USER_OPTION_USE_CUSTOM_HOME_PAGE = "webAdmin.useCustomHomePage"; //$NON-NLS-1$
+    private static final String USER_OPTION_CUSTOM_HOME_PAGE = "webAdmin.customHomePage"; //$NON-NLS-1$
 
     private BackendLocal backend;
     private ObjectMapper mapper;
@@ -121,8 +130,32 @@ public abstract class GwtDynamicHostPageServlet extends HttpServlet {
         DbUser loggedInUser = getLoggedInUser(engineSessionId);
         if (loggedInUser != null) {
             String ssoToken = getSsoToken(engineSessionId);
+            UserProfileProperty webAdminUserOptions = getUserOption(
+                    loggedInUser.getId(),
+                    engineSessionId,
+                    USER_OPTION_WEBADMIN);
             request.setAttribute(MD5Attributes.ATTR_USER_INFO.getKey(),
-                    getUserInfoObject(loggedInUser, ssoToken));
+                    getUserInfoObject(loggedInUser, ssoToken, webAdminUserOptions));
+
+            boolean useCustomHomePage = Boolean.parseBoolean(
+                    Optional.ofNullable(
+                            getUserOption(
+                                    loggedInUser.getId(),
+                                    engineSessionId,
+                                    USER_OPTION_USE_CUSTOM_HOME_PAGE))
+                            .map(UserProfileProperty::getContent)
+                            .orElse(null));
+            if (useCustomHomePage) {
+                request.setAttribute(
+                        MD5Attributes.ATTR_CUSTOM_HOME_PAGE.getKey(),
+                        Optional.ofNullable(
+                                getUserOption(
+                                        loggedInUser.getId(),
+                                        engineSessionId,
+                                        USER_OPTION_CUSTOM_HOME_PAGE))
+                                .map(UserProfileProperty::getContent)
+                                .orElse(null));
+            }
         }
 
         // Set attribute for engineRpmVersion object
@@ -156,6 +189,13 @@ public abstract class GwtDynamicHostPageServlet extends HttpServlet {
 
     private String getSsoToken(final String engineSessionId) {
         return (String) runQuery(QueryType.GetEngineSessionIdToken, new QueryParametersBase(), engineSessionId);
+    }
+
+    private UserProfileProperty getUserOption(final Guid userId, final String engineSessionId, String name) {
+        return (UserProfileProperty) runQuery(
+                QueryType.GetUserProfilePropertyByNameAndUserId,
+                new IdAndNameQueryParameters(userId, name),
+                engineSessionId);
     }
 
     protected Boolean getDisplayUncaughtUIExceptions() {
@@ -263,13 +303,20 @@ public abstract class GwtDynamicHostPageServlet extends HttpServlet {
         return (DbUser) runQuery(QueryType.GetUserBySessionId, new QueryParametersBase(), sessionId);
     }
 
-    protected ObjectNode getUserInfoObject(DbUser loggedInUser, String ssoToken) {
+    protected ObjectNode getUserInfoObject(DbUser loggedInUser,
+            String ssoToken,
+            UserProfileProperty webAdminUserOptions) {
         ObjectNode obj = createObjectNode();
         obj.put("id", loggedInUser.getId().toString()); //$NON-NLS-1$
         obj.put("userName", loggedInUser.getLoginName()); //$NON-NLS-1$
+        obj.put("email", loggedInUser.getEmail()); //$NON-NLS-1$
         obj.put("domain", loggedInUser.getDomain()); //$NON-NLS-1$
         obj.put("isAdmin", loggedInUser.isAdmin()); //$NON-NLS-1$
         obj.put("ssoToken", ssoToken); //$NON-NLS-1$
+        if (webAdminUserOptions != null) {
+            obj.put("userOptions", webAdminUserOptions.getContent()); //$NON-NLS-1$
+            obj.put("userOptionsId", webAdminUserOptions.getPropertyId().toString()); //$NON-NLS-1$
+        }
         return obj;
     }
 

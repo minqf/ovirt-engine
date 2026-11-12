@@ -10,6 +10,7 @@ import javax.enterprise.inject.Instance;
 import javax.enterprise.inject.Typed;
 import javax.inject.Inject;
 
+import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.job.ExecutionContext;
 import org.ovirt.engine.core.bll.quota.QuotaClusterConsumptionParameter;
@@ -36,6 +37,7 @@ import org.ovirt.engine.core.common.job.Step;
 import org.ovirt.engine.core.common.job.StepEnum;
 import org.ovirt.engine.core.common.locks.LockingGroup;
 import org.ovirt.engine.core.common.utils.Pair;
+import org.ovirt.engine.core.common.utils.VmCpuCountHelper;
 import org.ovirt.engine.core.compat.CommandStatus;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.TransactionScopeOption;
@@ -229,9 +231,10 @@ public class AttachUserToVmFromPoolAndRunCommand<T extends AttachUserToVmFromPoo
         runVmParams.setEndProcedure(EndProcedure.COMMAND_MANAGED);
         runVmParams.setRunAsStateless(!getVmPool().isStateful());
         ExecutionContext runVmContext = createRunVmContext();
+        EngineLock runVmLock = vmPoolHandler.createLock(getVmId());
         ActionReturnValue actionReturnValue = runInternalAction(ActionType.RunVm,
                 runVmParams,
-                cloneContext().withExecutionContext(runVmContext).withCompensationContext(null));
+                cloneContext().withExecutionContext(runVmContext).withoutCompensationContext().withLock(runVmLock));
 
         getTaskIdList().addAll(actionReturnValue.getInternalVdsmTaskIdList());
         return actionReturnValue;
@@ -283,17 +286,27 @@ public class AttachUserToVmFromPoolAndRunCommand<T extends AttachUserToVmFromPoo
     @Override
     public AuditLogType getAuditLogTypeValue() {
         switch (getActionState()) {
-        case EXECUTE:
-            return getSucceeded() ? AuditLogType.USER_ATTACH_USER_TO_VM_FROM_POOL
-                    : AuditLogType.USER_ATTACH_USER_TO_VM_FROM_POOL_FAILED;
+            case EXECUTE:
+                return getSucceeded() ? AuditLogType.USER_ATTACH_USER_TO_VM_FROM_POOL
+                        : AuditLogType.USER_ATTACH_USER_TO_VM_FROM_POOL_FAILED;
 
-        case END_SUCCESS:
-            return getSucceeded() ? AuditLogType.USER_ATTACH_USER_TO_VM_FROM_POOL_FINISHED_SUCCESS
-                    : AuditLogType.USER_ATTACH_USER_TO_VM_FROM_POOL_FINISHED_FAILURE;
+            case END_SUCCESS:
+                return getSucceeded() ? AuditLogType.USER_ATTACH_USER_TO_VM_FROM_POOL_FINISHED_SUCCESS
+                        : AuditLogType.USER_ATTACH_USER_TO_VM_FROM_POOL_FINISHED_FAILURE;
 
-        default:
-            return AuditLogType.USER_ATTACH_USER_TO_VM_FROM_POOL_FINISHED_FAILURE;
+            default:
+                return AuditLogType.USER_ATTACH_USER_TO_VM_FROM_POOL_FINISHED_FAILURE;
         }
+    }
+
+    @Override
+    public Map<String, String> getJobMessageProperties() {
+        if (jobProperties == null) {
+            jobProperties = super.getJobMessageProperties();
+            jobProperties.put(VdcObjectType.VM.name().toLowerCase(), StringUtils.defaultString(getVmName()));
+            jobProperties.put(VdcObjectType.User.name().toLowerCase(), StringUtils.defaultString(getAdUserName()));
+        }
+        return jobProperties;
     }
 
     private void detachUserFromVmFromPool() {
@@ -359,7 +372,9 @@ public class AttachUserToVmFromPoolAndRunCommand<T extends AttachUserToVmFromPoo
             list.add(new QuotaClusterConsumptionParameter(vm.getQuotaId(),
                     QuotaConsumptionParameter.QuotaAction.CONSUME,
                     vm.getClusterId(),
-                    vm.getCpuPerSocket() * vm.getNumOfSockets(),
+                    VmCpuCountHelper.isDynamicCpuTopologySet(vm) ? // might be true only for pre-started VMs
+                            vm.getCurrentCoresPerSocket() * vm.getCurrentSockets() :
+                            vm.getCpuPerSocket() * vm.getNumOfSockets(),
                     vm.getMemSizeMb()));
         }
         return list;

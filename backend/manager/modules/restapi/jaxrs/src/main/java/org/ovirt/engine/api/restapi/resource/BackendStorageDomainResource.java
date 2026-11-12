@@ -89,12 +89,12 @@ public class BackendStorageDomainResource
         StorageType storageType = entity.getStorageType();
         if (storageType != null) {
             switch (storageType) {
-            case ISCSI:
-            case FCP:
-                extendStorageDomain(incoming, model);
-                break;
-            default:
-                break;
+                case ISCSI:
+                case FCP:
+                    extendStorageDomain(incoming, model);
+                    break;
+                default:
+                    break;
             }
         }
 
@@ -212,18 +212,17 @@ public class BackendStorageDomainResource
 
     public static synchronized boolean isIsoDomain(StorageDomain storageDomain) {
         StorageDomainType type = storageDomain.getType();
-        return type != null && type == StorageDomainType.ISO ? true : false;
+        return type != null && type == StorageDomainType.ISO;
     }
 
     public static synchronized boolean isIsoDomain(org.ovirt.engine.core.common.businessentities.StorageDomain storageDomain) {
         org.ovirt.engine.core.common.businessentities.StorageDomainType type = storageDomain.getStorageDomainType();
-        return type != null && type == org.ovirt.engine.core.common.businessentities.StorageDomainType.ISO ? true
-                : false;
+        return type != null && type == org.ovirt.engine.core.common.businessentities.StorageDomainType.ISO;
     }
 
     public static synchronized boolean isExportDomain(StorageDomain storageDomain) {
         StorageDomainType type = storageDomain.getType();
-        return type != null && type == StorageDomainType.EXPORT ? true : false;
+        return type != null && type == StorageDomainType.EXPORT;
     }
 
     public static synchronized boolean isImageDomain(StorageDomain storageDomain) {
@@ -235,7 +234,7 @@ public class BackendStorageDomainResource
         return isIsoDomain(storageDomain) ? new String[] { "templates", "vms", "disks", "images" }
                 : isExportDomain(storageDomain) ? new String[] { "files", "images" }
                         : isImageDomain(storageDomain) ? new String[] { "templates", "vms", "files", "disks",
-                                "storageconnections" }
+                            "storageconnections" }
                                 : new String[] { "files", "images" };
     }
 

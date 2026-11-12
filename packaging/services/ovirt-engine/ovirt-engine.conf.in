@@ -108,9 +108,24 @@ ENGINE_DEPLOYMENT_SCANNER=false
 
 #
 # Change following to true if you want to enable garbage collection debug
-# information (will be sent to the console.log file):
+# information (will be sent to the gc.log file):
 #
 ENGINE_VERBOSE_GC=false
+
+#
+# Defines  GC log level verbosity. Valid options: off, error, warning, info, debug, trace
+#
+ENGINE_VERBOSE_GC_LOG_LEVEL=info
+
+#
+# Defines GC logging max file size
+#
+ENGINE_VERBOSE_GC_LOG_FILE_SIZE=2M
+
+#
+# Defines max number of files used in the rotation for GC logging
+#
+ENGINE_VERBOSE_GC_LOG_FILES_NUMBER=50
 
 #
 # Extra system properties to be added to the java virtual machine
@@ -137,6 +152,10 @@ ENGINE_PROPERTIES="${ENGINE_PROPERTIES} sun.rmi.dgc.client.gcInterval=3600000 su
 ENGINE_PROPERTIES="${ENGINE_PROPERTIES} jsse.enableSNIExtension=false"
 ENGINE_PROPERTIES="${ENGINE_PROPERTIES} resteasy.preferJacksonOverJsonB=true"
 ENGINE_PROPERTIES="${ENGINE_PROPERTIES} jackson.deserialization.whitelist.packages=org,com,java,javax"
+
+# We need to disable FIPS configuration of OpenJDK to be able to work with
+# file system keystores and interoperability with openssl
+ENGINE_PROPERTIES="${ENGINE_PROPERTIES} com.redhat.fips=false"
 
 #
 # Extra Java arguments to be added to command-line.
@@ -226,18 +245,33 @@ DWH_DB_DRIVER="org.postgresql.Driver"
 DWH_DB_URL="jdbc:postgresql://${DWH_DB_HOST}:${DWH_DB_PORT}/${DWH_DB_DATABASE}?sslfactory=org.postgresql.ssl.NonValidatingFactory"
 
 #
-# Cinderlib Database connection details
+# Managed Block Database connection details
 #
-SENSITIVE_KEYS="${SENSITIVE_KEYS},CINDERLIB_DB_PASSWORD"
-CINDERLIB_DB_HOST="localhost"
-CINDERLIB_DB_PORT="5432"
-CINDERLIB_DB_USER="ovirt_cinderlib"
-CINDERLIB_DB_PASSWORD=
-CINDERLIB_DB_DATABASE="ovirt_cinderlib"
-CINDERLIB_DB_SECURED="False"
-CINDERLIB_DB_SECURED_VALIDATION="False"
-CINDERLIB_DB_DRIVER=org.postgresql.Driver
-CINDERLIB_DB_URL="jdbc:postgresql://${CINDERLIB_DB_HOST}:${CINDERLIB_DB_PORT}/${CINDERLIB_DB_DATABASE}?sslfactory=org.postgresql.ssl.NonValidatingFactory"
+SENSITIVE_KEYS="${SENSITIVE_KEYS},MANAGEDBLOCK_DB_PASSWORD"
+MANAGEDBLOCK_DB_HOST="localhost"
+MANAGEDBLOCK_DB_PORT="5432"
+MANAGEDBLOCK_DB_USER="ovirt_managedblock"
+MANAGEDBLOCK_DB_PASSWORD=
+MANAGEDBLOCK_DB_DATABASE="ovirt_managedblock"
+MANAGEDBLOCK_DB_SECURED="False"
+MANAGEDBLOCK_DB_SECURED_VALIDATION="False"
+MANAGEDBLOCK_DB_DRIVER=org.postgresql.Driver
+MANAGEDBLOCK_DB_URL="jdbc:postgresql://${MANAGEDBLOCK_DB_HOST}:${MANAGEDBLOCK_DB_PORT}/${MANAGEDBLOCK_DB_DATABASE}?sslfactory=org.postgresql.ssl.NonValidatingFactory"
+
+#
+# Keycloak Database connection details
+#
+SENSITIVE_KEYS="${SENSITIVE_KEYS},KEYCLOAK_DB_PASSWORD"
+KEYCLOAK_DB_HOST="localhost"
+KEYCLOAK_DB_PORT="5432"
+KEYCLOAK_DB_USER="ovirt_engine_keycloak"
+KEYCLOAK_DB_PASSWORD=
+KEYCLOAK_DB_DATABASE="ovirt_engine_keycloak"
+KEYCLOAK_DB_SECURED="False"
+KEYCLOAK_DB_SECURED_VALIDATION="False"
+KEYCLOAK_DB_DRIVER=org.postgresql.Driver
+KEYCLOAK_DB_URL="jdbc:postgresql://${KEYCLOAK_DB_HOST}:${KEYCLOAK_DB_PORT}/${KEYCLOAK_DB_DATABASE}?sslfactory=org.postgresql.ssl.NonValidatingFactory"
+
 
 #
 # Size of the database connection pool:
@@ -318,6 +352,7 @@ ENGINE_SSO_ENABLE_EXTERNAL_SSO=false
 EXTERNAL_OIDC_CLIENT_ID=
 
 # Client password to use for external OIDC server.
+SENSITIVE_KEYS="${SENSITIVE_KEYS},EXTERNAL_OIDC_CLIENT_SECRET"
 EXTERNAL_OIDC_CLIENT_SECRET=
 
 # The token end point to use for external OIDC server.
@@ -378,6 +413,14 @@ ENGINE_SSO_SERVICE_CONNECTION_RETRY_COUNT=3
 # The number of milliseconds after which a connection in the pool has to be validated when communicating with SSO.
 ENGINE_SSO_SERVICE_CONNECTION_VALIDATE_AFTER_INACTIVITY=100
 
+# Timeouts in milliseconds for the requests the engine sends to the SSO service. 0 means no timeout.
+ENGINE_SSO_SERVICE_CONNECT_TIMEOUT=5000
+ENGINE_SSO_SERVICE_READ_TIMEOUT=30000
+
+# How long in milliseconds a request may wait for a free connection from the pool above before its SSO call fails.
+# A request waiting here holds a worker thread, so keep it short. 0 means wait forever.
+ENGINE_SSO_SERVICE_CONNECTION_REQUEST_TIMEOUT=250
+
 # level of protocol supported by the external OIDC server.
 EXTERNAL_OIDC_SSL_PROTOCOL=TLS
 
@@ -410,6 +453,7 @@ EXTERNAL_OIDC_HTTPS_PKI_TRUST_STORE_TYPE="${ENGINE_PKI_TRUST_STORE_TYPE}"
 EXTERNAL_OIDC_HTTPS_PKI_TRUST_STORE="${ENGINE_PKI_TRUST_STORE}"
 
 # The password for the trust store containing the certificate of the external OIDC server.
+SENSITIVE_KEYS="${SENSITIVE_KEYS},EXTERNAL_OIDC_HTTPS_PKI_TRUST_STORE_PASSWORD"
 EXTERNAL_OIDC_HTTPS_PKI_TRUST_STORE_PASSWORD="${ENGINE_PKI_TRUST_STORE_PASSWORD}"
 
 #
@@ -462,8 +506,23 @@ SSO_ALTERNATE_ENGINE_FQDNS=""
 # uses to communicate with the engine:
 SSO_CALLBACK_CLIENT_POOL_SIZE=10
 
+# The maximum allowed unique SSO client IDs used when dynamically loading missing client's info.
+# This very rare situation can take place when new SSO client is registered by ovirt-register-sso-client-tool
+# and is requested by authorisation flow for the first time without restarting ovirt-engine.
+# Sample real life scenario: new external(not configured by engine-setup) instance of Grafana is being added
+SSO_MAX_ALLOWED_MISSING_UNIQUE_CLIENTS=2
+
+# The maximum allowed attempts per minute to refresh missing SSO client info.
+# This very rare situation can take place when new SSO client is registered by ovirt-register-sso-client-tool
+# and is requested by authorisation flow for the first time without restarting ovirt-engine.
+# Sample real life scenario: new external(not configured by engine-setup) instance of Grafana is being added
+SSO_MAX_MISSING_CLIENT_REFRESH_ATTEMPTS_PER_MINUTE=5
+
 # The maximal allowed number of sessions per user, where -1 indicates that no limit has been set
 ENGINE_MAX_USER_SESSIONS=-1
+
+# The maximal recommended number of HE hosts (https://access.redhat.com/articles/906543)
+MAX_RECOMMENDED_HE_HOSTS=7
 
 #
 # Comma separated list of supported versions of the API. When the user
@@ -572,31 +631,6 @@ DASHBOARD_UTILIZATION_CACHE_UPDATE_INTERVAL=300
 DASHBOARD_INVENTORY_CACHE_UPDATE_INTERVAL=60
 
 #
-# Quartz thread pool pool class
-# We can use two pools:
-# - provided by quartz: org.quartz.simpl.SimpleThreadPool
-# - based on ThreadPoolExecutor: org.ovirt.engine.core.utils.timer.SchedulerThreadPool
-#
-ENGINE_SCHEDULER_POOL_CLASS=org.ovirt.engine.core.utils.timer.SchedulerThreadPool
-
-#
-# Number of threads used in quartz thread pool
-#
-ENGINE_SCHEDULER_POOL_THREAD_SIZE=100
-
-#
-# Size of the queue used by quartz thread pool
-#
-ENGINE_SCHEDULER_POOL_QUEUE_SIZE=350
-
-#
-# Define rejection policy for the pool when a task queue is full.
-# When 'false' is set it will block if the queue is full.
-# When 'true' is set it would reject the task.
-#
-ENGINE_SCHEDULER_POOL_REJECT_POLICY=false
-
-#
 # Specify the thread pool size for jboss managed executor services used by the command executor framework. This thread
 # pool is used to execute asynchronous commands like deleting a disk, live snapshot removal, remove vm or remove vm
 # pool or removing vm template. It is generally not necessary to increase the number of threads in this thread pool.
@@ -663,3 +697,100 @@ ANSIBLE_PLAYBOOK_EXEC_DEFAULT_TIMEOUT=120
 # 3 - even more verbose with basic debugging, corresponds to -vvv
 # 4 - super verbose mode with connection debugging, corresponds to -vvvv
 ANSIBLE_PLAYBOOK_VERBOSITY_LEVEL=1
+
+
+#
+# Enables sending log records from engine to remote syslog.
+# For more details about SyslogHandler configuration please consult JBoss LogManager documentation:
+# https://javadoc.io/static/org.jboss.logmanager/jboss-logmanager/2.1.18.Final/org/jboss/logmanager/handlers/SyslogHandler.html
+SYSLOG_HANDLER_ENABLED=false
+
+#
+# Level of messages to be sent to remote syslog.
+# https://javadoc.io/static/org.jboss.logmanager/jboss-logmanager/2.1.18.Final/org/jboss/logmanager/Level.html
+SYSLOG_HANDLER_LEVEL="INFO"
+
+#
+# Encoding used for messages to be sent to remote syslog
+SYSLOG_HANDLER_ENCODING=
+
+#
+# Formatter pattern to format the message to be sent to remote syslog
+# https://github.com/wildfly/wildfly/blob/main/docs/src/main/asciidoc/_admin-guide/subsystem-configuration/Logging_Formatters.adoc#pattern-formatter
+SYSLOG_HANDLER_FORMATTER_PATTERN="%-5p [%c] (%t) %s%e%n"
+
+#
+# The address of the syslog server.
+SYSLOG_HANDLER_SERVER_HOSTNAME=
+
+#
+# The port of the syslog server.
+SYSLOG_HANDLER_PORT=
+
+#
+# The facility used to calculate the priority of the log message as as defined by RFC-5424 and RFC-3164.
+# https://javadoc.io/static/org.jboss.logmanager/jboss-logmanager/2.1.18.Final/org/jboss/logmanager/handlers/SyslogHandler.Facility.html
+SYSLOG_HANDLER_FACILITY=
+
+#
+# The name of the application that is logging.
+SYSLOG_HANDLER_APP_NAME="ovirt-engine"
+
+#
+# The name of the host the messages are being sent from.
+SYSLOG_HANDLER_HOSTNAME=
+
+#
+# The type of the syslog used to format the message.
+# https://javadoc.io/static/org.jboss.logmanager/jboss-logmanager/2.1.18.Final/org/jboss/logmanager/handlers/SyslogHandler.SyslogType.html
+SYSLOG_HANDLER_SYSLOG_TYPE=
+
+#
+# The protocol to send the message over
+# https://javadoc.io/static/org.jboss.logmanager/jboss-logmanager/2.1.18.Final/org/jboss/logmanager/handlers/SyslogHandler.Protocol.html
+SYSLOG_HANDLER_PROTOCOL=
+
+#
+# The delimiter to use at the end of the message if SYSLOG_HANDLER_USE_DELIMITER is set to true.
+# For UDP "null". For TCP or SSL_TCP "\n"
+SYSLOG_HANDLER_MESSAGE_DELIMITER=
+
+#
+# Whether or not the message should be appended with a delimiter.
+# For UDP "false". For TCP or SSL_TCP "true".
+SYSLOG_HANDLER_USE_MESSAGE_DELIMITER=
+
+#
+# Prefixes the size of the message, mainly used for TCP or SSL_TCP, connections to the message being sent
+# to the syslog server. See http://tools.ietf.org/html/rfc6587 for more details on framing types.
+SYSLOG_HANDLER_USE_COUNTING_FRAMING=
+
+#
+# Whether or not a message, including the header, should truncate the message if the length in bytes is
+# greater than the maximum length. If set to false messages will be split and sent with the same header values.
+SYSLOG_HANDLER_TRUNCATE=
+
+#
+# The maximum length a log message, including the header, is allowed to be.
+SYSLOG_HANDLER_MAX_LENGTH=
+
+#
+# Whether we send server.log to SYSLOG when SYSLOG_HANDLER_ENABLED=true
+# Default to true to have same behavior as with log4j syslog
+SERVER_LOG_TO_SYSLOG=true
+
+#
+# Whether we send engine.log to SYSLOG when SYSLOG_HANDLER_ENABLED=true
+# Default to true to have same behavior as with log4j syslog
+ENGINE_LOG_TO_SYSLOG=true
+
+#
+# Whether we send ui.log to SYSLOG when SYSLOG_HANDLER_ENABLED=true
+UI_LOG_TO_SYSLOG=false
+
+#
+# Logging levels
+ROOT_LOG_LEVEL="INFO"
+KEYCLOAK_LOG_LEVEL="INFO"
+CORE_BLL_LOG_LEVEL="INFO"
+ORG_OVIRT_LOG_LEVEL="INFO"

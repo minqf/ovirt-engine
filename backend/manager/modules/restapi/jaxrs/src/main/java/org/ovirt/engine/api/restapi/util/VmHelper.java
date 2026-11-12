@@ -23,17 +23,17 @@ public class VmHelper {
                 "GetSoundDevices", true);
     }
 
-    public static Boolean isMemoryBalloonEnabledForEntity(BackendResource resource, Guid id) {
-        return resource.getEntity(Boolean.class,
-                QueryType.IsBalloonEnabled,
-                new IdQueryParameters(id),
-                "IsBalloonEnabled", true);
-    }
-
     public static List<VmRngDevice> getRngDevicesForEntity(BackendResource resource, Guid id) {
         return resource.getEntity(List.class,
                 QueryType.GetRngDevice,
                 new IdQueryParameters(id),
                 "GetRngDevice", true);
+    }
+
+    public static List<String> getTpmDevicesForEntity(BackendResource resource, Guid id) {
+        return resource.getEntity(List.class,
+                QueryType.GetTpmDevices,
+                new IdQueryParameters(id),
+                "GetTpmDevices", true);
     }
 }

@@ -9,13 +9,15 @@
 
 import atexit
 import datetime
-import distutils.version
 import gettext
 import os
 import re
 import tempfile
 
 import psycopg2
+
+
+from looseversion import LooseVersion
 
 from otopi import base
 from otopi import constants as otopicons
@@ -26,6 +28,7 @@ from ovirt_engine import util as outil
 from ovirt_engine_setup import constants as osetupcons
 from ovirt_engine_setup import util as osetuputil
 from ovirt_engine_setup.engine_common import constants as oengcommcons
+from ovirt_engine_setup.engine_common.constants import ProvisioningEnv
 
 from ovirt_setup_lib import dialog
 from ovirt_setup_lib import hostname as osetuphostname
@@ -44,7 +47,7 @@ PG_CONF_MSG = _(
     "'{pg_host}':\n"
     "{keys}\n"
     "postgresql.conf is usually in /var/lib/pgsql/data, "
-    "/var/opt/rh/rh-postgresql10/lib/pgsql/data, or "
+    " or "
     "somewhere under /etc/postgresql* . You have to restart PostgreSQL "
     "after making these changes."
 )
@@ -78,7 +81,7 @@ def _ind_env(inst, keykey):
 
 
 def getInvalidConfigItemsMessage(invalid_config_items):
-    return '\n'.join(
+    base_message = '\n'.join(
         [
             e['format_str'].format(**e)
             for e in invalid_config_items
@@ -102,6 +105,25 @@ def getInvalidConfigItemsMessage(invalid_config_items):
         ),
         pg_host=invalid_config_items[0]['pg_host'],
     )
+
+    password_encryption_issues = [
+        e for e in invalid_config_items
+        if e.get('key') == 'password_encryption' and e['needed_on_create']
+    ]
+
+    if password_encryption_issues:
+        base_message += '\n\n' + _(
+            "IMPORTANT: After changing password_encryption, you must also:\n"
+            "1. Update pg_hba.conf to use the new authentication method "
+            "(e.g., change 'md5' to 'scram-sha-256')\n"
+            "2. Regenerate password verifiers for existing users:\n"
+            "   postgres=# ALTER USER <username> PASSWORD '<password>';\n"
+            "3. Restart or reload PostgreSQL service\n"
+            "\nFor more details, see PostgreSQL documentation on "
+            "password authentication methods."
+        )
+
+    return base_message
 
 
 @util.export
@@ -266,7 +288,7 @@ class Statement(base.Base):
                         break
                     ret.append(dict(zip(cols, entry)))
 
-        except:
+        except Exception:
             if _connection is not None:
                 _connection.rollback()
             raise
@@ -396,7 +418,7 @@ class OvirtUtils(base.Base):
                 _('Cannot connect to database: {error}').format(
                     error=e,
                 )
-            )
+            ) from e
 
     def isNewDatabase(
         self,
@@ -487,7 +509,7 @@ class OvirtUtils(base.Base):
         password=None,
         database=None,
     ):
-        server_v = distutils.version.LooseVersion(
+        server_v = LooseVersion(
             self.checkServerVersion(
                 host,
                 port,
@@ -497,7 +519,7 @@ class OvirtUtils(base.Base):
                 database,
             )
         ).version[:2]
-        client_v = distutils.version.LooseVersion(
+        client_v = LooseVersion(
             self.checkClientVersion()
         ).version[:2]
         return server_v < client_v
@@ -772,7 +794,7 @@ class OvirtUtils(base.Base):
                     'args': f_infos[filt]['dump']
                 }
             )
-            stdout = open(backupFile, 'w')
+            stdout = open(backupFile, 'w', encoding='utf-8')
 
         res = None
         try:
@@ -799,64 +821,36 @@ class OvirtUtils(base.Base):
         return backupFile
 
     _IGNORED_ERRORS = (
-        # TODO: verify and get rid of all the '.*'s
-
-        '.*language "plpgsql" already exists',
-        ' *Command was: CREATE PROCEDURAL LANGUAGE plpgsql;',
-        '.*must be owner of language plpgsql',
-        # psql
-        'ERROR:  must be owner of extension plpgsql',
-        # pg_restore
-        (
-            'pg_restore: \[archiver \(db\)\] could not execute query: ERROR:  '
-            'must be owner of extension plpgsql'
-        ),
-        (
-            'pg_restore: \[archiver \(db\)\] could not execute query: ERROR:  '
-            'must be owner of extension uuid-ossp'
-        ),
-
+        'language "plpgsql" already exists',
+        'must be owner of language plpgsql',
+        'must be owner of extension plpgsql',
+        'must be owner of extension uuid-ossp',
         # older versions of dwh used uuid-ossp, which requires
         # special privs, is not used anymore, and emits the following
         # errors for normal users.
-        '.*permission denied for language c',
-        '.*function public.uuid_generate_v1() does not exist',
-        '.*function public.uuid_generate_v1mc() does not exist',
-        '.*function public.uuid_generate_v3(uuid, text) does not exist',
-        '.*function public.uuid_generate_v4() does not exist',
-        '.*function public.uuid_generate_v5(uuid, text) does not exist',
-        '.*function public.uuid_nil() does not exist',
-        '.*function public.uuid_ns_dns() does not exist',
-        '.*function public.uuid_ns_oid() does not exist',
-        '.*function public.uuid_ns_url() does not exist',
-        '.*function public.uuid_ns_x500() does not exist',
-
-        # Other stuff, added because if we want to support other
-        # formats etc we must explicitely filter all existing output
-        # and not just ERRORs.
-        'pg_restore: \[archiver \(db\)\] Error while PROCESSING TOC:',
-        '    Command was: COMMENT ON EXTENSION',
-        (
-            'pg_restore: \[archiver \(db\)\] Error from TOC entry \d+'
-            '; 0 0 COMMENT EXTENSION plpgsql'
-        ),
-        # Extensions with names containing special characters like dash need
-        # to be surrounded with double quotes.
-        (
-            'pg_restore: \[archiver \(db\)\] Error from TOC entry \d+'
-            '; 0 0 COMMENT EXTENSION "uuid-ossp"'
-        ),
-        (
-            'pg_restore: \[archiver \(db\)\] Error from TOC entry \d+'
-            '; \d+ \d+ PROCEDURAL LANGUAGE plpgsql'
-        ),
-        'pg_restore: WARNING:',
-        'WARNING: ',
-        'DETAIL:  ',
+        'permission denied for language c',
+        'function public.uuid_generate_v1() does not exist',
+        'function public.uuid_generate_v1mc() does not exist',
+        'function public.uuid_generate_v3(uuid, text) does not exist',
+        'function public.uuid_generate_v4() does not exist',
+        'function public.uuid_generate_v5(uuid, text) does not exist',
+        'function public.uuid_nil() does not exist',
+        'function public.uuid_ns_dns() does not exist',
+        'function public.uuid_ns_oid() does not exist',
+        'function public.uuid_ns_url() does not exist',
+        'function public.uuid_ns_x500() does not exist',
+        # This happens because we do some GRANTs for grafana's user on dwh db,
+        # but dwh db user has no right to do them itself:
+        'must be member of role "postgres"',
+        # On PostgreSQL 16+ this gives the following error:
+        'permission denied to change default privileges',
     )
 
     _RE_IGNORED_ERRORS = re.compile(
-        pattern='|'.join(_IGNORED_ERRORS),
+        pattern='|'.join([
+            '.*ERROR: *{}'.format(err)
+            for err in _IGNORED_ERRORS
+        ])
     )
 
     def restore(
@@ -889,7 +883,7 @@ class OvirtUtils(base.Base):
                     'args': f_infos[filt]['restore'],
                 }
             )
-            stdin = open(backupFile, 'r')
+            stdin = open(backupFile, 'r', encoding='utf-8')
 
         dumper = _ind_env(self, DEK.DUMPER)
         d_infos = self._backup_restore_dumpers_info(
@@ -920,7 +914,16 @@ class OvirtUtils(base.Base):
                 stdin.close()
 
         rc = res['result'][-1]['rc']
-        stderr = res['result'][-1]['stderr'].splitlines()
+        stderr = res[
+            'result'
+        ][
+            -1
+        ][
+            'stderr'
+        ].decode(
+            'utf-8',
+            'replace'
+        ).splitlines()
 
         self.logger.debug('db restore rc %s stderr %s', rc, stderr)
 
@@ -928,8 +931,10 @@ class OvirtUtils(base.Base):
         # Do something different for psql/pg_restore?
         if stderr:
             errors = [
-                l for l in stderr
-                if l and not self._RE_IGNORED_ERRORS.match(l)
+                line for line in stderr
+                if line and
+                'ERROR:' in line and
+                not self._RE_IGNORED_ERRORS.match(line)
             ]
             if errors:
                 self.logger.error(
@@ -952,11 +957,12 @@ class OvirtUtils(base.Base):
         )
 
     @staticmethod
-    def _pg_versions_match(key, current, expected):
-        return (
-            distutils.version.LooseVersion(current).version[:2] ==
-            distutils.version.LooseVersion(expected).version[:2]
-        )
+    def _pg_client_version_compatible(key, current, expected):
+        server_version = LooseVersion(current).version
+        client_version = LooseVersion(expected).version
+        server_major = server_version[0] if server_version else 0
+        client_major = client_version[0] if client_version else 0
+        return client_major >= server_major
 
     @staticmethod
     def _lower_equal_no_dash(key, current, expected):
@@ -967,10 +973,84 @@ class OvirtUtils(base.Base):
         )
 
     def _pg_conf_info(self):
+        from ovirt_engine_setup.engine_common.postgres import Provisioning
+        auth_method = Provisioning.get_postgres_auth_method(self.environment)
         return self.environment.get(
             oengcommcons.ProvisioningEnv.POSTGRES_EXTRA_CONFIG_ITEMS,
             ()
         ) + (
+            {
+                'key': 'autovacuum_vacuum_scale_factor',
+                'expected': self.environment[
+                    ProvisioningEnv.PG_AUTOVACUUM_VACUUM_SCALE_FACTOR
+                ],
+                'ok': lambda key, current, expected: (
+                    float(current) <= float(expected)
+                ),
+                'check_on_use': True,
+                'needed_on_create': True,
+                'error_msg': '{specific}'.format(
+                    specific='%s' % AT_MOST_EXPECTED,
+                )
+            },
+            {
+                'key': 'autovacuum_analyze_scale_factor',
+                'expected': self.environment[
+                    ProvisioningEnv.PG_AUTOVACUUM_ANALYZE_SCALE_FACTOR
+                ],
+                'ok': lambda key, current, expected: (
+                    float(current) <= float(expected)
+                ),
+                'check_on_use': True,
+                'needed_on_create': True,
+                'error_msg': '{specific}'.format(
+                    specific=AT_MOST_EXPECTED,
+                )
+            },
+            {
+                'key': 'autovacuum_max_workers',
+                'expected': self.environment[
+                    ProvisioningEnv.PG_AUTOVACUUM_MAX_WORKERS
+                ],
+                'ok': lambda key, current, expected: (
+                    int(current) >= int(expected)
+                ),
+                'check_on_use': True,
+                'needed_on_create': True,
+                'error_msg': '{specific}'.format(
+                    specific=AT_LEAST_EXPECTED,
+                )
+            },
+            {
+                'key': 'maintenance_work_mem',
+                'expected': self.environment[
+                    ProvisioningEnv.PG_AUTOVACUUM_MAINTENANCE_WORK_MEM
+                ],
+                'useQueryForValue': True,
+                'ok': lambda key, current, expected: (
+                    int(current) >= int(expected)
+                ),
+                'check_on_use': True,
+                'needed_on_create': True,
+                'error_msg': '{specific}'.format(
+                    specific='%s' % AT_LEAST_EXPECTED,
+                )
+            },
+            {
+                'key': 'work_mem',
+                'expected': self.environment[
+                    ProvisioningEnv.PG_WORK_MEM_KB
+                ],
+                'useQueryForValue': True,
+                'ok': lambda key, current, expected: (
+                    int(current) >= int(expected)
+                ),
+                'check_on_use': True,
+                'needed_on_create': True,
+                'error_msg': '{specific}'.format(
+                    specific='%s' % AT_LEAST_EXPECTED,
+                )
+            },
             {
                 'key': 'server_encoding',
                 'expected': 'UTF8',
@@ -1038,14 +1118,15 @@ class OvirtUtils(base.Base):
                 )[
                     -1
                 ],
-                'ok': self._pg_versions_match,
+                'ok': self._pg_client_version_compatible,
                 'check_on_use': True,
                 'skip_on_dbmsupgrade': True,
                 'needed_on_create': False,
                 'error_msg': _(
-                    "Postgresql client version is '{expected}', whereas "
-                    "the version on '{pg_host}' is '{current}'. "
-                    "Please use a PostgreSQL server of version '{expected}'."
+                    "PostgreSQL client version is '{expected}', whereas "
+                    "the server version on '{pg_host}' is '{current}'. "
+                    "Please use a PostgreSQL client with a major version "
+                    "greater than or equal to the server's major version."
                 ),
             },
             {
@@ -1073,6 +1154,16 @@ class OvirtUtils(base.Base):
                 'check_on_use': False,
                 'needed_on_create': True,
                 'error_msg': None,
+            },
+            {
+                'key': 'password_encryption',
+                'expected': auth_method,
+                'ok': self._lower_equal,
+                'check_on_use': True,
+                'needed_on_create': True,
+                'error_msg': '{specific}'.format(
+                    specific=_('{key} must be {expected}'),
+                ),
             },
         )
 
@@ -1137,7 +1228,7 @@ class OvirtUtils(base.Base):
                     formatted_msg = ''
                     if item['error_msg']:
                         formatted_msg = item['error_msg'].format(**item_data)
-                    self.logger.warn(
+                    self.logger.warning(
                         formatted_msg
                         if formatted_msg and not item['needed_on_create']
                         else _(
@@ -1169,8 +1260,8 @@ class OvirtUtils(base.Base):
             key = item['key']
             if item['needed_on_create']:
                 edit_params[key] = item['expected']
-        for l in content:
-            m = RE_KEY_VALUE.match(l)
+        for line in content:
+            m = RE_KEY_VALUE.match(line)
             if m is not None:
                 for item in [
                     i for i in self._pg_conf_info()
@@ -1181,7 +1272,7 @@ class OvirtUtils(base.Base):
                         current=m.group('value'),
                         expected=item['expected']
                     ):
-                        del(edit_params[item['key']])
+                        del edit_params[item['key']]
 
         needUpdate = len(edit_params) > 0
         if needUpdate:
@@ -1194,11 +1285,11 @@ class OvirtUtils(base.Base):
     def getCredentials(
         self,
         name,
-        queryprefix,
         defaultdbenvkeys,
         show_create_msg=False,
         note=None,
         credsfile=None,
+        validateconf=True,
     ):
         interactive = None in (
             _ind_env(self, DEK.HOST),
@@ -1259,6 +1350,9 @@ class OvirtUtils(base.Base):
             ):
                 dbenv[self._dbenvkeys[k]] = _ind_env(self, k)
 
+            def question_name(what):
+                return self._dbenvkeys[DEK.CREDS_Q_NAME_FUNC](what.upper())
+
             def query_dbenv(
                 what,
                 note,
@@ -1266,10 +1360,7 @@ class OvirtUtils(base.Base):
                 **kwargs
             ):
                 dialog.queryEnvKey(
-                    name='{qpref}{what}'.format(
-                        qpref=queryprefix,
-                        what=what.upper(),
-                    ),
+                    name=question_name(what.upper()),
                     dialog=self.dialog,
                     logger=self.logger,
                     env=dbenv,
@@ -1310,7 +1401,7 @@ class OvirtUtils(base.Base):
             if dbenv[self._dbenvkeys[DEK.SECURED]] is None:
                 dbenv[self._dbenvkeys[DEK.SECURED]] = dialog.queryBoolean(
                     dialog=self.dialog,
-                    name='{qpref}SECURED'.format(qpref=queryprefix),
+                    name=question_name('SECURED'),
                     note=_(
                         '{name} database secured connection (@VALUES@) '
                         '[@DEFAULT@]: '
@@ -1329,9 +1420,7 @@ class OvirtUtils(base.Base):
                     self._dbenvkeys[DEK.HOST_VALIDATION]
                 ] = dialog.queryBoolean(
                     dialog=self.dialog,
-                    name='{qpref}SECURED_HOST_VALIDATION'.format(
-                        qpref=queryprefix
-                    ),
+                    name=question_name('SECURED_HOST_VALIDATION'),
                     note=_(
                         '{name} database host name validation in secured '
                         'connection (@VALUES@) [@DEFAULT@]: '
@@ -1389,29 +1478,29 @@ class OvirtUtils(base.Base):
             self.environment[
                 self._dbenvkeys[DEK.NEW_DATABASE]
             ] = self.isNewDatabase()
-        except:
+        except Exception:
             self.logger.debug('database connection failed', exc_info=True)
 
         try:
             self.environment[
                 self._dbenvkeys[DEK.NEED_DBMSUPGRADE]
             ] = self.checkDBMSUpgrade()
-        except:
+        except Exception:
             self.logger.debug('database version check failed', exc_info=True)
 
-        if not _ind_env(self, DEK.NEW_DATABASE):
-                invalid_config_items = self.validateDbConf(name, dbenv)
-                if (
-                    invalid_config_items and
-                    DEK.INVALID_CONFIG_ITEMS in self._dbenvkeys
-                ):
-                    # If DEK.INVALID_CONFIG_ITEMS is not in self._dbenvkeys,
-                    # it probably means that this component is not interested
-                    # in invalid items. This can be removed once all components
-                    # add it, currently dwh.
-                    self.environment[
-                        self._dbenvkeys[DEK.INVALID_CONFIG_ITEMS]
-                    ] = invalid_config_items
+        if not _ind_env(self, DEK.NEW_DATABASE) and validateconf:
+            invalid_config_items = self.validateDbConf(name, dbenv)
+            if (
+                invalid_config_items and
+                DEK.INVALID_CONFIG_ITEMS in self._dbenvkeys
+            ):
+                # If DEK.INVALID_CONFIG_ITEMS is not in self._dbenvkeys,
+                # it probably means that this component is not interested
+                # in invalid items. This can be removed once all components
+                # add it, currently dwh.
+                self.environment[
+                    self._dbenvkeys[DEK.INVALID_CONFIG_ITEMS]
+                ] = invalid_config_items
 
     def replaced_localhost(self, replacement=None):
         return (
@@ -1495,8 +1584,8 @@ class OvirtUtils(base.Base):
             raiseOnError=False,
         )
         if rc == 0:
-            for l in stdout:
-                for k, v in RE_KEY_VALUE_MULTIPLE.findall(l):
+            for line in stdout:
+                for k, v in RE_KEY_VALUE_MULTIPLE.findall(line):
                     if k == 'PGDATA':
                         return v
         raise RuntimeError(_('Unable to detect PGDATA location'))
@@ -1583,17 +1672,9 @@ class OvirtUtils(base.Base):
         # Only fail if the command succeded but didn't include the expected
         # line. This way it should also work in developer mode, also probably
         # if selinux is disabled or permissive.
-        if rc == 0 and '/var/opt/rh/rh-postgresql10 = /var' not in stdout:
+        if rc == 0 and '/var/lib/pgsql = /var' not in stdout:
             self.logger.error(_(
                 'SELinux file context rules for PostgreSQL are missing\n'
-            ))
-            self.dialog.note(_(
-                'SELinux file context rules for PostgreSQL are missing.\n'
-                'For more information, see: '
-                'https://bugzilla.redhat.com/1518599 .\n'
-                'You can try fixing this by running this command:\n\n'
-                '# yum reinstall rh-postgresql10-runtime\n\n'
-                'Then you can try running Setup again.\n'
             ))
             raise RuntimeError(_(
                 'SELinux file context rules for PostgreSQL are missing'
@@ -1742,6 +1823,42 @@ class OvirtUtils(base.Base):
             upgrade_approved,
             upgrade_approved_inplace,
             upgrade_approved_cleanupold,
+        )
+
+    def setDefaultPrivilegesReadOnlyForUser(self, user):
+        # TODO: Reconsider grantReadOnlyAccessToUser:
+        # Unite them? Keep only one?
+        # grantReadOnlyAccessToUser was buggy, bz 2026358.
+        # It's ran during provisioning, requires postgres.
+        # Current can work also with remote db.
+        # grantReadOnlyAccessToUser is used by both dwh/grafana and
+        # provisiondb, latter only for restoring grafana. Perhaps it's
+        # not needed there either, so can be completely removed.
+        owner = _ind_env(self, DEK.USER)
+        db = _ind_env(self, DEK.DATABASE)
+        statement = Statement(
+            environment=self.environment,
+            dbenvkeys=self._dbenvkeys,
+        )
+        res = statement.execute(
+            statement=('SELECT defaclacl FROM pg_default_acl'),
+            ownConnection=True,
+        )
+        # In current 4.4, this returns:
+        # [{'defaclacl': '{ovirt_engine_history_grafana=r/postgres}'}]
+        expected = f'{{{user}=r/{owner}}}'
+        if expected in (x['defaclacl'] for x in res):
+            self.logger.debug(f'User {user} already has default privileges')
+            return
+        self.logger.info(_(f'Allowing {user} to read data on {db}'))
+        statement.execute(
+            statement=(
+                'ALTER DEFAULT PRIVILEGES '
+                f'FOR USER {owner} '
+                'IN SCHEMA public '
+                f'GRANT SELECT ON TABLES TO {user}'
+            ),
+            ownConnection=True,
         )
 
 

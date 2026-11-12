@@ -74,7 +74,7 @@ public class BackendGlusterBrickResourceTest extends AbstractBackendSubResourceT
 
     @Test
     public void testReplace() {
-        WebApplicationException wae = assertThrows(WebApplicationException.class,  () -> resource.replace(new Action()));
+        WebApplicationException wae = assertThrows(WebApplicationException.class, () -> resource.replace(new Action()));
         assertTrue(wae.getResponse().getEntity() instanceof Fault);
     }
 
@@ -173,7 +173,7 @@ public class BackendGlusterBrickResourceTest extends AbstractBackendSubResourceT
         setUpGetEntityExpectations(times, notFound);
         List<String> populateValue = new ArrayList<>();
         populateValue.add("true");
-        when(httpHeaders.getRequestHeader(AbstractBackendResource.POPULATE)).thenReturn(populateValue);
+        when(httpHeaders.getRequestHeader(AbstractBackendResource.ALL_CONTENT_HEADER)).thenReturn(populateValue);
         setupParentPopulateExpectations();
     }
 

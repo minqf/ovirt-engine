@@ -42,12 +42,13 @@ import org.ovirt.engine.ui.uicommonweb.builders.template.UnitToAddVmTemplatePara
 import org.ovirt.engine.ui.uicommonweb.builders.template.VmBaseToVmBaseForTemplateCompositeBaseBuilder;
 import org.ovirt.engine.ui.uicommonweb.builders.vm.CommonUnitToVmBaseBuilder;
 import org.ovirt.engine.ui.uicommonweb.builders.vm.FullUnitToVmBaseBuilder;
-import org.ovirt.engine.ui.uicommonweb.builders.vm.MultiQueuesVmBaseBuilder;
 import org.ovirt.engine.ui.uicommonweb.builders.vm.UnitToGraphicsDeviceParamsBuilder;
 import org.ovirt.engine.ui.uicommonweb.builders.vm.VmSpecificUnitToVmBuilder;
 import org.ovirt.engine.ui.uicommonweb.dataprovider.AsyncDataProvider;
 import org.ovirt.engine.ui.uicommonweb.help.HelpTag;
 import org.ovirt.engine.ui.uicommonweb.models.ConfirmationModel;
+import org.ovirt.engine.ui.uicommonweb.models.ConfirmationModelChain;
+import org.ovirt.engine.ui.uicommonweb.models.ConfirmationModelChain.ConfirmationModelChainItem;
 import org.ovirt.engine.ui.uicommonweb.models.EntityModel;
 import org.ovirt.engine.ui.uicommonweb.models.Model;
 import org.ovirt.engine.ui.uicommonweb.models.SearchableListModel;
@@ -166,19 +167,6 @@ public class VmSnapshotListModel extends SearchableListModel<VM, Snapshot> {
         onPropertyChanged(new PropertyChangedEventArgs("SnapshotsMap")); //$NON-NLS-1$
     }
 
-    private boolean memorySnapshotSupported;
-
-    public boolean isMemorySnapshotSupported() {
-        return memorySnapshotSupported;
-    }
-
-    private void setMemorySnapshotSupported(boolean value) {
-        if (memorySnapshotSupported != value) {
-            memorySnapshotSupported = value;
-            onPropertyChanged(new PropertyChangedEventArgs("IsMemorySnapshotSupported")); //$NON-NLS-1$
-        }
-    }
-
     private List<DiskImage> vmDisks;
 
     public List<DiskImage> getVmDisks() {
@@ -249,7 +237,6 @@ public class VmSnapshotListModel extends SearchableListModel<VM, Snapshot> {
 
     @Override
     public void setEntity(VM value) {
-        updateIsMemorySnapshotSupported(value);
         super.setEntity(value);
         updateVmActiveDisks();
     }
@@ -391,7 +378,7 @@ public class VmSnapshotListModel extends SearchableListModel<VM, Snapshot> {
             ArrayList<DiskImage> snapshotDisks = v.getDiskList();
             List<DiskImage> disksExcludedFromSnapshot = imagesSubtract(getVmDisks(), snapshotDisks);
 
-            boolean showMemorySnapshotWarning = isMemorySnapshotSupported() && snapshot.containsMemory();
+            boolean showMemorySnapshotWarning = snapshot.containsMemory();
             boolean showPartialSnapshotWarning = !disksExcludedFromSnapshot.isEmpty();
 
             if (showMemorySnapshotWarning || showPartialSnapshotWarning) {
@@ -547,7 +534,7 @@ public class VmSnapshotListModel extends SearchableListModel<VM, Snapshot> {
             model.setHashName("commit_snapshot"); //$NON-NLS-1$
             model.setMessage(ConstantsManager.getInstance()
                     .getMessages()
-                    .areYouSureYouWantToCommitSnapshot( DateTimeFormat.getFormat(DATE_FORMAT).format(snapshot.getCreationDate()),
+                    .areYouSureYouWantToCommitSnapshot(DateTimeFormat.getFormat(DATE_FORMAT).format(snapshot.getCreationDate()),
                             snapshot.getDescription()));
 
             model.getCommands().add(UICommand.createDefaultOkUiCommand("OnCommit", this)); //$NON-NLS-1$
@@ -605,6 +592,12 @@ public class VmSnapshotListModel extends SearchableListModel<VM, Snapshot> {
         setWindow(null);
     }
 
+    private void confirmClone(Runnable callback) {
+        ConfirmationModelChain chain = new ConfirmationModelChain();
+        chain.addConfirmation(createConfirmClone());
+        chain.execute(this, callback);
+    }
+
     private void cloneTemplate() {
         Snapshot snapshot = getSelectedItem();
         if (snapshot == null) {
@@ -658,7 +651,7 @@ public class VmSnapshotListModel extends SearchableListModel<VM, Snapshot> {
 
         if (!model.validate(false)) {
             model.setIsValid(false);
-        } else  if (model.getIsSubTemplate().getEntity()) {
+        } else if (model.getIsSubTemplate().getEntity()) {
             postNameUniqueCheck(vm);
         } else {
             String name = model.getName().getEntity();
@@ -714,7 +707,7 @@ public class VmSnapshotListModel extends SearchableListModel<VM, Snapshot> {
     protected static VM buildVmOnNewTemplate(UnitVmModel model, VM vm) {
         VM resultVm = new VM();
         resultVm.setId(vm.getId());
-        BuilderExecutor.build(model, resultVm.getStaticData(), new CommonUnitToVmBaseBuilder(), new MultiQueuesVmBaseBuilder());
+        BuilderExecutor.build(model, resultVm.getStaticData(), new CommonUnitToVmBaseBuilder());
         BuilderExecutor.build(vm.getStaticData(), resultVm.getStaticData(), new VmBaseToVmBaseForTemplateCompositeBaseBuilder());
         return resultVm;
     }
@@ -816,7 +809,7 @@ public class VmSnapshotListModel extends SearchableListModel<VM, Snapshot> {
         parameters.setDiskInfoDestinationMap(imageToDestinationDomainMap);
         parameters.setConsoleEnabled(model.getIsConsoleDeviceEnabled().getEntity());
         parameters.setVirtioScsiEnabled(model.getIsVirtioScsiEnabled().getEntity());
-        parameters.setBalloonEnabled(model.getMemoryBalloonDeviceEnabled().getEntity());
+        parameters.setTpmEnabled(model.getTpmEnabled().getEntity());
 
         BuilderExecutor.build(model, parameters, new UnitToGraphicsDeviceParamsBuilder());
 
@@ -858,6 +851,7 @@ public class VmSnapshotListModel extends SearchableListModel<VM, Snapshot> {
         List<VM> vmList = vm != null ? Collections.singletonList(vm) : Collections.emptyList();
 
         boolean isVmDown = vm != null && vm.getStatus() == VMStatus.Down;
+        boolean isVmDownOrSuspended = vm != null && vm.getStatus() == VMStatus.Down || vm.getStatus() == VMStatus.Suspended;
         boolean isVmImageLocked = vm != null && vm.getStatus() == VMStatus.ImageLocked;
         boolean isVmQualifiedForSnapshotMerge = vm != null && vm.getStatus().isQualifiedForSnapshotMerge();
         boolean isPreviewing = getItems().stream().anyMatch(s -> s.getStatus() == SnapshotStatus.IN_PREVIEW);
@@ -865,14 +859,15 @@ public class VmSnapshotListModel extends SearchableListModel<VM, Snapshot> {
         boolean isSelected = snapshot != null && snapshot.getType() == SnapshotType.REGULAR;
         boolean isStateless = getItems().stream().anyMatch(s -> s.getType() == SnapshotType.STATELESS);
         boolean isVmConfigurationBroken = snapshot != null && snapshot.isVmConfigurationBroken();
+        boolean isManaged = vm != null && vm.isManaged();
 
         getCanSelectSnapshot().setEntity(!isPreviewing && !isLocked && !isStateless
                 && ActionUtils.canExecute(vmList, VM.class, ActionType.CreateSnapshotForVm));
-        getNewCommand().setIsExecutionAllowed(!isPreviewing && !isLocked && !isVmImageLocked && !isStateless);
+        getNewCommand().setIsExecutionAllowed(!isPreviewing && !isLocked && !isVmImageLocked && !isStateless && isManaged);
         getPreviewCommand().setIsExecutionAllowed(isSelected && !isLocked && !isPreviewing && isVmDown && !isStateless);
         getCustomPreviewCommand().setIsExecutionAllowed(getPreviewCommand().getIsExecutionAllowed());
-        getCommitCommand().setIsExecutionAllowed(isPreviewing && isVmDown && !isStateless);
-        getUndoCommand().setIsExecutionAllowed(isPreviewing && isVmDown && !isStateless);
+        getCommitCommand().setIsExecutionAllowed(isPreviewing && isVmDownOrSuspended && !isStateless);
+        getUndoCommand().setIsExecutionAllowed(isPreviewing && isVmDownOrSuspended && !isStateless);
         getRemoveCommand().setIsExecutionAllowed(isSelected && !isLocked && !isPreviewing && !isStateless
                 && isVmQualifiedForSnapshotMerge);
         getCloneVmCommand().setIsExecutionAllowed(isSelected && !isLocked && !isPreviewing
@@ -881,15 +876,6 @@ public class VmSnapshotListModel extends SearchableListModel<VM, Snapshot> {
                 && !isVmImageLocked && !isStateless && !isVmConfigurationBroken);
     }
 
-    private void updateIsMemorySnapshotSupported(Object entity) {
-        if (entity == null) {
-            return;
-        }
-
-        VM vm = (VM) entity;
-
-        setMemorySnapshotSupported(AsyncDataProvider.getInstance().isMemorySnapshotSupported(vm));
-    }
 
     @Override
     public void executeCommand(UICommand command) {
@@ -908,9 +894,9 @@ public class VmSnapshotListModel extends SearchableListModel<VM, Snapshot> {
         } else if (command == getRemoveCommand()) {
             remove();
         } else if (command == getCloneVmCommand()) {
-            cloneVM();
+            confirmClone(this::cloneVM);
         } else if (command == getCloneTemplateCommand()) {
-            cloneTemplate();
+            confirmClone(this::cloneTemplate);
         } else if ("OnNewTemplate".equals(command.getName())) { //$NON-NLS-1$
             onCloneTemplate();
         } else if ("OnRemove".equals(command.getName())) { //$NON-NLS-1$
@@ -937,5 +923,25 @@ public class VmSnapshotListModel extends SearchableListModel<VM, Snapshot> {
     protected boolean isSingleSelectionOnly() {
         // Single selection model
         return true;
+    }
+
+    private ConfirmationModelChainItem createConfirmClone() {
+        return new ConfirmationModelChainItem() {
+
+            @Override
+            public boolean isRequired() {
+                return getSelectedItem() != null && getSelectedItem().containsMemory();
+            }
+
+            @Override
+            public ConfirmationModel getConfirmation() {
+                ConfirmationModel confirmModel = new ConfirmationModel();
+                confirmModel.setTitle(ConstantsManager.getInstance().getConstants().cloneFromSnapshotWithMemoryConfirmationTitle());
+                confirmModel.setMessage(ConstantsManager.getInstance().getConstants().cloneFromSnapshotWithMemoryConfirmationText());
+                confirmModel.setHelpTag(HelpTag.clone_snapshot_with_memory);
+                confirmModel.setHashName("clone_snapshot_with_memory"); //$NON-NLS-1$
+                return confirmModel;
+            }
+        };
     }
 }

@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.ovirt.engine.core.common.action.ActionParametersBase;
 import org.ovirt.engine.core.common.action.ActionType;
@@ -36,6 +37,7 @@ import org.ovirt.engine.ui.uicompat.PropertyChangedEventArgs;
 public abstract class MoveOrCopyDiskModel extends DisksAllocationModel implements ICommandTarget {
     private ArrayList<DiskModel> allDisks;
     private StoragePool dataCenter;
+    private boolean allowedForManagedBlockDisks;
 
     public ArrayList<DiskModel> getAllDisks() {
         return allDisks;
@@ -67,6 +69,14 @@ public abstract class MoveOrCopyDiskModel extends DisksAllocationModel implement
             diskImages = value;
             onPropertyChanged(new PropertyChangedEventArgs("Disk Images")); //$NON-NLS-1$
         }
+    }
+
+    public boolean isAllowedForManagedBlockDisks() {
+        return allowedForManagedBlockDisks;
+    }
+
+    public void setAllowedForManagedBlockDisks(boolean allowedForManagedBlockDisks) {
+        this.allowedForManagedBlockDisks = allowedForManagedBlockDisks;
     }
 
     // Disks that cannot be moved/copied
@@ -108,20 +118,20 @@ public abstract class MoveOrCopyDiskModel extends DisksAllocationModel implement
     }
 
     protected void onInitAllDisks(List<? extends Disk> disks) {
-        for (Disk disk : disks) {
-            if (disk.getDiskStorageType() == DiskStorageType.IMAGE) {
-                allDisks.add(DiskModel.diskToModel(disk));
-            }
-        }
+        allDisks.addAll(disks.stream()
+                .filter(disk -> disk.getDiskStorageType() == DiskStorageType.IMAGE ||
+                        isAllowedForManagedBlockDisks() &&
+                                disk.getDiskStorageType() == DiskStorageType.MANAGED_BLOCK_STORAGE)
+                .map(DiskModel::diskToModel)
+                .collect(Collectors.toList()));
     }
 
     protected void onInitStorageDomains(List<StorageDomain> storages) {
-        for (StorageDomain storage : storages) {
-            if (Linq.isDataActiveStorageDomain(storage)) {
-                getActiveStorageDomains().add(storage);
-            }
-        }
-        Collections.sort(getActiveStorageDomains(), new NameableComparator());
+        getActiveStorageDomains().addAll(storages.stream()
+                .filter(sd -> Linq.isDataActiveStorageDomain(sd) ||
+                        isAllowedForManagedBlockDisks() && Linq.isManagedBlockActiveStorageDomain(sd))
+                .collect(Collectors.toList()));
+        getActiveStorageDomains().sort(new NameableComparator());
 
         if (!storages.isEmpty()) {
             AsyncDataProvider.getInstance().getDataCenterById(new AsyncQuery<>(dataCenter -> {
@@ -173,6 +183,7 @@ public abstract class MoveOrCopyDiskModel extends DisksAllocationModel implement
 
         sortDisks();
         postCopyOrMoveInit();
+        updateTargetStorageDomains();
     }
 
     private ArrayList<StorageDomain> getDestinationDomains(ArrayList<StorageDomain> activeStorageDomains,
@@ -248,12 +259,10 @@ public abstract class MoveOrCopyDiskModel extends DisksAllocationModel implement
     }
 
     protected void postCopyOrMoveInit() {
-        ICommandTarget target = (ICommandTarget) getEntity();
-
         if (getActiveStorageDomains().isEmpty()) {
             setMessage(constants.noStorageDomainAvailableMsg());
 
-            UICommand closeCommand = new UICommand("Cancel", target); //$NON-NLS-1$
+            UICommand closeCommand = new UICommand("Cancel", this); //$NON-NLS-1$
             closeCommand.setTitle(constants.close());
             closeCommand.setIsDefault(true);
             closeCommand.setIsCancel(true);
@@ -267,7 +276,7 @@ public abstract class MoveOrCopyDiskModel extends DisksAllocationModel implement
             actionCommand.setTitle(constants.ok());
             actionCommand.setIsDefault(true);
             getCommands().add(actionCommand);
-            UICommand cancelCommand = new UICommand("Cancel", target); //$NON-NLS-1$
+            UICommand cancelCommand = new UICommand("Cancel", this); //$NON-NLS-1$
             cancelCommand.setTitle(constants.cancel());
             cancelCommand.setIsCancel(true);
             getCommands().add(cancelCommand);
@@ -349,6 +358,10 @@ public abstract class MoveOrCopyDiskModel extends DisksAllocationModel implement
     public void executeCommand(UICommand command) {
         super.executeCommand(command);
 
+        if ("Cancel".equals(command.getName())) { //$NON-NLS-1$
+            cancel();
+            return;
+        }
         onExecute();
     }
 
@@ -368,7 +381,7 @@ public abstract class MoveOrCopyDiskModel extends DisksAllocationModel implement
             }
 
             diskModel.getAlias().validateEntity(new IValidation[] { new NotEmptyValidation(), new I18NNameValidation(),
-                    new LengthValidation(255)});
+                new LengthValidation(255)});
             isValid &= diskModel.getAlias().getIsValid();
 
         }
@@ -379,5 +392,7 @@ public abstract class MoveOrCopyDiskModel extends DisksAllocationModel implement
     protected void cancel() {
         stopProgress();
         ((ListModel) getEntity()).setWindow(null);
+        setEntity(null);
+        super.cleanup();
     }
 }

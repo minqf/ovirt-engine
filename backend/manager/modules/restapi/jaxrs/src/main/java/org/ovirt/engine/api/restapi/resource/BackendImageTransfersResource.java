@@ -14,9 +14,12 @@ import org.ovirt.engine.api.restapi.types.ImageTransferMapper;
 import org.ovirt.engine.api.restapi.utils.GuidUtils;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.TransferDiskImageParameters;
+import org.ovirt.engine.core.common.businessentities.storage.TimeoutPolicyType;
+import org.ovirt.engine.core.common.businessentities.storage.TransferClientType;
 import org.ovirt.engine.core.common.businessentities.storage.TransferType;
 import org.ovirt.engine.core.common.queries.IdQueryParameters;
 import org.ovirt.engine.core.common.queries.QueryParametersBase;
+import org.ovirt.engine.core.common.queries.QueryReturnValue;
 import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.core.compat.Guid;
 
@@ -50,6 +53,8 @@ public class BackendImageTransfersResource
     public Response addForSnapshot(ImageTransfer imageTransfer) {
         TransferDiskImageParameters params = new TransferDiskImageParameters();
         params.setImageId(GuidUtils.asGuid(imageTransfer.getSnapshot().getId()));
+        QueryReturnValue value = runQuery(QueryType.GetDiskIdBySnapshotId, new IdQueryParameters(params.getImageId()));
+        params.setImageGroupID(value.getReturnValue());
         return performCreate(imageTransfer, params);
     }
 
@@ -61,12 +66,19 @@ public class BackendImageTransfersResource
         if (imageTransfer.isSetInactivityTimeout()) {
             params.setClientInactivityTimeout(imageTransfer.getInactivityTimeout());
         }
+        if (imageTransfer.isSetTimeoutPolicy()) {
+            params.setTimeoutPolicyType(TimeoutPolicyType.forString(imageTransfer.getTimeoutPolicy().value()));
+        }
         if (imageTransfer.isSetFormat()) {
             params.setVolumeFormat(ImageTransferMapper.map(imageTransfer.getFormat(), null));
         }
         if (imageTransfer.isSetBackup() && imageTransfer.getBackup().isSetId()) {
             params.setBackupId(Guid.createGuidFromString(imageTransfer.getBackup().getId()));
         }
+        if (imageTransfer.isSetShallow()) {
+            params.setShallow(imageTransfer.isShallow());
+        }
+        params.setTransferClientType(TransferClientType.TRANSFER_VIA_API);
         return performCreate(ActionType.TransferDiskImage, params, new QueryIdResolver<Guid>(QueryType.GetImageTransferById,
                 IdQueryParameters.class));
     }

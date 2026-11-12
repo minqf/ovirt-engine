@@ -126,7 +126,7 @@ public class LoggedUtils {
         if (logged != null && isLogLevelOn(log, logged.errorLevel())) {
             log(log, logged.errorLevel(), ERROR_LOG, determineMessage(log, logged, obj),
                     t.getMessage(), id);
-            log.error("Exception", ExceptionUtils.getRootCauseMessage(t));
+            log.error("Exception {}", ExceptionUtils.getRootCauseMessage(t));
             log.debug("Exception", t);
         }
     }
@@ -151,29 +151,29 @@ public class LoggedUtils {
     protected static void log(Logger log, Logged.LogLevel logLevel, String message, Object... parameters) {
         try {
             switch (logLevel) {
-            case FATAL:
-            case ERROR:
-                log.error(message, parameters);
-                break;
-            case WARN:
-                log.warn(message, parameters);
-                break;
-            case INFO:
-                log.info(message, parameters);
-                break;
-            case DEBUG:
-                log.debug(message, parameters);
-                break;
-            case TRACE:
-                log.trace(message, parameters);
-                break;
-            case OFF:
-            default:
-                break;
+                case FATAL:
+                case ERROR:
+                    log.error(message, parameters);
+                    break;
+                case WARN:
+                    log.warn(message, parameters);
+                    break;
+                case INFO:
+                    log.info(message, parameters);
+                    break;
+                case DEBUG:
+                    log.debug(message, parameters);
+                    break;
+                case TRACE:
+                    log.trace(message, parameters);
+                    break;
+                case OFF:
+                default:
+                    break;
             }
         } catch (Throwable th) {
             try {
-                log.error("Cannot perform logging", ExceptionUtils.getRootCauseMessage(th));
+                log.error("Cannot perform logging {}", ExceptionUtils.getRootCauseMessage(th));
                 log.debug("Exception", th);
             } catch (Throwable th1) {
                 // Cannot really do any logging - better not try again, we have a serious logging problem
@@ -204,20 +204,20 @@ public class LoggedUtils {
      */
     protected static boolean isLogLevelOn(Logger log, Logged.LogLevel logLevel) {
         switch (logLevel) {
-        case FATAL:
-        case ERROR:
-            return log.isErrorEnabled();
-        case WARN:
-            return log.isWarnEnabled();
-        case INFO:
-            return log.isInfoEnabled();
-        case DEBUG:
-            return log.isDebugEnabled();
-        case TRACE:
-            return log.isTraceEnabled();
-        case OFF:
-        default:
-            return false;
+            case FATAL:
+            case ERROR:
+                return log.isErrorEnabled();
+            case WARN:
+                return log.isWarnEnabled();
+            case INFO:
+                return log.isInfoEnabled();
+            case DEBUG:
+                return log.isDebugEnabled();
+            case TRACE:
+                return log.isTraceEnabled();
+            case OFF:
+            default:
+                return false;
         }
     }
 

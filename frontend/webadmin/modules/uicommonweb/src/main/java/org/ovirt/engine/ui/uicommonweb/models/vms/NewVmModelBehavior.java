@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.ovirt.engine.core.common.businessentities.ArchitectureType;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.InstanceType;
 import org.ovirt.engine.core.common.businessentities.StoragePool;
@@ -15,8 +16,10 @@ import org.ovirt.engine.core.common.businessentities.VmType;
 import org.ovirt.engine.core.common.businessentities.network.VnicProfileView;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
 import org.ovirt.engine.core.common.businessentities.storage.RepoImage;
+import org.ovirt.engine.core.common.utils.VmCommonUtils;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.StringHelper;
+import org.ovirt.engine.core.compat.Version;
 import org.ovirt.engine.ui.frontend.AsyncQuery;
 import org.ovirt.engine.ui.uicommonweb.Linq;
 import org.ovirt.engine.ui.uicommonweb.builders.BuilderExecutor;
@@ -39,6 +42,7 @@ public class NewVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
     public void initialize() {
         super.initialize();
 
+        getModel().getIsSealed().setIsAvailable(true);
         getModel().getIsSoundcardEnabled().setIsChangeable(true);
         getModel().getVmType().setIsChangeable(true);
         getModel().getVmId().setIsAvailable(true);
@@ -132,6 +136,7 @@ public class NewVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
 
     @Override
     public void templateWithVersion_SelectedItemChanged() {
+        super.templateWithVersion_SelectedItemChanged();
         TemplateWithVersion selectedTemplateWithVersion = getModel().getTemplateWithVersion().getSelectedItem();
         if (selectedTemplateWithVersion != null) {
             VmTemplate selectedTemplate = selectedTemplateWithVersion.getTemplateVersion();
@@ -142,19 +147,40 @@ public class NewVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
     private void selectedTemplateChanged(final VmTemplate template) {
         // Copy VM parameters from template.
         buildModel(template, (source, destination) -> {
-            setSelectedOSType(template, getModel().getSelectedCluster().getArchitecture());
-
-            doChangeDefaultHost(template.getDedicatedVmForVdsList());
-
-            if (updateStatelessFlag) {
+            // Header
+            updateOSType(template, getModel().getSelectedCluster().getArchitecture());
+            selectBiosTypeFromTemplate();
+            updateQuotaByCluster(template.getQuotaId(), template.getQuotaName());
+            // General
+            getModel().getIsRunAndPause().setEntity(template.isRunAndPause());
+            // update fields special for new VM
+            // if the selected template is the latest, the VM has to be stateless,
+            // otherwise copy from the template
+            if (isLatestTemplateSelected()) {
+                getModel().getIsStateless().setEntity(true);
+            } else if (updateStatelessFlag) {
                 getModel().getIsStateless().setEntity(template.isStateless());
             }
-
             updateStatelessFlag = true;
-            isoPath = template.getIsoPath();
+            // System
+            InstanceType selectedInstanceType = getModel().getInstanceTypes().getSelectedItem();
+            int instanceTypeMinAllocatedMemory = selectedInstanceType != null ? selectedInstanceType.getMinAllocatedMem() : 0;
 
-            getModel().getIsRunAndPause().setEntity(template.isRunAndPause());
+            // do not update if specified on template or instance type
+            if (template.getMinAllocatedMem() == 0 && instanceTypeMinAllocatedMemory == 0) {
+                updateMinAllocatedMemory();
+            }
             updateTimeZone(template.getTimeZone());
+            // Initial Run
+            getModel().getVmInitModel().init(template);
+            getModel().getVmInitEnabled().setEntity(template.getVmInit() != null);
+            // Host
+            updateDefaultHost(template.getDedicatedVmForVdsList());
+            getModel().getHostCpu().setEntity(isHostCpuValueStillBasedOnTemp() ? template.isUseHostCpuFlags() : false);
+            updateMigrationForLocalSD();
+            // Resource allocation
+            updateCpuProfile(getModel().getSelectedCluster(), template.getCpuProfileId());
+            updateCpuSharesSelection();
 
             if (!template.getId().equals(Guid.Empty)) {
                 getModel().getStorageDomain().setIsChangeable(true);
@@ -171,43 +197,21 @@ public class NewVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
                 getModel().setIsDisksAvailable(false);
                 getModel().getInstanceImages().setIsChangeable(true);
             }
-
-            getModel().getAllowConsoleReconnect().setEntity(template.isAllowConsoleReconnect());
-            getModel().getVmType().setSelectedItem(template.getVmType());
-            getModel().getUsbPolicy().setSelectedItem(template.getUsbPolicy());
-            updateRngDevice(template.getId());
-
-            if (isHostCpuValueStillBasedOnTemp()) {
-                getModel().getHostCpu().setEntity(template.isUseHostCpuFlags());
-            }
-
             initStorageDomains();
-
-            InstanceType selectedInstanceType = getModel().getInstanceTypes().getSelectedItem();
-            int instanceTypeMinAllocatedMemory = selectedInstanceType != null ? selectedInstanceType.getMinAllocatedMem() : 0;
-
-            // do not update if specified on template or instance type
-            if (template.getMinAllocatedMem() == 0 && instanceTypeMinAllocatedMemory == 0) {
-                updateMinAllocatedMemory();
-            }
-
-            updateQuotaByCluster(template.getQuotaId(), template.getQuotaName());
-            getModel().getCustomPropertySheet().deserialize(template.getCustomProperties());
-
-            getModel().getVmInitModel().init(template);
-            getModel().getVmInitEnabled().setEntity(template.getVmInit() != null);
-
-            if (getModel().getSelectedCluster() != null) {
-                updateCpuProfile(getModel().getSelectedCluster().getId(), template.getCpuProfileId());
-            }
             provisioning_SelectedItemChanged();
-            updateMigrationForLocalSD();
+            // High availability
+            updateLeaseStorageDomains(template.getLeaseStorageDomainId());
+            // Boot options
+            isoPath = template.getIsoPath();
+            // Random Generator
+            updateRngDevice(template.getId());
 
             // A workaround for setting the current saved CustomCompatibilityVersion value after
             // it was reset by getTemplateWithVersion event
             getModel().getCustomCompatibilityVersion().setSelectedItem(getSavedCurrentCustomCompatibilityVersion());
             setCustomCompatibilityVersionChangeInProgress(false);
-            updateLeaseStorageDomains(template.getLeaseStorageDomainId());
+
+            getInstanceTypeManager().updateInstanceTypeFieldsFromSource();
         });
     }
 
@@ -234,20 +238,16 @@ public class NewVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
     public void postDataCenterWithClusterSelectedItemChanged() {
         deactivateInstanceTypeManager(() -> getInstanceTypeManager().updateAll());
 
-        updateDefaultHost();
-        updateCustomPropertySheet();
+        super.postDataCenterWithClusterSelectedItemChanged();
         updateMinAllocatedMemory();
-        updateNumOfSockets();
+
         if (getModel().getTemplateWithVersion().getSelectedItem() != null) {
             VmTemplate template = getModel().getTemplateWithVersion().getSelectedItem().getTemplateVersion();
             updateQuotaByCluster(template.getQuotaId(), template.getQuotaName());
         }
         updateCpuPinningVisibility();
         updateTemplate();
-        updateOSValues();
-        updateMemoryBalloon();
-        updateCpuSharesAvailability();
-        updateVirtioScsiAvailability();
+
         activateInstanceTypeManager();
     }
 
@@ -268,7 +268,7 @@ public class NewVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
         getModel().getDisksAllocationModel().setIsVolumeFormatAvailable(true);
         getModel().getDisksAllocationModel().setIsVolumeFormatChangeable(provisioning);
         getModel().getDisksAllocationModel().setIsThinProvisioning(!provisioning);
-        getModel().getDisksAllocationModel().setIsAliasChangable(true);
+        getModel().getDisksAllocationModel().setIsAliasChangeable(true);
 
         initStorageDomains();
     }
@@ -297,9 +297,9 @@ public class NewVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
             return;
         }
 
-        double overCommitFactor = 100.0 / cluster.getMaxVdsMemoryOverCommit();
-        getModel().getMinAllocatedMemory()
-                .setEntity((int) (getModel().getMemSize().getEntity() * overCommitFactor));
+        int minMemory = VmCommonUtils.calcMinMemory(
+                getModel().getMemSize().getEntity(), cluster.getMaxVdsMemoryOverCommit());
+        getModel().getMinAllocatedMemory().setEntity(minMemory);
     }
 
     private void updateTemplate() {
@@ -352,15 +352,9 @@ public class NewVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
     }
 
     @Override
-    public void enableSinglePCI(boolean enabled) {
-        super.enableSinglePCI(enabled);
-        getModel().setSingleQxlEnabled(enabled);
-    }
-
-    @Override
-    protected void updateNumaEnabled() {
-        super.updateNumaEnabled();
-        updateNumaEnabledHelper();
+    protected void updateNumaFields() {
+        super.updateNumaFields();
+        updateNumaPinningEnabled();
     }
 
     @Override
@@ -407,5 +401,10 @@ public class NewVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
         return oldTemplateToSelect != null
                 ? oldTemplateToSelect
                 : computeNewTemplateWithVersionToSelect(newItems, addLatest);
+    }
+
+    @Override
+    protected List<Integer> getOsValues(ArchitectureType architectureType, Version version) {
+        return AsyncDataProvider.getInstance().getSupportedOsIds(architectureType, version);
     }
 }

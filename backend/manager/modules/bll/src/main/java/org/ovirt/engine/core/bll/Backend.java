@@ -14,7 +14,6 @@ import javax.ejb.Singleton;
 import javax.ejb.Startup;
 import javax.ejb.TransactionAttribute;
 import javax.ejb.TransactionAttributeType;
-import javax.enterprise.inject.Any;
 import javax.enterprise.inject.Instance;
 import javax.inject.Inject;
 import javax.interceptor.ExcludeClassInterceptors;
@@ -40,9 +39,11 @@ import org.ovirt.engine.core.bll.job.JobRepository;
 import org.ovirt.engine.core.bll.job.JobRepositoryCleanupManager;
 import org.ovirt.engine.core.bll.network.macpool.MacPoolPerCluster;
 import org.ovirt.engine.core.bll.quota.QuotaManager;
+import org.ovirt.engine.core.bll.storage.backup.DbEntityCleanupManager;
 import org.ovirt.engine.core.bll.storage.domain.IsoDomainListSynchronizer;
 import org.ovirt.engine.core.bll.utils.ThreadPoolMonitoringService;
 import org.ovirt.engine.core.common.EngineWorkingMode;
+import org.ovirt.engine.core.common.TimeZoneType;
 import org.ovirt.engine.core.common.action.ActionParametersBase;
 import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
@@ -69,6 +70,7 @@ import org.ovirt.engine.core.common.utils.EngineThreadPools;
 import org.ovirt.engine.core.common.utils.SimpleDependencyInjector;
 import org.ovirt.engine.core.common.utils.customprop.VmPropertiesUtils;
 import org.ovirt.engine.core.compat.DateTime;
+import org.ovirt.engine.core.compat.WindowsJavaTimezoneMapping;
 import org.ovirt.engine.core.dal.dbbroker.DbConnectionUtil;
 import org.ovirt.engine.core.dal.dbbroker.generic.DBConfigUtils;
 import org.ovirt.engine.core.dal.job.ExecutionMessageDirector;
@@ -87,7 +89,7 @@ import org.ovirt.engine.core.utils.ErrorTranslatorImpl;
 import org.ovirt.engine.core.utils.OsRepositoryImpl;
 import org.ovirt.engine.core.utils.extensionsmgr.EngineExtensionsManager;
 import org.ovirt.engine.core.utils.osinfo.OsInfoPreferencesLoader;
-import org.ovirt.engine.core.utils.timer.SchedulerUtil;
+import org.ovirt.engine.core.utils.timezone.TimeZoneReader;
 import org.ovirt.engine.core.vdsbroker.monitoring.VmMigrationProgressMonitoring;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -99,7 +101,7 @@ import org.slf4j.LoggerFactory;
 // to all the business and timeout methods in the singleton.
 // The developer of the singleton is responsible for ensuring that the state
 // of the singleton is synchronized across all clients.
-@DependsOn("LockManager")
+@DependsOn({"JaasConfigurationInitializer", "LockManager"})
 @Local({ BackendLocal.class, BackendInternal.class, BackendCommandObjectsHandler.class })
 @Interceptors(CorrelationIdTrackerInterceptor.class)
 @Singleton
@@ -116,9 +118,6 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
 
     @Inject
     private ServiceLoader serviceLoader;
-    @Inject
-    @Any
-    private Instance<SchedulerUtil> taskSchedulers;
     @Inject
     private SessionDataContainer sessionDataContainer;
     @Inject
@@ -177,7 +176,7 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
         checkDBConnectivity();
         try {
             initialize();
-        } catch(Exception ex) {
+        } catch (Exception ex) {
             log.error("Error during initialization", ex);
             throw ex;
         }
@@ -234,10 +233,6 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
         // save host that HE VM was running on prior to engine startup
         serviceLoader.load(PreviousHostedEngineHost.class);
 
-        // start task schedulers
-        for (SchedulerUtil taskScheduler : taskSchedulers) {
-            log.info("Started task scheduler {}", taskScheduler);
-        }
         // initialize CDI services
         serviceLoader.load(CacheManager.class);
         // initialize configuration utils to use DB
@@ -245,6 +240,8 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
 
         // we need to initialize os-info before the compensations take place because of VmPoolCommandBase#osRepository
         initOsRepository();
+
+        initTimeZones();
 
         // When getting a proxy to this bean using JBoss embedded, the initialize method is called for each method
         // invocation on the proxy, as it is called by setup method which is @PostConstruct - the initialized flag
@@ -282,6 +279,8 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
         initJobRepository();
 
         serviceLoader.load(JobRepositoryCleanupManager.class);
+
+        serviceLoader.load(DbEntityCleanupManager.class);
 
         serviceLoader.load(AutoRecoveryManager.class);
 
@@ -338,7 +337,7 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
 
         try {
             AttestThread attestThread = new AttestThread(trustedVdsNames);
-            attestThread.start();//start a thread to attest the hosts
+            attestThread.start(); //start a thread to attest the hosts
         } catch (Exception e) {
             log.error("Failed to initialize attestation cache", e);
         }
@@ -435,7 +434,7 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
         return result;
     }
 
-    private boolean isActionExternal(ActionType actionType){
+    private boolean isActionExternal(ActionType actionType) {
         return actionType == ActionType.EndExternalJob || actionType == ActionType.EndExternalStep || actionType == ActionType.ClearExternalJob;
     }
 
@@ -600,32 +599,32 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
     public QueryReturnValue runPublicQuery(QueryType actionType, QueryParametersBase parameters) {
         parameters.setRefresh(false);
         switch (actionType) {
-        case GetAAAProfileList:
-        case RegisterVds:
-        case CheckDBConnection:
-        case GetDbUserBySession:
-        case GetEngineSessionIdForSsoToken:
-        case ValidateSession:
-        case GetDefaultAllowedOrigins:
-            return runQueryImpl(actionType, parameters, false);
-        case GetConfigurationValue:
-            GetConfigurationValueParameters configParameters = (GetConfigurationValueParameters) parameters;
-            switch (configParameters.getConfigValue()) {
-            case VdcVersion:
-            case ProductRPMVersion:
-            case ApplicationMode:
-            case UserSessionTimeOutInterval:
-            case CORSSupport:
-            case CORSAllowedOrigins:
-            case CORSAllowDefaultOrigins:
-            case CORSDefaultOriginSuffixes:
+            case GetAAAProfileList:
+            case RegisterVds:
+            case CheckDBConnection:
+            case GetDbUserBySession:
+            case GetEngineSessionIdForSsoToken:
+            case ValidateSession:
+            case GetDefaultAllowedOrigins:
                 return runQueryImpl(actionType, parameters, false);
+            case GetConfigurationValue:
+                GetConfigurationValueParameters configParameters = (GetConfigurationValueParameters) parameters;
+                switch (configParameters.getConfigValue()) {
+                    case VdcVersion:
+                    case ProductRPMVersion:
+                    case ApplicationMode:
+                    case UserSessionTimeOutInterval:
+                    case CORSSupport:
+                    case CORSAllowedOrigins:
+                    case CORSAllowDefaultOrigins:
+                    case CORSDefaultOriginSuffixes:
+                        return runQueryImpl(actionType, parameters, false);
+                    default:
+                        break;
+                }
+
             default:
                 break;
-            }
-
-        default:
-            break;
         }
 
         return getErrorQueryReturnValue(EngineMessage.USER_CANNOT_RUN_QUERY_NOT_PUBLIC);
@@ -678,6 +677,15 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
         osInfoDao.populateDwhOsInfo(osRepository.getOsNames());
     }
 
+    private void initTimeZones() {
+        TimeZoneReader.INSTANCE.init(FileSystems.getDefault()
+                .getPath(EngineLocalConfig.getInstance().getEtcDir().getAbsolutePath(),
+                        TimeZoneReader.INSTANCE.DIR_NAME));
+        TimeZoneType.WINDOWS_TIMEZONE.init(TimeZoneReader.INSTANCE.getWindowsTimezones());
+        TimeZoneType.GENERAL_TIMEZONE.init(TimeZoneReader.INSTANCE.getGeneralTimezones());
+        WindowsJavaTimezoneMapping.init(TimeZoneReader.INSTANCE.getWindowsToJavaTimezones());
+    }
+
     private void logExecution(String sessionId, String details) {
         DbUser user = sessionDataContainer.getUser(sessionId, false);
         log.debug("Executing {}{}",
@@ -685,7 +693,7 @@ public class Backend implements BackendInternal, BackendCommandObjectsHandler {
                 user == null ? "." : String.format(" for user %s@%s.", user.getLoginName(), user.getDomain()));
     }
 
-   @Override
+    @Override
     public CommandBase<?> createAction(ActionType actionType, ActionParametersBase parameters, CommandContext context) {
         return CommandsFactory.createCommand(actionType, parameters, context);
     }

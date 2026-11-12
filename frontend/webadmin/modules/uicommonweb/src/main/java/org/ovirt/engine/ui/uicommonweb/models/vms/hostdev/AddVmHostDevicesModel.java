@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.ovirt.engine.core.common.businessentities.HostDeviceView;
 import org.ovirt.engine.core.common.businessentities.VM;
@@ -74,7 +75,8 @@ public class AddVmHostDevicesModel extends ModelWithPinnedHost {
     @SuppressWarnings("unchecked")
     private void initCapabilities() {
         List<String> capabilities = (List<String>) AsyncDataProvider.getInstance()
-                .getConfigValuePreConverted(ConfigValues.HostDevicePassthroughCapabilities);
+                .getConfigValuePreConverted(ConfigValues.HostDevicePassthroughCapabilities,
+                                            getVm().getCompatibilityVersion().getValue());
         getCapability().setItems(capabilities);
     }
 
@@ -89,13 +91,12 @@ public class AddVmHostDevicesModel extends ModelWithPinnedHost {
         startProgress();
         AsyncDataProvider.getInstance().getHostDevicesByHostId(new AsyncQuery<>(fetchedDevices -> {
             stopProgress();
-            List<EntityModel<HostDeviceView>> models = new ArrayList<>();
-            for (HostDeviceView hostDevice : fetchedDevices) {
-                // show only devices that support assignment and are not yet attached
-                if (hostDevice.isAssignable() && !alreadyAttachedDevices.contains(hostDevice.getDeviceName())) {
-                    models.add(new EntityModel<>(hostDevice));
-                }
-            }
+            // Show only devices that support assignment and are not yet attached to a VM or used by an SD.
+            List<EntityModel<HostDeviceView>> models = fetchedDevices.stream()
+                    .filter(hostDevice -> hostDevice.isAssignable() &&
+                            !alreadyAttachedDevices.contains(hostDevice.getDeviceName()))
+                    .map(EntityModel::new)
+                    .collect(Collectors.toList());
             allAvailableHostDevices.setItems(models);
         }), getPinnedHost().getSelectedItem().getId());
     }

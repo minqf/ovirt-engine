@@ -89,8 +89,8 @@ public class ReduceImageCommand<T extends ImagesActionsParametersBase> extends B
         if (getStorageDomain().getStorageType().isFileDomain()) {
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_REDUCE_IMAGE_NOT_SUPPORTED_FOR_FILE_DOMAINS);
         }
-        if (getVm() != null && getVm().isRunning() && !isInternalMerge()) {
-            return failValidation(EngineMessage.ACTION_TYPE_FAILED_REDUCE_IMAGE_NOT_SUPPORTED_FOR_ACTIVE_IMAGE_LIVE_MERGE);
+        if (getVm() != null && getVm().isRunning() && isActiveImage()) {
+            return failValidation(EngineMessage.ACTION_TYPE_FAILED_REDUCE_IMAGE_NOT_SUPPORTED_FOR_ACTIVE_IMAGE);
         }
         return true;
     }
@@ -190,15 +190,12 @@ public class ReduceImageCommand<T extends ImagesActionsParametersBase> extends B
         return AsyncTaskType.reduceImage;
     }
 
-    private boolean isInternalMerge() {
-        return getActiveDiskImage() != null && !getActiveDiskImage().getParentId().equals(getImageId());
-    }
-
-    private DiskImage getActiveDiskImage() {
-        return diskImageDao.getAllSnapshotsForImageGroup(getImageGroupId())
+    private boolean isActiveImage() {
+        DiskImage activeDiskImage = diskImageDao.getAllSnapshotsForImageGroup(getImageGroupId())
                 .stream()
                 .filter(DiskImage::getActive)
                 .findFirst().orElse(null);
+        return activeDiskImage != null && activeDiskImage.getImageId().equals(getImageId());
     }
 
     private ReduceImageVDSCommandParameters createReduceImageVDSCommandParameters() {
@@ -272,11 +269,28 @@ public class ReduceImageCommand<T extends ImagesActionsParametersBase> extends B
     @Override
     public AuditLogType getAuditLogTypeValue() {
         addAuditLogCustomValues();
-        return getSucceeded() ?
-                AuditLogType.USER_REDUCE_DISK_FINISHED_SUCCESS : AuditLogType.USER_REDUCE_DISK_FINISHED_FAILURE;
+        switch (getActionState()) {
+            case EXECUTE:
+                return getSucceeded() ?
+                        AuditLogType.UNASSIGNED
+                        : AuditLogType.USER_REDUCE_DISK_FINISHED_FAILURE;
+            default:
+                return getSucceeded() ?
+                        AuditLogType.USER_REDUCE_DISK_FINISHED_SUCCESS
+                        : AuditLogType.USER_REDUCE_DISK_FINISHED_FAILURE;
+        }
     }
 
     private void addAuditLogCustomValues() {
         this.addCustomValue("DiskAlias", getDiskImage().getDiskAlias());
+    }
+
+    @Override
+    public Map<String, String> getJobMessageProperties() {
+        if (jobProperties == null) {
+            jobProperties = super.getJobMessageProperties();
+            jobProperties.put("diskalias", getDiskImage() != null ? getDiskImage().getDiskAlias() : "");
+        }
+        return jobProperties;
     }
 }

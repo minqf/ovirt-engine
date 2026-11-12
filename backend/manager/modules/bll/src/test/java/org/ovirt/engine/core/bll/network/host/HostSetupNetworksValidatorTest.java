@@ -926,7 +926,7 @@ public class HostSetupNetworksValidatorTest {
         CreateOrUpdateBond createOrUpdateBond = createNewCreateOrUpdateBond(Guid.newGuid(), "bond1", "slaveA", "slaveB");
 
         ValidationResult cannotBeSlaveValidationResult = new ValidationResult(EngineMessage.NETWORK_INTERFACE_BOND_OR_VLAN_CANNOT_BE_SLAVE,
-        ReplacementUtils.createSetVariableString(HostInterfaceValidator.VAR_NIC_NAME, createOrUpdateBond.getName()));
+            ReplacementUtils.createSetVariableString(HostInterfaceValidator.VAR_NIC_NAME, createOrUpdateBond.getName()));
 
         HostSetupNetworksValidator validator = new HostSetupNetworksValidatorBuilder()
             .setParams(new ParametersBuilder().addBonds(createOrUpdateBond))
@@ -1181,7 +1181,7 @@ public class HostSetupNetworksValidatorTest {
         VdsNetworkInterface nicA = createNic("nicA");
         VdsNetworkInterface nicB = createNic("nicB");
 
-        NetworkAttachment networkAttachment = createNetworkAttachment(networkA, (Guid)null);
+        NetworkAttachment networkAttachment = createNetworkAttachment(networkA, (Guid) null);
         networkAttachment.setNicId(nicA.getId());
         networkAttachment.setNicName(nicA.getName());
         networkAttachment.setNetworkId(networkA.getId());

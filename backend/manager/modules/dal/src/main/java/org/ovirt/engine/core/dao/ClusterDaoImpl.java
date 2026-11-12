@@ -1,5 +1,6 @@
 package org.ovirt.engine.core.dao;
 
+import java.sql.Types;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -13,6 +14,7 @@ import org.ovirt.engine.core.common.businessentities.ArchitectureType;
 import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.ClusterHostsAndVMs;
+import org.ovirt.engine.core.common.businessentities.FipsMode;
 import org.ovirt.engine.core.common.businessentities.LogMaxMemoryUsedThresholdType;
 import org.ovirt.engine.core.common.businessentities.MigrateOnErrorOptions;
 import org.ovirt.engine.core.common.businessentities.MigrationBandwidthLimitType;
@@ -186,12 +188,31 @@ public class ClusterDaoImpl extends BaseDao implements ClusterDao {
     }
 
     @Override
-    public boolean setUpgradeRunning(Guid clusterId) {
+    public boolean setUpgradeRunning(Guid clusterId, String correlationId) {
         MapSqlParameterSource parameterSource = getCustomMapSqlParameterSource()
-                .addValue("cluster_id", clusterId);
+                .addValue("cluster_id", clusterId)
+                .addValue("correlation_id", correlationId);
 
         Map<String, Object> results =
-                getCallsHandler().executeModification("SetClusterUpgradeRunning", parameterSource);
+                getCallsHandler().executeModification("SetClusterUpgradeRunning",
+                        parameterSource,
+                        "updated",
+                        Types.BIT);
+
+        return (Boolean) results.get("updated");
+    }
+
+    @Override
+    public boolean setUpgradePercentComplete(Guid clusterId, int upgradePercentComplete) {
+        MapSqlParameterSource parameterSource = getCustomMapSqlParameterSource()
+                .addValue("cluster_id", clusterId)
+                .addValue("upgrade_percent_complete", upgradePercentComplete);
+
+        Map<String, Object> results =
+                getCallsHandler().executeModification("UpdateClusterUpgradeProgress",
+                        parameterSource,
+                        "updated",
+                        Types.BIT);
 
         return (Boolean) results.get("updated");
     }
@@ -202,7 +223,10 @@ public class ClusterDaoImpl extends BaseDao implements ClusterDao {
                 .addValue("cluster_id", clusterId);
 
         Map<String, Object> results =
-                getCallsHandler().executeModification("ClearClusterUpgradeRunning", parameterSource);
+                getCallsHandler().executeModification("ClearClusterUpgradeRunning",
+                        parameterSource,
+                        "updated",
+                        Types.BIT);
         return (Boolean) results.get("updated");
     }
 
@@ -236,17 +260,14 @@ public class ClusterDaoImpl extends BaseDao implements ClusterDao {
                 .addValue("cpu_flags", cluster.getCpuFlags())
                 .addValue("cpu_verb", cluster.getCpuVerb())
                 .addValue("storage_pool_id", cluster.getStoragePoolId())
-                .addValue("max_vds_memory_over_commit",
-                        cluster.getMaxVdsMemoryOverCommit())
+                .addValue("max_vds_memory_over_commit", cluster.getMaxVdsMemoryOverCommit())
                 .addValue("smt_disabled", cluster.getSmtDisabled())
-                .addValue("count_threads_as_cores",
-                        cluster.getCountThreadsAsCores())
-                .addValue("upgrade_running",
-                        cluster.isUpgradeRunning())
-                .addValue("transparent_hugepages",
-                        cluster.getTransparentHugepages())
-                .addValue("compatibility_version",
-                        cluster.getCompatibilityVersion())
+                .addValue("count_threads_as_cores", cluster.getCountThreadsAsCores())
+                .addValue("upgrade_running", cluster.isUpgradeRunning())
+                .addValue("upgrade_percent_complete", cluster.getUpgradePercentComplete())
+                .addValue("upgrade_correlation_id", cluster.getUpgradeCorrelationId())
+                .addValue("transparent_hugepages", cluster.getTransparentHugepages())
+                .addValue("compatibility_version", cluster.getCompatibilityVersion())
                 .addValue("migrate_on_error", cluster.getMigrateOnError())
                 .addValue("virt_service", cluster.supportsVirtService())
                 .addValue("gluster_service", cluster.supportsGlusterService())
@@ -279,6 +300,7 @@ public class ClusterDaoImpl extends BaseDao implements ClusterDao {
                 .addValue("ksm_merge_across_nodes", cluster.isKsmMergeAcrossNumaNodes())
                 .addValue("migration_bandwidth_limit_type", cluster.getMigrationBandwidthLimitType().name())
                 .addValue("custom_migration_bandwidth_limit", cluster.getCustomMigrationNetworkBandwidth())
+                .addValue("parallel_migrations", cluster.getParallelMigrations())
                 .addValue("migration_policy_id", cluster.getMigrationPolicyId())
                 .addValue("mac_pool_id", cluster.getMacPoolId())
                 .addValue("switch_type", cluster.getRequiredSwitchTypeForCluster().getOptionValue())
@@ -289,13 +311,15 @@ public class ClusterDaoImpl extends BaseDao implements ClusterDao {
                 .addValue("log_max_memory_used_threshold", cluster.getLogMaxMemoryUsedThreshold())
                 .addValue("log_max_memory_used_threshold_type", cluster.getLogMaxMemoryUsedThresholdType().getValue())
                 .addValue("vnc_encryption_enabled", cluster.isVncEncryptionEnabled())
-                .addValue("managed", cluster.isManaged());
+                .addValue("managed", cluster.isManaged())
+                .addValue("fips_mode", cluster.getFipsMode());
     }
 
     private static final RowMapper<ClusterHostsAndVMs> clusterHostsAndVMsRowMapper = (rs, rowNum) -> {
         ClusterHostsAndVMs entity = new ClusterHostsAndVMs();
         entity.setHosts(rs.getInt("hosts"));
         entity.setVms(rs.getInt("vms"));
+        entity.setHostsWithUpdateAvailable(rs.getInt("hosts_with_update_available"));
         entity.setClusterId(getGuid(rs, "cluster_id"));
         return entity;
     };
@@ -315,6 +339,8 @@ public class ClusterDaoImpl extends BaseDao implements ClusterDao {
         entity.setSmtDisabled(rs.getBoolean("smt_disabled"));
         entity.setCountThreadsAsCores(rs.getBoolean("count_threads_as_cores"));
         entity.setUpgradeRunning(rs.getBoolean("upgrade_running"));
+        entity.setUpgradePercentComplete(rs.getInt("upgrade_percent_complete"));
+        entity.setUpgradeCorrelationId(rs.getString("upgrade_correlation_id"));
         entity.setTransparentHugepages(rs.getBoolean("transparent_hugepages"));
         entity.setCompatibilityVersion(new VersionRowMapper("compatibility_version").mapRow(rs, rowNum));
         entity.setMigrateOnError(MigrateOnErrorOptions.forValue(rs.getInt("migrate_on_error")));
@@ -352,6 +378,7 @@ public class ClusterDaoImpl extends BaseDao implements ClusterDao {
         entity.setKsmMergeAcrossNumaNodes(rs.getBoolean("ksm_merge_across_nodes"));
         entity.setMigrationBandwidthLimitType(MigrationBandwidthLimitType.valueOf(rs.getString("migration_bandwidth_limit_type")));
         entity.setCustomMigrationNetworkBandwidth(getInteger(rs, "custom_migration_bandwidth_limit"));
+        entity.setParallelMigrations(rs.getInt("parallel_migrations"));
         entity.setMigrationPolicyId(getGuid(rs, "migration_policy_id"));
         entity.setMacPoolId(getGuid(rs, "mac_pool_id"));
         entity.setRequiredSwitchTypeForCluster(SwitchType.parse(rs.getString("switch_type")));
@@ -361,6 +388,7 @@ public class ClusterDaoImpl extends BaseDao implements ClusterDao {
         entity.setLogMaxMemoryUsedThresholdType(LogMaxMemoryUsedThresholdType.forValue(rs.getInt("log_max_memory_used_threshold_type")));
         entity.setVncEncryptionEnabled(rs.getBoolean("vnc_encryption_enabled"));
         entity.setManaged(rs.getBoolean("managed"));
+        entity.setFipsMode(FipsMode.forValue(rs.getInt("fips_mode")));
         return entity;
     };
 
@@ -377,10 +405,10 @@ public class ClusterDaoImpl extends BaseDao implements ClusterDao {
         for (Cluster cluster : clusters) {
             clustersById.put(cluster.getId(), cluster);
         }
-        List<ClusterHostsAndVMs> dataList = getCallsHandler().executeReadList("GetHostsAndVmsForClusters",
+        List<ClusterHostsAndVMs> dataList = getCallsHandler().executeReadList(
+                "GetHostsAndVmsForClusters",
                 clusterHostsAndVMsRowMapper,
-                getCustomMapSqlParameterSource()
-                        .addValue("cluster_ids", createArrayOf("uuid", clustersById.keySet().toArray())));
+                getCustomMapSqlParameterSource().addValue("cluster_ids", createArrayOf("uuid", clustersById.keySet().toArray())));
 
         for (ClusterHostsAndVMs clusterDetail : dataList) {
             clustersById.get(clusterDetail.getClusterId()).setClusterHostsAndVms(clusterDetail);
@@ -388,7 +416,6 @@ public class ClusterDaoImpl extends BaseDao implements ClusterDao {
         //The VDS clusters have been updated, but we want to keep the order, so return the original list which is
         //in the right order.
         return clusters;
-
     }
 
     @Override
@@ -412,5 +439,14 @@ public class ClusterDaoImpl extends BaseDao implements ClusterDao {
         return getCallsHandler().executeReadList("GetAllClustersByDefaultNetworkProviderId",
                 clusterRowMapper,
                 getCustomMapSqlParameterSource().addValue("id", defaultNetworkProviderId));
+    }
+
+    @Override
+    public Guid getClusterIdForHostByNameOrAddress(String hostName, String hostAddress) {
+        return getCallsHandler().executeRead("GetClusterIdForHostByNameOrAddress",
+                SingleColumnRowMapper.newInstance(Guid.class),
+                getCustomMapSqlParameterSource()
+                   .addValue("vds_name", hostName)
+                   .addValue("host_address", hostAddress));
     }
 }

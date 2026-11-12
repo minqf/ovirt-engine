@@ -123,7 +123,7 @@ public class VmNextRunConfigurationWidget extends AbstractModelBoundPopupWidget<
         applyNowVmLeaseMessage.setHTML(bulletedItem(messages.nextRunConfigurationVmLeaseValue()));
         vmUnpinnedMessage1.setHTML(bulletedItem(messages.unpinnedRunningVmWarningIncompatability()));
         vmUnpinnedMessage2.setHTML(bulletedItem(messages.unpinnedRunningVmWarningSecurity()));
-}
+    }
 
     private SafeHtml bulletedItem(String msg) {
         return templates.unorderedList(templates.listItem(SafeHtmlUtils.fromSafeConstant(msg)));
@@ -133,7 +133,7 @@ public class VmNextRunConfigurationWidget extends AbstractModelBoundPopupWidget<
     public void edit(VmNextRunConfigurationModel object) {
         driver.edit(object);
 
-        if (object.isVmUnpinned()){
+        if (object.isVmUnpinned()) {
             setVisibilityToVmUnpinningWarrningPanel(true);
         }
 
@@ -160,7 +160,7 @@ public class VmNextRunConfigurationWidget extends AbstractModelBoundPopupWidget<
     }
 
     private void setVisibilityToHotChanges(VmNextRunConfigurationModel object) {
-        hotplugPanel.setVisible(object.isCpuPluggable() || object.isMemoryPluggable() || object.isVmLeaseUpdated());
+        hotplugPanel.setVisible(object.isAnythingPluggable());
         applyNowCpuMessage.setVisible(object.isCpuPluggable());
         applyNowMemoryMessage.setVisible(object.isMemoryPluggable());
         applyNowMinAllocatedMemoryMessage.setVisible(object.isMinAllocatedMemoryPluggable());

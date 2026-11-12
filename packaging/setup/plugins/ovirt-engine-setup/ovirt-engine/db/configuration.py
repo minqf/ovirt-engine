@@ -18,7 +18,6 @@ from ovirt_engine_setup.engine import constants as oenginecons
 from ovirt_engine_setup.engine_common import constants as oengcommcons
 from ovirt_engine_setup.engine_common import database
 from ovirt_engine_setup.engine_common import postgres
-from ovirt_engine_setup.engine_common.constants import ProvisioningEnv
 
 
 def _(m):
@@ -36,6 +35,7 @@ class Plugin(plugin.PluginBase):
             dbenvkeys=oenginecons.Const.ENGINE_DB_ENV_KEYS,
             defaults=oenginecons.Const.DEFAULT_ENGINE_DB_ENV_KEYS,
         )
+        self._pg_hba_refresh_flag = 'OVESETUP_ENGINE_DB/needsPgHbaRefresh'
 
     def _setupOwnsDB(self):
         # FIXME localhost is inappropriate in case of docker e.g
@@ -66,82 +66,6 @@ class Plugin(plugin.PluginBase):
             ] = True
         elif autofix_approved.upper() == _("No").upper():
             raise RuntimeError(_('Aborted by user'))
-
-    def _pg_conf_items(self):
-        return (
-            {
-                'key': 'autovacuum_vacuum_scale_factor',
-                'expected': self.environment[
-                    ProvisioningEnv.PG_AUTOVACUUM_VACUUM_SCALE_FACTOR
-                ],
-                'ok': lambda key, current, expected: (
-                    float(current) <= float(expected)
-                ),
-                'check_on_use': True,
-                'needed_on_create': True,
-                'error_msg': '{specific}'.format(
-                    specific='%s' % database.AT_MOST_EXPECTED,
-                )
-            },
-            {
-                'key': 'autovacuum_analyze_scale_factor',
-                'expected': self.environment[
-                    ProvisioningEnv.PG_AUTOVACUUM_ANALYZE_SCALE_FACTOR
-                ],
-                'ok': lambda key, current, expected: (
-                    float(current) <= float(expected)
-                ),
-                'check_on_use': True,
-                'needed_on_create': True,
-                'error_msg': '{specific}'.format(
-                    specific=database.AT_MOST_EXPECTED,
-                )
-            },
-            {
-                'key': 'autovacuum_max_workers',
-                'expected': self.environment[
-                    ProvisioningEnv.PG_AUTOVACUUM_MAX_WORKERS
-                ],
-                'ok': lambda key, current, expected: (
-                    int(current) >= int(expected)
-                ),
-                'check_on_use': True,
-                'needed_on_create': True,
-                'error_msg': '{specific}'.format(
-                    specific=database.AT_LEAST_EXPECTED,
-                )
-            },
-            {
-                'key': 'maintenance_work_mem',
-                'expected': self.environment[
-                    ProvisioningEnv.PG_AUTOVACUUM_MAINTENANCE_WORK_MEM
-                ],
-                'useQueryForValue': True,
-                'ok': lambda key, current, expected: (
-                    int(current) >= int(expected)
-                ),
-                'check_on_use': True,
-                'needed_on_create': True,
-                'error_msg': '{specific}'.format(
-                    specific='%s' % database.AT_LEAST_EXPECTED,
-                )
-            },
-            {
-                'key': 'work_mem',
-                'expected': self.environment[
-                    ProvisioningEnv.PG_WORK_MEM_KB
-                ],
-                'useQueryForValue': True,
-                'ok': lambda key, current, expected: (
-                    int(current) >= int(expected)
-                ),
-                'check_on_use': True,
-                'needed_on_create': True,
-                'error_msg': '{specific}'.format(
-                    specific='%s' % database.AT_LEAST_EXPECTED,
-                )
-            },
-        )
 
     # Checks if uuid-ossp extension was installed in DB
     def _uuidOsspInstalled(self):
@@ -178,14 +102,10 @@ class Plugin(plugin.PluginBase):
             oengcommcons.ProvisioningEnv.POSTGRES_EXTRA_CONFIG_ITEMS,
             ()
         )
-
-    @plugin.event(
-        stage=plugin.Stages.STAGE_SETUP,
-    )
-    def _setup(self):
-        self.environment[
-            oengcommcons.ProvisioningEnv.POSTGRES_EXTRA_CONFIG_ITEMS
-        ] += self._pg_conf_items()
+        self.environment.setdefault(
+            self._pg_hba_refresh_flag,
+            False,
+        )
 
     @plugin.event(
         stage=plugin.Stages.STAGE_CUSTOMIZATION,
@@ -247,18 +167,27 @@ class Plugin(plugin.PluginBase):
         condition=lambda self:
             self.environment[
                 oenginecons.CoreEnv.ENABLE
-            ] and self.environment[
+        ] and self.environment[
                 oenginecons.EngineDBEnv.FIX_DB_CONFIGURATION
-            ] and self.environment[
+        ] and self.environment[
                 oenginecons.EngineDBEnv.INVALID_CONFIG_ITEMS
-            ]
+        ]
     )
     def _updatePGConf(self):
+        invalid_config_items = (
+            self.environment[oenginecons.EngineDBEnv.INVALID_CONFIG_ITEMS]
+            or []
+        )
+        needs_auth_update = any(
+            item.get('key') == 'password_encryption'
+            for item in invalid_config_items
+        ) and self._setupOwnsDB()
         self.logger.info(_('Updating PostgreSQL configuration'))
         with transaction.Transaction() as localtransaction:
             self._provisioning._updatePostgresConf(
                 transaction=localtransaction,
             )
+        self.environment[self._pg_hba_refresh_flag] = needs_auth_update
         self._provisioning.restartPG()
         dbutils = database.OvirtUtils(
             plugin=self,
@@ -273,6 +202,24 @@ class Plugin(plugin.PluginBase):
             raise RuntimeError(
                 database.getInvalidConfigItemsMessage(invalid_config_items)
             )
+
+    @plugin.event(
+        stage=plugin.Stages.STAGE_CLEANUP,
+        after=(
+            oengcommcons.Stages.SCRAM_ROTATION,
+        ),
+        condition=lambda self: (self.environment.get(
+            self._pg_hba_refresh_flag, False)),
+    )
+    def _updatePgHbaAfterScram(self):
+        self.logger.info(
+            _('Updating PostgreSQL client access configuration (pg_hba)'))
+        with transaction.Transaction() as localtransaction:
+            self._provisioning.addPgHbaDatabaseAccess(
+                transaction=localtransaction,
+            )
+        self._provisioning.reloadPgConf()
+        self.environment[self._pg_hba_refresh_flag] = False
 
     @plugin.event(
         stage=plugin.Stages.STAGE_VALIDATION,

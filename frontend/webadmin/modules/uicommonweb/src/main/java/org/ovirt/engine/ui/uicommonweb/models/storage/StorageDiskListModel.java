@@ -40,7 +40,7 @@ public class StorageDiskListModel extends SearchableListModel<StorageDomain, Dis
     }
 
     private void setUploadCommand(UICommand value) {
-        privateUploadCommand= value;
+        privateUploadCommand = value;
     }
 
     private UICommand privateCancelUploadCommand;
@@ -180,7 +180,7 @@ public class StorageDiskListModel extends SearchableListModel<StorageDomain, Dis
 
     private boolean isRemoveCommandAvailable(List<DiskImage> disks) {
         return disks.stream().noneMatch(d -> d.getImageStatus() == ImageStatus.LOCKED ||
-                (d.isOvfStore() && d.getImageStatus() != ImageStatus.ILLEGAL));
+                d.isOvfStore() && d.getImageStatus() != ImageStatus.ILLEGAL);
     }
 
     private boolean isUploadCommandAvailable() {

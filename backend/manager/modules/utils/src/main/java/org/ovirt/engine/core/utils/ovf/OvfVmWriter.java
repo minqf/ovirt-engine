@@ -8,6 +8,7 @@ import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.common.businessentities.Label;
 import org.ovirt.engine.core.common.businessentities.Snapshot;
 import org.ovirt.engine.core.common.businessentities.VM;
+import org.ovirt.engine.core.common.businessentities.VmDevice;
 import org.ovirt.engine.core.common.businessentities.VmStatic;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.FullEntityOvfData;
@@ -38,10 +39,10 @@ public class OvfVmWriter extends OvfOvirtWriter {
         super.writeGeneralData();
         _writer.writeElement(TEMPLATE_ID, vm.getVmtGuid().toString());
         _writer.writeElement(TEMPLATE_NAME, vm.getVmtName());
-        if (vm.getInstanceTypeId() != null ) {
+        if (vm.getInstanceTypeId() != null) {
             _writer.writeElement(INSTANCE_TYPE_ID, vm.getInstanceTypeId().toString());
         }
-        if (vm.getImageTypeId() != null ) {
+        if (vm.getImageTypeId() != null) {
             _writer.writeElement(IMAGE_TYPE_ID, vm.getImageTypeId().toString());
         }
         _writer.writeElement(IS_INITIALIZED, String.valueOf(vm.isInitialized()));
@@ -105,6 +106,17 @@ public class OvfVmWriter extends OvfOvirtWriter {
     protected void writeHardware() {
         super.writeHardware();
         writeSnapshotsSection();
+        writeNumaSection();
+    }
+
+    protected boolean isSpecialDevice(VmDevice vmDevice) {
+        return OvfReaderWriterUtils.isSpecialDevice(vmDevice.getDevice(), vmDevice.getType(), true);
+    }
+
+    @Override
+    protected void startNUMASection() {
+        _writer.writeStartElement("Section");
+        _writer.writeAttributeString(XSI_URI, "type", "ovf:NumaNodeSection_Type");
     }
 
     /**

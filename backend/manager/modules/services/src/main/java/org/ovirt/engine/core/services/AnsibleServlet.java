@@ -8,9 +8,8 @@ package org.ovirt.engine.core.services;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.net.HttpURLConnection;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.util.Iterator;
+import java.util.Map.Entry;
 
 import javax.inject.Inject;
 import javax.naming.InitialContext;
@@ -32,6 +31,9 @@ import org.ovirt.engine.core.common.utils.ansible.AnsibleReturnValue;
 import org.ovirt.engine.core.utils.EngineLocalConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class AnsibleServlet extends HttpServlet {
 
@@ -66,20 +68,18 @@ public class AnsibleServlet extends HttpServlet {
                 config.isProxyEnabled() ? config.getProxyHttpsPort() : config.getHttpsPort()
             );
 
-            Path variablesFile = null;
             try {
-                variablesFile = createVariablesFile(request);
                 AnsibleCommandConfig commandConfig = new AnsibleCommandConfig()
+                        .playbook(request.getParameter("playbook") + ".yml")
                         .variable("engine_url", engineUrl)
                         .variable("engine_token", token)
-                        .variable("engine_insecure", "true") // TODO: use CA
-                        .variableFilePath(variablesFile.toString())
-                        .playbook(request.getParameter("playbook") + ".yml");
+                        .variable("engine_insecure", "true"); // TODO: use CA
 
-                // Verify the ansible-playbook exists
-                Path playbook = Paths.get(commandConfig.playbook());
-                if (!playbook.toFile().exists()) {
-                    response.sendError(HttpURLConnection.HTTP_INTERNAL_ERROR, "Ansible playbook was not found.");
+                JsonNode jsonRequest = getJsonFromRequest(request);
+                Iterator<Entry<String, JsonNode>> jsonIterator = jsonRequest.fields();
+                while (jsonIterator.hasNext()) {
+                    Entry<String, JsonNode> entry = jsonIterator.next();
+                    commandConfig.variable(entry.getKey(), entry.getValue());
                 }
 
                 // Return from servlet:
@@ -102,19 +102,11 @@ public class AnsibleServlet extends HttpServlet {
                 log.error("Error while reading variables.", e);
                 response.setStatus(HttpURLConnection.HTTP_INTERNAL_ERROR);
                 asyncContext.complete();
-            } finally {
-                if (variablesFile != null) {
-                    try {
-                        Files.delete(variablesFile);
-                    } catch (IOException ex) {
-                        log.debug("Failed to delete temporary file '{}': {}", variablesFile, ex.getMessage());
-                    }
-                }
             }
         });
     }
 
-    private Path createVariablesFile(HttpServletRequest request) throws IOException {
+    private JsonNode getJsonFromRequest(HttpServletRequest request) throws IOException {
         BufferedReader body = request.getReader();
         StringBuilder buffer = new StringBuilder();
 
@@ -122,11 +114,7 @@ public class AnsibleServlet extends HttpServlet {
         while ((r = body.read()) != -1) {
             buffer.append((char) r);
         }
-
-        Path variablesFile = Files.createTempFile("ansible-variables", "");
-        Files.write(variablesFile, buffer.toString().getBytes());
-
-        return variablesFile;
+        return new ObjectMapper().readValue(buffer.toString(), JsonNode.class);
     }
 
     private String getTokenFromHeader(HttpServletRequest request) {

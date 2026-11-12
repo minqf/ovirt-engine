@@ -64,14 +64,16 @@ import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.migration.ConvergenceConfig;
 import org.ovirt.engine.core.common.migration.MigrationPolicy;
 import org.ovirt.engine.core.common.migration.NoMigrationPolicy;
+import org.ovirt.engine.core.common.migration.ParallelMigrationsType;
+import org.ovirt.engine.core.common.utils.CpuPinningHelper;
 import org.ovirt.engine.core.common.utils.NetworkCommonUtils;
+import org.ovirt.engine.core.common.utils.NumaPinningHelper;
 import org.ovirt.engine.core.common.utils.ObjectUtils;
 import org.ovirt.engine.core.common.vdscommands.MigrateStatusVDSCommandParameters;
 import org.ovirt.engine.core.common.vdscommands.MigrateVDSCommandParameters;
 import org.ovirt.engine.core.common.vdscommands.VDSCommandType;
 import org.ovirt.engine.core.common.vdscommands.VDSReturnValue;
 import org.ovirt.engine.core.compat.Guid;
-import org.ovirt.engine.core.compat.Version;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dao.DiskDao;
 import org.ovirt.engine.core.dao.VdsDao;
@@ -80,11 +82,15 @@ import org.ovirt.engine.core.dao.network.HostNetworkQosDao;
 import org.ovirt.engine.core.dao.network.InterfaceDao;
 import org.ovirt.engine.core.dao.network.NetworkDao;
 import org.ovirt.engine.core.dao.network.VmNetworkInterfaceDao;
+import org.ovirt.engine.core.vdsbroker.VdsManager;
+import org.ovirt.engine.core.vdsbroker.vdsbroker.MigrateStatusReturn;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @NonTransactiveCommandAttribute
 public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmCommandBase<T> {
+
+    private static int PARALLEL_MIGRATION_CONNECTION_BANDWIDTH_MBPS = 10 * 1024;
 
     private Logger log = LoggerFactory.getLogger(MigrateVmCommand.class);
 
@@ -117,6 +123,7 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
 
     /** Used to log the migration error. */
     private EngineError migrationErrorCode;
+    private String migrationErrorMessage;
 
     private Integer actualDowntime;
     private Object actualDowntimeLock = new Object();
@@ -139,6 +146,11 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
         return lockProperties.withScope(Scope.Command);
     }
 
+    @Override
+    protected boolean shouldBlockDuringBackup() {
+        return false;
+    }
+
     /**
      * this property is used for audit log events
      */
@@ -155,6 +167,8 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
         if (migrationErrorCode != null) {
             return " due to an Error: " +
                     backend.getVdsErrorsTranslator().translateErrorTextSingle(migrationErrorCode.name(), true);
+        } else if (migrationErrorMessage != null) {
+            return " due to an Error: " + migrationErrorMessage;
         }
         return " ";
     }
@@ -219,7 +233,7 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
 
     private List<Guid> getDestinationHostList() {
         List<Guid> destinationHostGuidList = new LinkedList<>();
-        if (getDestinationVdsId() != null){
+        if (getDestinationVdsId() != null) {
             destinationHostGuidList.add(getDestinationVdsId());
         }
         return destinationHostGuidList;
@@ -256,7 +270,7 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
             getParameters().setTotalMigrationTime(new Date());
             getParameters().resetStartTime();
 
-            BooleanSupplier attachMBSDisks =  () -> managedBlockStorageCommandUtil
+            BooleanSupplier attachMBSDisks = () -> managedBlockStorageCommandUtil
                     .attachManagedBlockStorageDisks(getVm(), vmHandler, getDestinationVds(), true);
             if (unplugPassthroughNics() && connectLunDisks(getDestinationVdsId()) &&
                     attachOrDetachMBSFromDest(attachMBSDisks) &&
@@ -329,7 +343,7 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
                 auditLogDirector.log(this, AuditLogType.VM_MIGRATION_NOT_ALL_VM_NICS_WERE_PLUGGED_BACK);
             }
 
-        } catch(Exception e) {
+        } catch (Exception e) {
             auditLogDirector.log(this, AuditLogType.VM_MIGRATION_PLUGGING_VM_NICS_FAILED);
             log.error("Failed to plug nics back after migration of vm {}: {}", getVmName(), e.getMessage());
             log.debug("Exception: ", e);
@@ -366,10 +380,12 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
             PlugAction plugAction) {
         ActivateDeactivateVmNicParameters parameters = new ActivateDeactivateVmNicParameters(nic, plugAction, false);
         parameters.setVmId(getParameters().getVmId());
+        parameters.setWithFailover(false);
         return parameters;
     }
 
     private boolean migrateVm() {
+        getVmManager().setLastStatusBeforeMigration(getVm().getStatus());
         setActionReturnValue(vdsBroker
                 .runAsyncVdsCommand(
                         VDSCommandType.Migrate,
@@ -389,17 +405,23 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
         Integer maxBandwidth = null;
 
         Boolean autoConverge = getAutoConverge();
-        Boolean migrateCompressed = getMigrateCompressed();
-        Boolean migrateEncrypted = getMigrateEncrypted();
+        Boolean migrateEncrypted = vmHandler.getMigrateEncrypted(getVm(), getCluster());
         Boolean enableGuestEvents = null;
-        Integer maxIncomingMigrations = null;
-        Integer maxOutgoingMigrations = null;
-
         MigrationPolicy clusterMigrationPolicy = convergenceConfigProvider.getMigrationPolicy(
                 getCluster().getMigrationPolicyId(),
                 getCluster().getCompatibilityVersion());
         MigrationPolicy effectiveMigrationPolicy = findEffectiveConvergenceConfig(clusterMigrationPolicy);
-        ConvergenceConfig convergenceConfig = getVm().getStatus() == VMStatus.Paused
+        boolean zeroCopy = effectiveMigrationPolicy.isZeroCopy()
+                && FeatureSupported.isParallelMigrationsSupported(getVm().getCompatibilityVersion())
+                && !migrateEncrypted;
+        Integer parallelMigrations = getParallelMigrations(zeroCopy);
+        Boolean migrateCompressed = parallelMigrations == null ? getMigrateCompressed() : false;
+        Integer maxIncomingMigrations = 1;
+        Integer maxOutgoingMigrations = 1;
+        List<String> cpuSets = null;
+        List<String> numaNodeSets = null;
+
+        ConvergenceConfig convergenceConfig = getVm().getStatus() == VMStatus.Paused || parallelMigrations != null
                 ? filterOutPostcopy(effectiveMigrationPolicy.getConfig())
                 : effectiveMigrationPolicy.getConfig();
         convergenceSchedule = ConvergenceSchedule.from(convergenceConfig).asMap();
@@ -407,11 +429,26 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
         maxBandwidth = getMaxBandwidth(clusterMigrationPolicy);
         if (!NoMigrationPolicy.ID.equals(effectiveMigrationPolicy.getId())) {
             autoConverge = effectiveMigrationPolicy.isAutoConvergence();
-            migrateCompressed = effectiveMigrationPolicy.isMigrationCompression();
+            migrateCompressed = parallelMigrations == null ? effectiveMigrationPolicy.isMigrationCompression() : false;
         }
         enableGuestEvents = effectiveMigrationPolicy.isEnableGuestEvents();
 
-        maxIncomingMigrations = maxOutgoingMigrations = effectiveMigrationPolicy.getMaxMigrations();
+        if (parallelMigrations == null) {
+            maxIncomingMigrations = maxOutgoingMigrations = effectiveMigrationPolicy.getMaxMigrations();
+        }
+        if (getVm().getCpuPinningPolicy().isExclusive()) {
+            String cpuPinning = getExclusiveCpuPinning(getDestinationVdsManager());
+            List<CpuPinningHelper.PinnedCpu> pinnedCpus = CpuPinningHelper.parseCpuPinning(cpuPinning);
+            cpuSets = new LinkedList<>();
+            for (CpuPinningHelper.PinnedCpu pin : pinnedCpus) {
+                for (Integer pCpu : pin.getpCpus()) {
+                    cpuSets.add(pCpu.toString());
+                    break;
+                }
+            }
+            String numaPinningString = vmHandler.createNumaPinningForExclusiveCpuPinning(getVm(), getDestinationVdsId());
+            numaNodeSets = NumaPinningHelper.parseNumaSets(numaPinningString);
+        }
 
         return new MigrateVDSCommandParameters(getVdsId(),
                 getVmId(),
@@ -428,10 +465,14 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
                 migrateEncrypted,
                 getDestinationVds().getConsoleAddress(),
                 maxBandwidth,
+                parallelMigrations,
+                zeroCopy,
                 convergenceSchedule,
                 enableGuestEvents,
                 maxIncomingMigrations,
-                maxOutgoingMigrations);
+                maxOutgoingMigrations,
+                cpuSets,
+                numaNodeSets);
     }
 
     private ConvergenceConfig filterOutPostcopy(ConvergenceConfig config) {
@@ -458,20 +499,28 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
      *
      * @see org.ovirt.engine.core.common.businessentities.MigrationBandwidthLimitType
      */
-    private Integer getMaxBandwidth(MigrationPolicy migrationPolicy) {
+    private Integer getMaxBandwidth() {
         switch (getCluster().getMigrationBandwidthLimitType()) {
             case AUTO:
                 return Optional.ofNullable(getAutoMaxBandwidth())
-                        .map(bandwidth -> bandwidth / migrationPolicy.getMaxMigrations() / 8)
+                        .map(bandwidth -> bandwidth / 8)
                         .orElse(null);
             case VDSM_CONFIG:
                 return null;
             case CUSTOM:
-                return getCluster().getCustomMigrationNetworkBandwidth() / migrationPolicy.getMaxMigrations() / 8;
+                return getCluster().getCustomMigrationNetworkBandwidth() / 8;
             default:
                 throw new IllegalStateException(
                         "Unexpected enum item: " + getCluster().getMigrationBandwidthLimitType());
         }
+    }
+
+    private Integer getMaxBandwidth(MigrationPolicy migrationPolicy) {
+        final Integer maxBandwidth = getMaxBandwidth();
+        if (maxBandwidth == null) {
+            return null;
+        }
+        return maxBandwidth / migrationPolicy.getMaxMigrations();
     }
 
     private Integer getAutoMaxBandwidth() {
@@ -526,6 +575,63 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
                 .orElse(null);
     }
 
+    /**
+     * @param enforce If true then use parallel migration even if they would be normally disabled.
+     * @return Number of parallel migrations to use in this migration or `null` to
+     *         not use parallel migrations.
+     */
+    private Integer getParallelMigrations(boolean enforce) {
+        if (!FeatureSupported.isParallelMigrationsSupported(getVm().getCompatibilityVersion())) {
+            return null;
+        }
+        Integer parallelMigrationsRequested = getParallelMigrationsFromVmOrCluster();
+        if (enforce && (parallelMigrationsRequested == ParallelMigrationsType.DISABLED.getValue()
+                || parallelMigrationsRequested == ParallelMigrationsType.AUTO.getValue())) {
+            parallelMigrationsRequested = ParallelMigrationsType.AUTO_PARALLEL.getValue();
+        }
+        Integer parallelMigrations = parallelMigrationsRequested;
+        if (parallelMigrationsRequested == ParallelMigrationsType.AUTO.getValue()
+                || parallelMigrationsRequested == ParallelMigrationsType.AUTO_PARALLEL.getValue()) {
+            parallelMigrations = calculateAutomaticParallelMigrations();
+            if (parallelMigrations == null
+                    && parallelMigrationsRequested == ParallelMigrationsType.AUTO_PARALLEL.getValue()) {
+                parallelMigrations = ParallelMigrationsType.MIN_PARALLEL_CONNECTIONS;
+            }
+        } else {
+            final int maxParallelMigrations = Math.max(ParallelMigrationsType.MIN_PARALLEL_CONNECTIONS,
+                    getVm().getNumOfCpus());
+            parallelMigrations = Math.min(parallelMigrationsRequested, maxParallelMigrations);
+        }
+        if (parallelMigrations == null || parallelMigrations <= 0) {
+            return null;
+        } else {
+            return Math.min(parallelMigrations, ParallelMigrationsType.MAX_PARALLEL_CONNECTIONS);
+        }
+    }
+
+    private Integer getParallelMigrationsFromVmOrCluster() {
+        Integer parallelMigrations = getVm().getParallelMigrations();
+        if (parallelMigrations == null) {
+            parallelMigrations = getCluster().getParallelMigrations();
+        }
+        return parallelMigrations;
+    }
+
+    private Integer calculateAutomaticParallelMigrations() {
+        final Integer maxBandwidth = getMaxBandwidth();
+        if (maxBandwidth != null) {
+            final Integer networkLimit = maxBandwidth * 8 / PARALLEL_MIGRATION_CONNECTION_BANDWIDTH_MBPS;
+            final Integer cpuLimit = getVm().getNumOfCpus();
+            Integer parallelMigrations = Math.min(networkLimit, cpuLimit);
+            if (parallelMigrations < ParallelMigrationsType.MIN_PARALLEL_CONNECTIONS) {
+                parallelMigrations = null;
+            }
+            return parallelMigrations;
+        } else {
+            return null;
+        }
+    }
+
     private MigrationPolicy findEffectiveConvergenceConfig(MigrationPolicy clusterMigrationPolicy) {
         Guid overriddenPolicyId = getVm().getMigrationPolicyId();
         if (overriddenPolicyId == null) {
@@ -539,7 +645,9 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
     public void runningSucceded() {
         try {
             queryDowntime();
-            vmDynamicDao.clearMigratingToVds(getVmId());
+            addNumaPinningForDedicated(getDestinationVdsId());
+            setExclusiveCpuPinning(getDestinationVdsManager());
+            vmDynamicDao.clearMigratingToVdsAndSetDynamicPinning(getVmId(), getVm().getCurrentCpuPinning(), getVm().getCurrentNumaPinning());
             updateVmAfterMigrationToDifferentCluster();
             plugPassthroughNics();
             initParametersForExternalNetworks(destinationVds, true);
@@ -559,6 +667,7 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
                 log.error("Failed to detach managed block disks from destination host");
             }
         } finally {
+            getDestinationVdsManager().unpinVmCpus(getVmId());
             super.runningFailed();
         }
     }
@@ -572,7 +681,10 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
             VDSReturnValue retVal = runVdsCommand(VDSCommandType.MigrateStatus,
                     new MigrateStatusVDSCommandParameters(getDestinationVdsId(), getVmId()));
             if (retVal != null && retVal.getReturnValue() != null) {
-                setActualDowntime((int) retVal.getReturnValue());
+                Integer downtime = ((MigrateStatusReturn) retVal.getReturnValue()).getDowntime();
+                if (downtime != null) {
+                    setActualDowntime(downtime);
+                }
             }
         } catch (EngineException e) {
             migrationErrorCode = e.getErrorCode();
@@ -614,27 +726,6 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
         }
 
         return Config.getValue(ConfigValues.DefaultMigrationCompression);
-    }
-
-    private Boolean getMigrateEncrypted() {
-        Version version = getVm().getCompatibilityVersion();
-        if (version == null) {
-            return null;
-        }
-
-        if (!FeatureSupported.isMigrateEncryptedSupported(version)) {
-            return null;
-        }
-
-        if (getVm().getMigrateEncrypted() != null) {
-            return getVm().getMigrateEncrypted();
-        }
-
-        if (getCluster().getMigrateEncrypted() != null) {
-            return getCluster().getMigrateEncrypted();
-        }
-
-        return Config.getValue(ConfigValues.DefaultMigrationEncryption);
     }
 
     private int getMaximumMigrationDowntime() {
@@ -779,6 +870,10 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
     }
 
     protected AuditLogType getAuditLogForMigrationFailure() {
+        if (getVm().getOrigin() == OriginType.KUBEVIRT) {
+            return AuditLogType.VM_MIGRATION_FAILED;
+        }
+
         if (getDestinationVds() == null) {
             auditLogDirector.log(this, AuditLogType.VM_MIGRATION_NO_VDS_TO_MIGRATE_TO);
         }
@@ -836,10 +931,11 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
 
         if (getParameters().getTargetClusterId() != null) {
             ChangeVmClusterValidator changeVmClusterValidator = ChangeVmClusterValidator.create(
-                    this,
+                    getVm(),
                     getParameters().getTargetClusterId(),
-                    getVm().getCustomCompatibilityVersion());
-            if (!changeVmClusterValidator.validate()) {
+                    getVm().getCustomCompatibilityVersion(),
+                    getUserId());
+            if (!validate(changeVmClusterValidator.validate())) {
                 return false;
             }
         }
@@ -910,6 +1006,7 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
         if (getVm() != null && getVm().getStatus() == VMStatus.Up) {
             // this will clean all VF reservations made in {@link #initVdss}.
             cleanupPassthroughVnics(getDestinationVdsId());
+            getDestinationVdsManager().unpinVmCpus(getVmId());
             super.rerun();
         } else {
             // vm went down on the destination and source, migration failed.
@@ -932,7 +1029,11 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
     protected void determineMigrationFailureForAuditLog() {
         if (getVm() != null && getVm().getStatus() == VMStatus.Up) {
             try {
-                runVdsCommand(VDSCommandType.MigrateStatus, new MigrateStatusVDSCommandParameters(getVdsId(), getVmId()));
+                VDSReturnValue retVal = runVdsCommand(VDSCommandType.MigrateStatus,
+                        new MigrateStatusVDSCommandParameters(getVdsId(), getVmId()));
+                if (retVal != null && retVal.getReturnValue() != null) {
+                    migrationErrorMessage = ((MigrateStatusReturn) retVal.getReturnValue()).getMessage();
+                }
             } catch (EngineException e) {
                 migrationErrorCode = e.getErrorCode();
             }
@@ -1038,5 +1139,9 @@ public class MigrateVmCommand<T extends MigrateVmParameters> extends RunVmComman
         } finally {
             super.reportCompleted();
         }
+    }
+
+    private VdsManager getDestinationVdsManager() {
+        return resourceManager.getVdsManager(getDestinationVdsId());
     }
 }

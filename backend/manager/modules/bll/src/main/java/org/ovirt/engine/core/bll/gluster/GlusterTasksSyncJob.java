@@ -19,6 +19,7 @@ import org.ovirt.engine.core.bll.gluster.tasks.GlusterTaskUtils;
 import org.ovirt.engine.core.bll.gluster.tasks.GlusterTasksService;
 import org.ovirt.engine.core.bll.interfaces.BackendInternal;
 import org.ovirt.engine.core.bll.job.ExecutionHandler;
+import org.ovirt.engine.core.bll.scheduling.OnTimerMethodAnnotation;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.ActionReturnValue;
@@ -45,13 +46,12 @@ import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dal.job.ExecutionMessageDirector;
 import org.ovirt.engine.core.dao.gluster.GlusterDBUtils;
 import org.ovirt.engine.core.utils.threadpool.ThreadPoolUtil;
-import org.ovirt.engine.core.utils.timer.OnTimerMethodAnnotation;
 import org.ovirt.engine.core.utils.transaction.TransactionSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @Singleton
-public class GlusterTasksSyncJob extends GlusterJob  {
+public class GlusterTasksSyncJob extends GlusterJob {
     private static final Logger log = LoggerFactory.getLogger(GlusterTasksSyncJob.class);
 
     @Inject
@@ -101,9 +101,9 @@ public class GlusterTasksSyncJob extends GlusterJob  {
 
     private void updateTasksInCluster(final Cluster cluster, final Map<Guid, GlusterAsyncTask> runningTasks) {
 
-        for  (Entry<Guid, GlusterAsyncTask> entry :  runningTasks.entrySet()) {
+        for (Entry<Guid, GlusterAsyncTask> entry : runningTasks.entrySet()) {
             Guid taskId = entry.getKey();
-            final GlusterAsyncTask task =  entry.getValue();
+            final GlusterAsyncTask task = entry.getValue();
 
             List<Step> steps = stepDao.getStepsByExternalId(taskId);
 
@@ -132,14 +132,14 @@ public class GlusterTasksSyncJob extends GlusterJob  {
         StepEnum step = task.getType().getStep();
         ActionType actionType;
         switch (step) {
-        case REBALANCING_VOLUME:
-            actionType = ActionType.StartRebalanceGlusterVolume;
-            break;
-        case REMOVING_BRICKS:
-            actionType = ActionType.StartRemoveGlusterVolumeBricks;
-            break;
-        default:
-            actionType = ActionType.Unknown;
+            case REBALANCING_VOLUME:
+                actionType = ActionType.StartRebalanceGlusterVolume;
+                break;
+            case REMOVING_BRICKS:
+                actionType = ActionType.StartRemoveGlusterVolumeBricks;
+                break;
+            default:
+                actionType = ActionType.Unknown;
         }
 
         String volumeName = task.getTaskParameters().getVolumeName();
@@ -194,7 +194,7 @@ public class GlusterTasksSyncJob extends GlusterJob  {
 
         ActionReturnValue result = backendInternal.runInternalAction(ActionType.AddInternalJob,
                 new AddInternalJobParameters(ExecutionMessageDirector.resolveJobMessage(actionType, glusterTaskUtils.getMessageMap(cluster, task)),
-                        actionType, true, VdcObjectType.GlusterVolume, vol.getId()) );
+                        actionType, true, VdcObjectType.GlusterVolume, vol.getId()));
         if (!result.getSucceeded()) {
             //log and return
             throw new EngineException(result.getFault().getError());
@@ -251,16 +251,16 @@ public class GlusterTasksSyncJob extends GlusterJob  {
 
         AuditLogType logType;
         switch (task.getType()) {
-        case REBALANCE:
-            logType = AuditLogType.GLUSTER_VOLUME_REBALANCE_START_DETECTED_FROM_CLI;
-            break;
-        case REMOVE_BRICK:
-            logType = AuditLogType.START_REMOVING_GLUSTER_VOLUME_BRICKS_DETECTED_FROM_CLI;
-            values.put(GlusterConstants.BRICK, StringUtils.join(task.getTaskParameters().getBricks(), ','));
-            break;
-         default:
-            logType = AuditLogType.UNASSIGNED;
-            break;
+            case REBALANCE:
+                logType = AuditLogType.GLUSTER_VOLUME_REBALANCE_START_DETECTED_FROM_CLI;
+                break;
+            case REMOVE_BRICK:
+                logType = AuditLogType.START_REMOVING_GLUSTER_VOLUME_BRICKS_DETECTED_FROM_CLI;
+                values.put(GlusterConstants.BRICK, StringUtils.join(task.getTaskParameters().getBricks(), ','));
+                break;
+            default:
+                logType = AuditLogType.UNASSIGNED;
+                break;
         }
         logUtil.logAuditMessage(cluster.getId(), cluster.getName(), vol, null, logType, values);
     }
@@ -268,15 +268,15 @@ public class GlusterTasksSyncJob extends GlusterJob  {
     private void logTaskStoppedFromCLI(Step step, GlusterVolumeEntity vol) {
         AuditLogType logType;
         switch (step.getStepType()) {
-        case REBALANCING_VOLUME:
-            logType = AuditLogType.GLUSTER_VOLUME_REBALANCE_NOT_FOUND_FROM_CLI;
-            break;
-        case REMOVING_BRICKS:
-            logType = AuditLogType.REMOVE_GLUSTER_VOLUME_BRICKS_NOT_FOUND_FROM_CLI;
-             break;
-         default:
-            logType = AuditLogType.UNASSIGNED;
-            break;
+            case REBALANCING_VOLUME:
+                logType = AuditLogType.GLUSTER_VOLUME_REBALANCE_NOT_FOUND_FROM_CLI;
+                break;
+            case REMOVING_BRICKS:
+                logType = AuditLogType.REMOVE_GLUSTER_VOLUME_BRICKS_NOT_FOUND_FROM_CLI;
+                break;
+            default:
+                logType = AuditLogType.UNASSIGNED;
+                break;
         }
         logUtil.logAuditMessage(vol.getClusterId(), vol.getClusterName(), vol, null, logType, null);
     }
@@ -311,7 +311,7 @@ public class GlusterTasksSyncJob extends GlusterJob  {
         log.debug("Tasks to be cleaned up in db '{}'", tasksNotRunning);
 
         for (Guid taskId: tasksNotRunning) {
-            GlusterVolumeEntity vol= volumeDao.getVolumeByGlusterTask(taskId);
+            GlusterVolumeEntity vol = volumeDao.getVolumeByGlusterTask(taskId);
             if (vol != null
                     && (vol.getStatus() != GlusterStatus.UP || !runningTasksInClusterMap.keySet()
                             .contains(vol.getClusterId()))) {
@@ -325,7 +325,7 @@ public class GlusterTasksSyncJob extends GlusterJob  {
             //will mark job ended with status unknown.
             List<Step> steps = stepDao.getStepsByExternalId(taskId);
             Map<String, String> values = new HashMap<>();
-            values.put(GlusterConstants.CLUSTER, vol == null ? "" :vol.getClusterName());
+            values.put(GlusterConstants.CLUSTER, vol == null ? "" : vol.getClusterName());
             values.put(GlusterConstants.VOLUME, vol == null ? "" : vol.getName());
             values.put(GlusterConstants.JOB_STATUS, JobExecutionStatus.UNKNOWN.toString());
             values.put(GlusterConstants.JOB_INFO, " ");

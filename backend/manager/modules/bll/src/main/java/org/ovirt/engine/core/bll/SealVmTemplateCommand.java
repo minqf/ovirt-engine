@@ -75,7 +75,7 @@ public class SealVmTemplateCommand<T extends SealVmTemplateParameters> extends V
 
     private SealDisksVDSCommandParameters buildSealDisksVDSCommandParameters() {
         SealDisksVDSCommandParameters parameters = new SealDisksVDSCommandParameters();
-        parameters.setTemplateId(getParameters().getVmTemplateId());
+        parameters.setEntityId(getParameters().getVmTemplateId());
         parameters.setJobId(getParameters().getHostJobId());
         parameters.setStoragePoolId(getDiskImages().get(0).getStoragePoolId());
         getDiskImages().forEach(parameters::addImage);

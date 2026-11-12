@@ -42,7 +42,7 @@ import com.gwtplatform.mvp.shared.proxy.PlaceRequest.Builder;
  * @param <P> Proxy type (extends TabContentProxyPlace)
  */
 public abstract class AbstractSubTabPresenter<T, M extends ListWithDetailsModel, D extends HasEntity,
-  V extends AbstractSubTabPresenter.ViewDef<T>, P extends TabContentProxyPlace<?>>
+    V extends AbstractSubTabPresenter.ViewDef<T>, P extends TabContentProxyPlace<?>>
         extends AbstractTabPresenter<V, P> implements PlaceTransitionHandler, MainSelectedItemChangeListener<T> {
 
     @GenEvent
@@ -251,9 +251,9 @@ public abstract class AbstractSubTabPresenter<T, M extends ListWithDetailsModel,
                 // Reveal presenter only when there is something selected in the main tab
                 getProxy().manualReveal(this);
             } else if ("".equals(fragmentNameValue) ||
-                    (!"".equals(fragmentNameValue) &&
+                    !"".equals(fragmentNameValue) &&
                             getMainModel().getDefaultSearchString().equals(getMainModel().getSearchString()) &&
-                            getMainModel().getItems() != null)) {
+                            getMainModel().getItems() != null) {
                 // Show the main view in the following cases:
                 // 1. No fragment is provided and thus we can't locate the entity to show.
                 // 2. A fragment is provided but it is not a valid entity. This is the case if the value is not empty

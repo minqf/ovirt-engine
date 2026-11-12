@@ -115,9 +115,9 @@ public class MultipleHostsPopupView extends AbstractModelBoundPopupView<Multiple
             }
         }, constants.glusterPeerAddress(), "120px"); //$NON-NLS-1$
         Column<EntityModel, String> addressColumn = new Column<EntityModel, String>(new TextInputCell()) {
-                    @Override
-                    public String getValue(EntityModel object) {
-                        return ((HostDetailModel) object.getEntity()).getAddress();
+            @Override
+            public String getValue(EntityModel object) {
+                return ((HostDetailModel) object.getEntity()).getAddress();
             }
         };
         hostsTable.addColumn(addressColumn, constants.ipHostImportCluster(), "180px"); //$NON-NLS-1$
@@ -137,9 +137,9 @@ public class MultipleHostsPopupView extends AbstractModelBoundPopupView<Multiple
         hostsTable.addColumn(new AbstractEntityModelTextColumn<HostDetailModel>() {
             @Override
             public String getText(HostDetailModel hostModel) {
-                return hostModel.getFingerprint();
+                return hostModel.getSshPublicKey();
             }
-        }, constants.hostsPopupFingerprint(), "300px"); //$NON-NLS-1$
+        }, constants.hostsPopupSshPublicKey(), "300px"); //$NON-NLS-1$
 
     }
 

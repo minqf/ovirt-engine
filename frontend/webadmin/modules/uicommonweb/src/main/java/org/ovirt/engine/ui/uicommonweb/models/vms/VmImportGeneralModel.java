@@ -5,6 +5,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
+import org.ovirt.engine.core.common.businessentities.Cluster;
+import org.ovirt.engine.core.common.businessentities.OriginType;
 import org.ovirt.engine.core.common.businessentities.QuotaEnforcementTypeEnum;
 import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VM;
@@ -15,12 +17,16 @@ import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.core.common.queries.SearchParameters;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.StringHelper;
+import org.ovirt.engine.core.compat.Version;
 import org.ovirt.engine.ui.frontend.Frontend;
 import org.ovirt.engine.ui.uicommonweb.dataprovider.AsyncDataProvider;
 import org.ovirt.engine.ui.uicommonweb.models.EntityModel;
 import org.ovirt.engine.ui.uicommonweb.models.ListModel;
+import org.ovirt.engine.ui.uicommonweb.models.clusters.ClusterListModel;
 import org.ovirt.engine.ui.uicompat.ConstantsManager;
 import org.ovirt.engine.ui.uicompat.EnumTranslator;
+import org.ovirt.engine.ui.uicompat.Event;
+import org.ovirt.engine.ui.uicompat.EventArgs;
 import org.ovirt.engine.ui.uicompat.PropertyChangedEventArgs;
 import org.ovirt.engine.ui.uicompat.UIConstants;
 
@@ -34,7 +40,6 @@ public class VmImportGeneralModel extends AbstractGeneralModel<ImportVmData> {
     private String description;
     private String template;
     private String definedMemory;
-    private String guestFreeCachedBufferedMemInfo;
     private String minAllocatedMemory;
     private String os;
     private String defaultDisplayType;
@@ -63,6 +68,7 @@ public class VmImportGeneralModel extends AbstractGeneralModel<ImportVmData> {
     private String optimizedForSystemProfile;
     private Map<Guid, String> vmNamesMap;
     private Guid editedVmId;
+    private Cluster cluster;
 
     private ImportSource source;
 
@@ -91,8 +97,36 @@ public class VmImportGeneralModel extends AbstractGeneralModel<ImportVmData> {
     protected void onEntityChanged() {
         super.onEntityChanged();
         if (getEntity() != null) {
+            updateOsList();
             updateProperties();
         }
+    }
+
+    @Override
+    public void eventRaised(Event<? extends EventArgs> ev, Object sender, EventArgs args) {
+        super.eventRaised(ev, sender, args);
+        if (sender instanceof ClusterListModel) {
+            cluster = (Cluster) ((ClusterListModel) sender).getSelectedItem();
+            updateOsList();
+        }
+    }
+
+    private void updateOsList() {
+        if (getEntity() == null || getEntity().getVm() == null || cluster == null) {
+            return;
+        }
+
+        VM vm = getEntity().getVm();
+        Version version = vm.getCompatibilityVersion() != null ? vm.getCompatibilityVersion() : cluster.getCompatibilityVersion();
+
+        if (version == null) {
+            return;
+        }
+
+        setCompatibilityVersion(version.toString());
+        getOperatingSystems().setItems(
+                AsyncDataProvider.getInstance()
+                        .getSupportedOsIds(vm.getClusterArch(), version));
     }
 
     public String getOrigin() {
@@ -132,7 +166,6 @@ public class VmImportGeneralModel extends AbstractGeneralModel<ImportVmData> {
         super.updateProperties(vm.getId());
         addVmOriginalNameToMapIfMissing();
         getName().setEntity(getVmEditedName());
-        getOperatingSystems().setItems(AsyncDataProvider.getInstance().getOsIds(vm.getClusterArch()));
         setDescription(vm.getVmDescription());
         setQuotaName(vm.getQuotaName() != null ? vm.getQuotaName() : ""); //$NON-NLS-1$
         setQuotaAvailable(vm.getQuotaEnforcementType() != null
@@ -143,17 +176,13 @@ public class VmImportGeneralModel extends AbstractGeneralModel<ImportVmData> {
         setDefinedMemory(vm.getVmMemSizeMb() + " MB"); //$NON-NLS-1$
         setMinAllocatedMemory(vm.getMinAllocatedMem() + " MB"); //$NON-NLS-1$
 
-        if(vm.isRunningOrPaused() && vm.getGuestMemoryBuffered() != null && vm.getGuestMemoryCached() != null  && vm.getGuestMemoryFree() != null) {
-            setGuestFreeCachedBufferedMemInfo((vm.getGuestMemoryFree() / 1024L) + " / " // $NON-NLS-1$
-                    + (vm.getGuestMemoryBuffered() / 1024L)  + " / " // $NON-NLS-1$
-                    + (vm.getGuestMemoryCached() / 1024L) + " MB"); //$NON-NLS-1$
-        } else {
-            setGuestFreeCachedBufferedMemInfo(null); // Handled in form
-        }
-
         setOS(AsyncDataProvider.getInstance().getOsName(vm.getVmOsId()));
 
-        setDefaultDisplayType(translator.translate(vm.getDefaultDisplayType()));
+        if (vm.getOrigin() == null || vm.getOrigin() == OriginType.VMWARE) {
+            setDefaultDisplayType(translator.translate(null));
+        } else {
+            setDefaultDisplayType(translator.translate(vm.getDefaultDisplayType()));
+        }
 
         setIsHighlyAvailable(vm.isAutoStartup());
 
@@ -181,10 +210,6 @@ public class VmImportGeneralModel extends AbstractGeneralModel<ImportVmData> {
 
         setHasCustomProperties(!StringHelper.isNullOrEmpty(vm.getCustomProperties()));
         setCustomProperties(getHasCustomProperties() ? constants.configured() : constants.notConfigured());
-
-        setCompatibilityVersion(vm.getCompatibilityVersion() != null
-                ? vm.getCompatibilityVersion().toString()
-                : ""); //$NON-NLS-1$
 
         setVmId(vm.getId().toString());
         setFqdn(vm.getFqdn());
@@ -254,17 +279,6 @@ public class VmImportGeneralModel extends AbstractGeneralModel<ImportVmData> {
         if (!Objects.equals(definedMemory, value)) {
             definedMemory = value;
             onPropertyChanged(new PropertyChangedEventArgs("DefinedMemory")); //$NON-NLS-1$
-        }
-    }
-
-    public String getGuestFreeCachedBufferedMemInfo() {
-        return guestFreeCachedBufferedMemInfo;
-    }
-
-    public void setGuestFreeCachedBufferedMemInfo(String value) {
-        if (!Objects.equals(guestFreeCachedBufferedMemInfo, value)) {
-            guestFreeCachedBufferedMemInfo = value;
-            onPropertyChanged(new PropertyChangedEventArgs("GuestFreeCachedBufferedMemInfo")); //$NON-NLS-1$
         }
     }
 

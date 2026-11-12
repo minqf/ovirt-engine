@@ -39,6 +39,8 @@ public class CopyImageGroupVolumesDataCommand<T extends CopyImageGroupVolumesDat
     @Inject
     private DiskImageDao diskImageDao;
     @Inject
+    private ImagesHandler imagesHandler;
+    @Inject
     @Typed(SerialChildCommandsExecutionCallback.class)
     private Instance<SerialChildCommandsExecutionCallback> callbackProvider;
 
@@ -110,37 +112,53 @@ public class CopyImageGroupVolumesDataCommand<T extends CopyImageGroupVolumesDat
         return true;
     }
 
-    private void copyVolumeData(Guid image, int imageIndex) {
+    private void copyVolumeData(Guid imageId, int imageIndex) {
         LocationInfo destLocationInfo;
 
         if (getParameters().getDestImages().isEmpty()) {
             destLocationInfo = buildImageLocationInfo(getParameters().getDestDomain(),
                             getParameters().getImageGroupID(),
-                            image);
+                            imageId,
+                            getParameters().isLive());
         } else {
             destLocationInfo = buildImageLocationInfo(getParameters().getDestDomain(),
                     getParameters().getDestImageGroupId(),
-                    getParameters().getDestImages().get(imageIndex).getImageId());
+                    getParameters().getDestImages().get(imageIndex).getImageId(),
+                    getParameters().isLive());
         }
 
         CopyDataCommandParameters parameters = new CopyDataCommandParameters(getParameters().getStoragePoolId(),
-                buildImageLocationInfo(getParameters().getSrcDomain(), getParameters().getImageGroupID(), image),
+                buildImageLocationInfo(getParameters().getSrcDomain(),
+                        getParameters().getImageGroupID(),
+                        imageId,
+                        getParameters().isLive()),
                 destLocationInfo,
                 false);
+        parameters.setVdsId(getParameters().getVdsId());
+        parameters.setVdsRunningOn(getParameters().getVdsRunningOn());
+
+        if (imagesHandler.shouldUseDiskBitmaps(getStoragePool().getCompatibilityVersion(), getDiskImage(imageId))) {
+            parameters.setCopyBitmaps(true);
+        }
 
         parameters.setEndProcedure(EndProcedure.COMMAND_MANAGED);
         parameters.setParentCommand(getActionType());
         parameters.setParentParameters(getParameters());
-        parameters.setJobWeight(getParameters().getOperationsJobWeight().get(image.toString()));
+        parameters.setJobWeight(getParameters().getOperationsJobWeight().get(imageId.toString()));
         runInternalActionWithTasksContext(ActionType.CopyData, parameters);
+    }
+
+    private DiskImage getDiskImage(Guid imageId) {
+        DiskImage diskImage = diskImageDao.get(imageId);
+        return diskImage != null ? diskImage : diskImageDao.getSnapshotById(imageId);
     }
 
     @Override
     public void handleFailure() {
     }
 
-    private LocationInfo buildImageLocationInfo(Guid domId, Guid imageGroupId, Guid imageId) {
-        return new VdsmImageLocationInfo(domId, imageGroupId, imageId, null);
+    private LocationInfo buildImageLocationInfo(Guid domId, Guid imageGroupId, Guid imageId, boolean prepared) {
+        return new VdsmImageLocationInfo(domId, imageGroupId, imageId, null, prepared);
     }
 }
 

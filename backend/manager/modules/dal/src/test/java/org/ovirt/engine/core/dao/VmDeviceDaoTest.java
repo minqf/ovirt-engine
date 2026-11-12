@@ -149,7 +149,7 @@ public class VmDeviceDaoTest extends BaseGenericDaoTestCase<VmDeviceId, VmDevice
                 dao.getVmDeviceByVmIdTypeAndDevice(EXISTING_VM_ID,
                         VmDeviceGeneralType.BALLOON,
                         VmDeviceType.MEMBALLOON.getName());
-        assertTrue((queryRes && !devices.isEmpty()) || (!queryRes && devices.isEmpty()));
+        assertTrue(queryRes && !devices.isEmpty() || !queryRes && devices.isEmpty());
     }
 
     /**
@@ -165,31 +165,6 @@ public class VmDeviceDaoTest extends BaseGenericDaoTestCase<VmDeviceId, VmDevice
         dao.clearDeviceAddress(getExistingEntityId().getDeviceId());
         assertTrue(StringUtils.isBlank(dao.get(getExistingEntityId()).getAddress()));
 
-    }
-
-    @Test
-    public void testUpdateDeviceRuntimeInfo() {
-        VmDevice vmDevice = dao.get(getExistingEntityId());
-        assertTrue(StringUtils.isNotBlank(vmDevice.getAddress()));
-        String newAddressValue = "newaddr";
-        vmDevice.setAddress(newAddressValue);
-        String newAlias = "newalias";
-        vmDevice.setAlias(newAlias);
-        dao.updateRuntimeInfo(vmDevice);
-        dao.get(getExistingEntityId());
-        assertEquals(newAddressValue, vmDevice.getAddress());
-        assertEquals(newAlias, vmDevice.getAlias());
-    }
-
-    @Test
-    public void testUpdateHotPlugDisk() {
-        VmDevice vmDevice = dao.get(getExistingEntityId());
-        boolean newPluggedValue = !vmDevice.isPlugged();
-        assertTrue(StringUtils.isNotBlank(vmDevice.getAddress()));
-        vmDevice.setPlugged(newPluggedValue);
-        dao.updateHotPlugDisk(vmDevice);
-        dao.get(getExistingEntityId());
-        assertEquals(vmDevice.isPlugged(), newPluggedValue);
     }
 
     @Test

@@ -30,10 +30,11 @@ import org.ovirt.engine.core.dao.VdsStaticDao;
 import org.ovirt.engine.core.dao.VmStaticDao;
 import org.ovirt.engine.core.dao.scheduling.AffinityGroupDao;
 
-public abstract class AffinityGroupCRUDCommand extends CommandBase<AffinityGroupCRUDParameters> {
+public abstract class AffinityGroupCRUDCommand <T extends AffinityGroupCRUDParameters> extends CommandBase<T> {
 
-    private static final String Entity_VM = "VM";
-    private static final String Entity_VDS = "VDS";
+    protected static final String Entity_VM = "VM";
+    protected static final String Entity_VDS = "VDS";
+    protected static final String Entity_LABEL = "LABEL";
 
     @Inject
     private AuditLogDirector auditLogDirector;
@@ -46,10 +47,12 @@ public abstract class AffinityGroupCRUDCommand extends CommandBase<AffinityGroup
     private AffinityGroupDao affinityGroupDao;
     @Inject
     private LabelDao labelDao;
+    @Inject
+    private AffinityValidator affinityValidator;
 
     AffinityGroup affinityGroup = null;
 
-    public AffinityGroupCRUDCommand(AffinityGroupCRUDParameters parameters, CommandContext cmdContext) {
+    public AffinityGroupCRUDCommand(T parameters, CommandContext cmdContext) {
         super(parameters, cmdContext);
     }
 
@@ -178,7 +181,7 @@ public abstract class AffinityGroupCRUDCommand extends CommandBase<AffinityGroup
         affinityGroups.removeIf(g -> g.getId().equals(affinityGroupCopy.getId()));
         affinityGroups.add(affinityGroupCopy);
 
-        AffinityValidator.Result result = AffinityValidator.checkAffinityGroupConflicts(affinityGroups);
+        AffinityValidator.Result result = affinityValidator.checkAffinityGroupConflicts(affinityGroups);
         if (result.getValidationResult().isValid()) {
             result.getLoggingMethod().accept(this, auditLogDirector);
         }
@@ -201,7 +204,7 @@ public abstract class AffinityGroupCRUDCommand extends CommandBase<AffinityGroup
 
     @Override
     public Guid getClusterId() {
-        return getAffinityGroup().getClusterId();
+        return getAffinityGroup() != null ? getAffinityGroup().getClusterId() : Guid.Empty;
     }
 
     @Override

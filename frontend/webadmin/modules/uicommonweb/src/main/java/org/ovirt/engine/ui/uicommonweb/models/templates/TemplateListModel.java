@@ -13,12 +13,14 @@ import org.ovirt.engine.core.common.ActionUtils;
 import org.ovirt.engine.core.common.action.ActionParametersBase;
 import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
+import org.ovirt.engine.core.common.action.AttachEntityToTagParameters;
 import org.ovirt.engine.core.common.action.ExportOvaParameters;
 import org.ovirt.engine.core.common.action.MoveOrCopyParameters;
 import org.ovirt.engine.core.common.action.UpdateVmTemplateParameters;
 import org.ovirt.engine.core.common.action.VmTemplateManagementParameters;
 import org.ovirt.engine.core.common.businessentities.DisplayType;
 import org.ovirt.engine.core.common.businessentities.StoragePool;
+import org.ovirt.engine.core.common.businessentities.Tags;
 import org.ovirt.engine.core.common.businessentities.VDSStatus;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VmEntityType;
@@ -37,6 +39,7 @@ import org.ovirt.engine.ui.frontend.Frontend;
 import org.ovirt.engine.ui.uicommonweb.BaseCommandTarget;
 import org.ovirt.engine.ui.uicommonweb.Cloner;
 import org.ovirt.engine.ui.uicommonweb.IconUtils;
+import org.ovirt.engine.ui.uicommonweb.TagAssigningModel;
 import org.ovirt.engine.ui.uicommonweb.UICommand;
 import org.ovirt.engine.ui.uicommonweb.builders.BuilderExecutor;
 import org.ovirt.engine.ui.uicommonweb.builders.template.VersionNameUnitToVmBaseBuilder;
@@ -45,12 +48,15 @@ import org.ovirt.engine.ui.uicommonweb.builders.vm.UnitToGraphicsDeviceParamsBui
 import org.ovirt.engine.ui.uicommonweb.dataprovider.AsyncDataProvider;
 import org.ovirt.engine.ui.uicommonweb.help.HelpTag;
 import org.ovirt.engine.ui.uicommonweb.models.ConfirmationModel;
+import org.ovirt.engine.ui.uicommonweb.models.ConfirmationModelChain;
 import org.ovirt.engine.ui.uicommonweb.models.EntityModel;
 import org.ovirt.engine.ui.uicommonweb.models.HasEntity;
 import org.ovirt.engine.ui.uicommonweb.models.SearchStringMapping;
 import org.ovirt.engine.ui.uicommonweb.models.TabName;
 import org.ovirt.engine.ui.uicommonweb.models.configure.PermissionListModel;
 import org.ovirt.engine.ui.uicommonweb.models.storage.ImportCloneModel;
+import org.ovirt.engine.ui.uicommonweb.models.tags.TagListModel;
+import org.ovirt.engine.ui.uicommonweb.models.tags.TagModel;
 import org.ovirt.engine.ui.uicommonweb.models.vms.ExportOvaModel;
 import org.ovirt.engine.ui.uicommonweb.models.vms.ExportVmModel;
 import org.ovirt.engine.ui.uicommonweb.models.vms.IconCache;
@@ -74,7 +80,7 @@ import org.ovirt.engine.ui.uicompat.UIMessages;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
 
-public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
+public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> implements TagAssigningModel<VmTemplate> {
 
     public static final String CMD_CONFIGURE_TEMPLATES_TO_IMPORT = "ConfigureTemplatesToImport"; //$NON-NLS-1$
     public static final String CMD_CANCEL = "Cancel"; //$NON-NLS-1$
@@ -192,6 +198,17 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
         return eventListModel;
     }
 
+    private UICommand assignTagsCommand;
+
+    @Override
+    public UICommand getAssignTagsCommand() {
+        return assignTagsCommand;
+    }
+
+    private void setAssignTagsCommand(UICommand value) {
+        assignTagsCommand = value;
+    }
+
     @Inject
     public TemplateListModel(final TemplateGeneralModel templateGeneralModel,
             final TemplateVmListModel templateVmListModel,
@@ -230,6 +247,7 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
         setExportOvaCommand(new UICommand("ExportOva", this)); //$NON-NLS-1$
         setImportTemplateCommand(new UICommand("ImportTemplate", this)); //$NON-NLS-1$
         setCreateVmFromTemplateCommand(new UICommand("CreateVM", this)); //$NON-NLS-1$
+        setAssignTagsCommand(new UICommand("AssignTags", this)); //$NON-NLS-1$
 
         updateActionsAvailability();
 
@@ -301,7 +319,7 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
             }
         }
 
-        return t.size() > 1 ? true : false;
+        return t.size() > 1;
     }
 
     @Override
@@ -476,6 +494,99 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
         list.add(permissionListModel);
     }
 
+    private void assignTags() {
+        if (getWindow() != null) {
+            return;
+        }
+
+        TagListModel model = new TagListModel();
+        setWindow(model);
+        model.setTitle(ConstantsManager.getInstance().getConstants().assignTagsTitle());
+        model.setHelpTag(HelpTag.assign_tags_template);
+        model.setHashName("assign_tags_template"); //$NON-NLS-1$
+
+        getAttachedTagsToSelectedTemplates(model);
+
+        UICommand okClick = UICommand.createDefaultOkUiCommand("OnAssignTags", this); //$NON-NLS-1$
+        model.getCommands().add(okClick);
+        UICommand abortClick = UICommand.createCancelUiCommand("Cancel", this); //$NON-NLS-1$
+        model.getCommands().add(abortClick);
+    }
+
+    public Map<Guid, Boolean> attachedTagsToEntities;
+
+    @Override
+    public Map<Guid, Boolean> getAttachedTagsToEntities() {
+        return attachedTagsToEntities;
+    }
+
+    public ArrayList<Tags> allAttachedTags;
+
+    @Override
+    public List<Tags> getAllAttachedTags() {
+        return allAttachedTags;
+    }
+
+    public int selectedItemsCounter;
+
+    private void getAttachedTagsToSelectedTemplates(final TagListModel model) {
+        attachedTagsToEntities = new HashMap<>();
+        allAttachedTags = new ArrayList<>();
+        selectedItemsCounter = 0;
+        getSelectedItems()
+            .stream()
+            .forEach(template -> {
+                AsyncDataProvider.getInstance().getAttachedTagsToTemplate(new AsyncQuery<>(
+                    returnValue -> {
+                        allAttachedTags.addAll(returnValue);
+                        selectedItemsCounter++;
+                        if (selectedItemsCounter == getSelectedItems().size()) {
+                            postGetAttachedTags(model);
+                        }
+                    }
+                ), template.getId());
+            });
+    }
+
+    private void onAssignTags() {
+        TagListModel model = (TagListModel) getWindow();
+        getAttachedTagsToSelectedTemplates(model);
+    }
+
+    @Override
+    public void postOnAssignTags(Map<Guid, Boolean> attachedTags) {
+        TagListModel model = (TagListModel) getWindow();
+        ArrayList<Guid> templateIds = new ArrayList<>();
+
+        for (Object item: getSelectedItems()) {
+            VmTemplate template = (VmTemplate) item;
+            templateIds.add(template.getId());
+        }
+
+        ArrayList<Guid> tagsToAttach = new ArrayList<>();
+        ArrayList<Guid> tagsToDetach = new ArrayList<>();
+
+        if (model.getItems() != null && !model.getItems().isEmpty()) {
+            ArrayList<TagModel> tags = (ArrayList<TagModel>) model.getItems();
+            TagModel rootTag = tags.get(0);
+            TagModel.recursiveEditAttachDetachLists(rootTag, attachedTags, tagsToAttach, tagsToDetach);
+        }
+
+        ArrayList<ActionParametersBase> parameters = new ArrayList<>();
+        for (Guid g : tagsToAttach) {
+            parameters.add(new AttachEntityToTagParameters(g, templateIds));
+        }
+        Frontend.getInstance().runMultipleAction(ActionType.AttachTemplatesToTag, parameters);
+
+        ArrayList<ActionParametersBase> templateToDetach = new ArrayList<>();
+        for (Guid g : tagsToDetach) {
+            templateToDetach.add(new AttachEntityToTagParameters(g, templateIds));
+        }
+        Frontend.getInstance().runMultipleAction(ActionType.DetachTemplateFromTag, templateToDetach);
+
+        cancel();
+    }
+
     @Override
     public boolean isSearchStringMatch(String searchString) {
         return searchString.trim().toLowerCase().startsWith("template"); //$NON-NLS-1$
@@ -483,7 +594,7 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
 
     @Override
     protected void syncSearch() {
-        SearchParameters tempVar = new SearchParameters(applySortOptions(getSearchString()), SearchType.VmTemplate, isCaseSensitiveSearch());
+        SearchParameters tempVar = new SearchParameters(applySortOptions(getModifiedSearchString()), SearchType.VmTemplate, isCaseSensitiveSearch());
         tempVar.setMaxCount(getSearchPageSize());
         super.syncSearch(QueryType.Search, tempVar);
     }
@@ -547,7 +658,6 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
         model.setTitle(ConstantsManager.getInstance().getConstants().editTemplateTitle());
         model.setHelpTag(HelpTag.edit_template);
         model.setHashName("edit_template"); //$NON-NLS-1$
-        model.getVmType().setSelectedItem(template.getVmType());
         model.setCustomPropertiesKeysList(AsyncDataProvider.getInstance().getCustomPropertiesList());
 
         model.initialize();
@@ -557,7 +667,7 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
         model.getCommands().add(switchModeCommand);
 
 
-        UICommand onSaveCommand = UICommand.createDefaultOkUiCommand("OnSave", this); //$NON-NLS-1$
+        UICommand onSaveCommand = UICommand.createDefaultOkUiCommand("OnSaveConfirm", this); //$NON-NLS-1$
         model.getCommands().add(onSaveCommand);
 
         UICommand cancelCommand = UICommand.createCancelUiCommand("Cancel", this); //$NON-NLS-1$
@@ -654,12 +764,29 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
                 template.getTemplateVersionNumber());
     };
 
-    private void onSave() {
-        final UnitVmModel model = (UnitVmModel) getWindow();
+    private void onSaveConfirm() {
+        UnitVmModel model = (UnitVmModel) getWindow();
 
         if (!model.validate()) {
             return;
         }
+
+        Guid templateId;
+
+        if (model.getBehavior().isBlankTemplateBehavior()) {
+            templateId = ((ExistingBlankTemplateModelBehavior) model.getBehavior()).getVmTemplate().getId();
+        } else {
+            templateId = ((TemplateVmModelBehavior) model.getBehavior()).getVmTemplate().getId();
+        }
+
+        ConfirmationModelChain chain = new ConfirmationModelChain();
+        chain.addConfirmation(new TpmDataRemovalConfirmation(model, templateId));
+        chain.addConfirmation(new NvramDataRemovalConfirmation(model, templateId));
+        chain.execute(this, () -> onSave());
+    }
+
+    private void onSave() {
+        UnitVmModel model = (UnitVmModel) getWindow();
 
         final String name = model.getName().getEntity();
 
@@ -694,7 +821,7 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
                         }
 
                         String selectedCpu = model.getCustomCpu().getSelectedItem();
-                        if (selectedCpu != null && !selectedCpu.isEmpty()  && !model.getCustomCpu().getItems().contains(selectedCpu)) {
+                        if (selectedCpu != null && !selectedCpu.isEmpty() && !model.getCustomCpu().getItems().contains(selectedCpu)) {
                             ConfirmationModel confirmModel = new ConfirmationModel();
                             confirmModel.setTitle(ConstantsManager.getInstance().getConstants().vmUnsupportedCpuTitle());
                             confirmModel.setMessage(ConstantsManager.getInstance().getConstants().vmUnsupportedCpuMessage());
@@ -773,8 +900,8 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
         setVmWatchdogToParams(model, parameters);
         BuilderExecutor.build(model, parameters, new UnitToGraphicsDeviceParamsBuilder());
         parameters.setSoundDeviceEnabled(model.getIsSoundcardEnabled().getEntity());
+        parameters.setTpmEnabled(model.getTpmEnabled().getEntity());
         setVmRngDeviceToParams(model, parameters);
-        parameters.setBalloonEnabled(balloonEnabled(model));
         parameters.setVirtioScsiEnabled(model.getIsVirtioScsiEnabled().getEntity());
 
         if (model.getIsHeadlessModeEnabled().getEntity()) {
@@ -800,7 +927,7 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
     private void setVmWatchdogToParams(final UnitVmModel model, UpdateVmTemplateParameters updateVmParams) {
         VmWatchdogType wdModel = model.getWatchdogModel().getSelectedItem();
         updateVmParams.setUpdateWatchdog(true);
-        if(wdModel != null) {
+        if (wdModel != null) {
             VmWatchdog vmWatchdog = new VmWatchdog();
             vmWatchdog.setAction(model.getWatchdogAction().getSelectedItem());
             vmWatchdog.setModel(wdModel);
@@ -860,7 +987,7 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
         boolean blankSelected = isBlankTemplateSelected();
 
         getEditCommand().setIsExecutionAllowed(items.size() == 1 && item != null
-                && item.getStatus() != VmTemplateStatus.Locked);
+                && ActionUtils.canExecute(items, VmTemplate.class, ActionType.UpdateVmTemplate));
 
         getRemoveCommand().setIsExecutionAllowed(items.size() > 0
                 && ActionUtils.canExecute(items, VmTemplate.class, ActionType.RemoveVmTemplate));
@@ -893,6 +1020,8 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
 
         getCreateVmFromTemplateCommand().setIsExecutionAllowed(items.size() == 1 && item != null
                 && item.getStatus() != VmTemplateStatus.Locked);
+
+        getAssignTagsCommand().setIsExecutionAllowed(items.size() == 1 && item != null);
     }
 
     /**
@@ -938,12 +1067,16 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
             importTemplates();
         } else if (command == getCreateVmFromTemplateCommand()) {
             createVMFromTemplate();
+        } else if (command == getAssignTagsCommand()) {
+            assignTags();
         } else if ("Cancel".equals(command.getName())) { //$NON-NLS-1$
             cancel();
         } else if ("OnExport".equals(command.getName())) { //$NON-NLS-1$
             onExport();
         } else if ("OnExportOva".equals(command.getName())) { //$NON-NLS-1$
             onExportOva();
+        } else if ("OnSaveConfirm".equals(command.getName())) { //$NON-NLS-1$
+            onSaveConfirm();
         } else if ("OnSave".equals(command.getName())) { //$NON-NLS-1$
             onSave();
         } else if ("OnSaveVm".equals(command.getName())) { //$NON-NLS-1$
@@ -957,18 +1090,14 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
             doExport();
         } else if ("CancelConfirmation".equals(command.getName())) { //$NON-NLS-1$
             cancelConfirmation();
-        } else if ("SaveOrUpdateVM".equals(command.getName())) { // $NON-NLS-1$
-            UnitVmModel model = (UnitVmModel) getWindow();
-            if (!model.validate()) {
-                return;
-            }
-            saveOrUpdateVM(model);
         } else if (CMD_CONFIGURE_TEMPLATES_TO_IMPORT.equals(command.getName())) { // $NON-NLS-1$
             onConfigureTemplatesToImport();
-        } else if ("onClone".equals(command.getName())){ //$NON-NLS-1$
+        } else if ("onClone".equals(command.getName())) { //$NON-NLS-1$
             onClone();
         } else if ("closeClone".equals(command.getName())) { //$NON-NLS-1$
             closeClone();
+        } else if ("OnAssignTags".equals(command.getName())) { //$NON-NLS-1$
+            onAssignTags();
         }
     }
 
@@ -1025,7 +1154,7 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
                 ,
                 new UICommand(CMD_CANCEL, this).setIsCancel(true)
                 .setTitle(ConstantsManager.getInstance().getConstants().cancel())
-                );
+        );
     }
 
     private void executeImportClone(ImportTemplatesModel model) {
@@ -1051,12 +1180,12 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
     protected IValidation[] getClonedAppendedNameValidators() {
         final int maxClonedNameLength = getMaxClonedNameLength();
         return new IValidation[] {
-                new NotEmptyValidation(),
-                new LengthValidation(maxClonedNameLength),
-                new I18NNameValidation(ConstantsManager.getInstance()
-                        .getMessages()
-                        .newNameWithSuffixCannotContainBlankOrSpecialChars(maxClonedNameLength)),
-                new UniqueClonedAppendedNameValidator(assignedVmNames)
+            new NotEmptyValidation(),
+            new LengthValidation(maxClonedNameLength),
+            new I18NNameValidation(ConstantsManager.getInstance()
+                .getMessages()
+                .newNameWithSuffixCannotContainBlankOrSpecialChars(maxClonedNameLength)),
+            new UniqueClonedAppendedNameValidator(assignedVmNames)
         };
     }
 
@@ -1192,12 +1321,12 @@ public class TemplateListModel extends VmBaseListModel<Void, VmTemplate> {
     protected IValidation[] getClonedNameValidators() {
         final int maxClonedNameLength = getMaxClonedNameLength();
         return new IValidation[] {
-                new NotEmptyValidation(),
-                new LengthValidation(maxClonedNameLength),
-                new I18NNameValidation(ConstantsManager.getInstance()
-                        .getMessages()
-                        .nameMustConataionOnlyAlphanumericChars(maxClonedNameLength)),
-                new UniqueClonedNameValidator(assignedVmNames)
+            new NotEmptyValidation(),
+            new LengthValidation(maxClonedNameLength),
+            new I18NNameValidation(ConstantsManager.getInstance()
+                .getMessages()
+                .nameMustConataionOnlyAlphanumericChars(maxClonedNameLength)),
+            new UniqueClonedNameValidator(assignedVmNames)
         };
     }
 

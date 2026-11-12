@@ -101,7 +101,7 @@ public class AddVdsCommand<T extends AddVdsActionParameters> extends VdsCommand<
     @Inject
     private AffinityValidator affinityValidator;
 
-    private BiConsumer<AuditLogable, AuditLogDirector> affinityGroupLoggingMethod = (a, b) -> {};
+    private BiConsumer<AuditLogable, AuditLogDirector> affinityGroupLoggingMethod = (a, b) -> { };
     /**
      * Constructor for command creation when compensation is applied on startup
      */
@@ -138,8 +138,6 @@ public class AddVdsCommand<T extends AddVdsActionParameters> extends VdsCommand<
             }
         }
 
-        completeOpenstackNetworkProviderId();
-
         TransactionSupport.executeInNewTransaction(() -> {
             addVdsStaticToDb();
             addVdsDynamicToDb();
@@ -170,6 +168,7 @@ public class AddVdsCommand<T extends AddVdsActionParameters> extends VdsCommand<
             VdsActionParameters tempVar = new VdsActionParameters(getVdsIdRef());
             tempVar.setSessionId(getParameters().getSessionId());
             tempVar.setCompensationEnabled(true);
+            tempVar.setCorrelationId(getCorrelationId());
             ActionReturnValue addVdsSpmIdReturn =
                     runInternalAction(ActionType.AddVdsSpmId,
                             tempVar,
@@ -202,9 +201,10 @@ public class AddVdsCommand<T extends AddVdsActionParameters> extends VdsCommand<
             installVdsParameters.setAuthMethod(getParameters().getAuthMethod());
             installVdsParameters.setOverrideFirewall(getParameters().getOverrideFirewall());
             installVdsParameters.setActivateHost(getParameters().getActivateHost());
-            installVdsParameters.setNetworkProviderId(getParameters().getVdsStaticData().getOpenstackNetworkProviderId());
+            installVdsParameters.setRebootHost(getParameters().getRebootHost());
             installVdsParameters
                     .setHostedEngineDeployConfiguration(getParameters().getHostedEngineDeployConfiguration());
+            installVdsParameters.setCorrelationId(getCorrelationId());
             Map<String, String> values = new HashMap<>();
             values.put(VdcObjectType.VDS.name().toLowerCase(), getParameters().getvds().getName());
             Step installStep = executionHandler.addSubStep(getExecutionContext(),
@@ -222,13 +222,6 @@ public class AddVdsCommand<T extends AddVdsActionParameters> extends VdsCommand<
                     cloneContextAndDetachFromParent()
                     .withExecutionContext(installCtx)));
             ExecutionHandler.setAsyncJob(getExecutionContext(), true);
-        }
-    }
-
-    private void completeOpenstackNetworkProviderId() {
-        if (getParameters().getVdsStaticData().getOpenstackNetworkProviderId() == null) {
-            getParameters().getVdsStaticData().setOpenstackNetworkProviderId(
-                    getCluster().getDefaultNetworkProviderId());
         }
     }
 
@@ -354,7 +347,9 @@ public class AddVdsCommand<T extends AddVdsActionParameters> extends VdsCommand<
                     && validate(validator.passwordNotEmpty(params.isPending(),
                             params.getAuthMethod(),
                             params.getPassword()))
-                    && validate(validator.supportsDeployingHostedEngine(params.getHostedEngineDeployConfiguration()));
+                    && validate(validator.supportsDeployingHostedEngine(params.getHostedEngineDeployConfiguration(),
+                            getCluster(),
+                            false));
         }
 
         if (!(returnValue
@@ -363,11 +358,6 @@ public class AddVdsCommand<T extends AddVdsActionParameters> extends VdsCommand<
                         getCluster().getCompatibilityVersion().toString(),
                         true)
                 && canConnect(params.getvds()))) {
-            return false;
-        }
-
-        if (!validateNetworkProviderConfiguration(
-                getParameters().getVdsStaticData().getOpenstackNetworkProviderId())) {
             return false;
         }
 
@@ -444,12 +434,12 @@ public class AddVdsCommand<T extends AddVdsActionParameters> extends VdsCommand<
             ByteArrayOutputStream out = new ConstraintByteArrayOutputStream(256);
             client.executeCommand(Config.getValue(ConfigValues.GetVdsmIdByVdsmToolCommand), null, out, err);
             return new String(out.toByteArray(), StandardCharsets.UTF_8).trim();
-        } catch(Exception e) {
+        } catch (Exception e) {
             log.warn(
                     "Failed to initiate vdsm-id request on host: {} with error: {}",
                     e.getMessage(),
                     new String(err.toByteArray(), StandardCharsets.UTF_8)
-                    );
+            );
             log.debug("Exception", e);
             return null;
         }
@@ -522,8 +512,8 @@ public class AddVdsCommand<T extends AddVdsActionParameters> extends VdsCommand<
                 // Must not allow adding a server that already is part of another gluster cluster
                 Set<String> peers = glusterUtil.getPeers(sshclient);
                 if (peers.size() > 0) {
-                    for(String peer : peers) {
-                        if(glusterDBUtils.serverExists(clusterId, peer)) {
+                    for (String peer : peers) {
+                        if (glusterDBUtils.serverExists(clusterId, peer)) {
                             // peer present in cluster. so server being added is valid.
                             return true;
                         }

@@ -57,7 +57,6 @@ import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.VmErrataListWit
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.event.EventPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.guide.GuidePopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.hostdev.AddVmHostDevicePopupPresenterWidget;
-import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.hostdev.VmRepinHostPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.label.AffinityLabelPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.ova.ExportOvaPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.quota.ChangeQuotaPopupPresenterWidget;
@@ -150,7 +149,7 @@ public class VirtualMachineModule extends AbstractGinModule {
                                    "OnSave".equals(lastExecutedCommand.getName())) { //$NON-NLS-1$
                             if (windowModel instanceof AttachDiskModel) {
                                 return attachDiskPopupProvider.get();
-                            } else if ((windowModel instanceof NewDiskModel) || (windowModel instanceof EditVmDiskModel)) {
+                            } else if (windowModel instanceof NewDiskModel || windowModel instanceof EditVmDiskModel) {
                                 return newDiskPopupProvider.get();
                             } else {
                                 return newVmPopupProvider.get();
@@ -448,7 +447,6 @@ public class VirtualMachineModule extends AbstractGinModule {
     public SearchableDetailModelProvider<HostDeviceView, VmListModel<Void>, VmHostDeviceListModel> getVmHostDeviceListProvider(EventBus eventBus,
             Provider<DefaultConfirmationPopupPresenterWidget> defaultConfirmPopupProvider,
             final Provider<AddVmHostDevicePopupPresenterWidget> addPopupProvider,
-            final Provider<VmRepinHostPopupPresenterWidget> repinPopupProvider,
             final Provider<RemoveConfirmationPopupPresenterWidget> removeConfirmPopupProvider,
             final Provider<VmListModel<Void>> mainModelProvider,
             final Provider<VmHostDeviceListModel> modelProvider) {
@@ -458,8 +456,6 @@ public class VirtualMachineModule extends AbstractGinModule {
                     public AbstractModelBoundPopupPresenterWidget<? extends Model, ?> getModelPopup(VmHostDeviceListModel source, UICommand lastExecutedCommand, Model windowModel) {
                         if (lastExecutedCommand == getModel().getAddCommand()) {
                             return addPopupProvider.get();
-                        } else if (lastExecutedCommand == getModel().getRepinHostCommand()) {
-                            return repinPopupProvider.get();
                         }
                         return super.getModelPopup(source, lastExecutedCommand, windowModel);
                     }
@@ -501,16 +497,15 @@ public class VirtualMachineModule extends AbstractGinModule {
             final Provider<VmErrataCountModel> modelProvider) {
 
         DetailTabModelProvider<VmListModel<Void>, VmErrataCountModel> result =
-                new DetailTabModelProvider<VmListModel<Void>,
-                VmErrataCountModel>(eventBus, defaultConfirmPopupProvider) {
-            @Override
-            public AbstractModelBoundPopupPresenterWidget<? extends Model, ?> getModelPopup(VmErrataCountModel source,
+            new DetailTabModelProvider<VmListModel<Void>,
+            VmErrataCountModel>(eventBus, defaultConfirmPopupProvider) {
+                @Override
+                public AbstractModelBoundPopupPresenterWidget<? extends Model, ?> getModelPopup(VmErrataCountModel source,
                     UICommand lastExecutedCommand,
                     Model windowModel) {
-
-                return errataPopupProvider.get();
-            }
-        };
+                        return errataPopupProvider.get();
+                }
+            };
         result.setMainModelProvider(mainModelProvider);
         result.setModelProvider(modelProvider);
 
@@ -520,7 +515,7 @@ public class VirtualMachineModule extends AbstractGinModule {
 
     @Override
     protected void configure() {
-        bind(new TypeLiteral<VmListModel<Void>>() {}).in(Singleton.class);
+        bind(new TypeLiteral<VmListModel<Void>>() { }).in(Singleton.class);
         bind(VmGeneralModel.class).in(Singleton.class);
         bind(VmImportGeneralModel.class).in(Singleton.class);
         bind(VmGuestInfoModel.class).in(Singleton.class);
@@ -529,35 +524,35 @@ public class VirtualMachineModule extends AbstractGinModule {
         bind(VmEventListModel.class).in(Singleton.class);
         bind(VmSnapshotListModel.class).in(Singleton.class);
         bind(VmAffinityGroupListModel.class).in(Singleton.class);
-        bind(new TypeLiteral<VmAppListModel<VM>>() {}).in(Singleton.class);
+        bind(new TypeLiteral<VmAppListModel<VM>>() { }).in(Singleton.class);
         bind(VmGuestContainerListModel.class).in(Singleton.class);
         bind(VmHostDeviceListModel.class).in(Singleton.class);
-        bind(new TypeLiteral<PermissionListModel<VM>>(){}).in(Singleton.class);
-        bind(new TypeLiteral<VmDevicesListModel<VM>>() {}).in(Singleton.class);
+        bind(new TypeLiteral<PermissionListModel<VM>>() { }).in(Singleton.class);
+        bind(new TypeLiteral<VmDevicesListModel<VM>>() { }).in(Singleton.class);
         bind(VmErrataCountModel.class).in(Singleton.class);
         bind(VmErrataListModel.class).in(Singleton.class);
         bind(VmAffinityLabelListModel.class).in(Singleton.class);
         bind(VirtualMachineMainSelectedItems.class).asEagerSingleton();
 
         // Form Detail Models
-        bind(new TypeLiteral<DetailModelProvider<VmListModel<Void>, VmGeneralModel>>(){})
-            .to(new TypeLiteral<DetailTabModelProvider<VmListModel<Void>, VmGeneralModel>>(){}).in(Singleton.class);
-        bind(new TypeLiteral<DetailModelProvider<ImportVmsModel, VmImportGeneralModel>>(){})
-            .to(new TypeLiteral<DetailTabModelProvider<ImportVmsModel, VmImportGeneralModel>>(){}).in(Singleton.class);
-        bind(new TypeLiteral<DetailModelProvider<VmListModel<Void>, VmGuestInfoModel>>(){})
-           .to(new TypeLiteral<DetailTabModelProvider<VmListModel<Void>, VmGuestInfoModel>>(){}).in(Singleton.class);
+        bind(new TypeLiteral<DetailModelProvider<VmListModel<Void>, VmGeneralModel>>() { })
+            .to(new TypeLiteral<DetailTabModelProvider<VmListModel<Void>, VmGeneralModel>>() { }).in(Singleton.class);
+        bind(new TypeLiteral<DetailModelProvider<ImportVmsModel, VmImportGeneralModel>>() { })
+            .to(new TypeLiteral<DetailTabModelProvider<ImportVmsModel, VmImportGeneralModel>>() { }).in(Singleton.class);
+        bind(new TypeLiteral<DetailModelProvider<VmListModel<Void>, VmGuestInfoModel>>() { })
+            .to(new TypeLiteral<DetailTabModelProvider<VmListModel<Void>, VmGuestInfoModel>>() { }).in(Singleton.class);
         // Search-able Detail Models
-        bind(new TypeLiteral<SearchableDetailModelProvider<String, VmListModel<Void>, VmAppListModel<VM>>>(){})
-           .to(new TypeLiteral<SearchableDetailTabModelProvider<String, VmListModel<Void>, VmAppListModel<VM>>>(){})
-           .in(Singleton.class);
-        bind(new TypeLiteral<SearchableDetailModelProvider<GuestContainer, VmListModel<Void>, VmGuestContainerListModel>>(){})
-                .to(new TypeLiteral<SearchableDetailTabModelProvider<GuestContainer, VmListModel<Void>, VmGuestContainerListModel>>(){})
+        bind(new TypeLiteral<SearchableDetailModelProvider<String, VmListModel<Void>, VmAppListModel<VM>>>() { })
+            .to(new TypeLiteral<SearchableDetailTabModelProvider<String, VmListModel<Void>, VmAppListModel<VM>>>() { })
+            .in(Singleton.class);
+        bind(new TypeLiteral<SearchableDetailModelProvider<GuestContainer, VmListModel<Void>, VmGuestContainerListModel>>() { })
+                .to(new TypeLiteral<SearchableDetailTabModelProvider<GuestContainer, VmListModel<Void>, VmGuestContainerListModel>>() { })
                 .in(Singleton.class);
         // Permission Detail Model
-        bind(new TypeLiteral<SearchableDetailModelProvider<Permission, VmListModel<Void>, PermissionListModel<VM>>>(){})
-           .to(new TypeLiteral<PermissionModelProvider<VM, VmListModel<Void>>>() {}).in(Singleton.class);
-        bind(new TypeLiteral<SearchableDetailModelProvider<VmDeviceFeEntity, VmListModel<Void>, VmDevicesListModel<VM>>>(){})
-                .to(new TypeLiteral<SearchableDetailTabModelProvider<VmDeviceFeEntity, VmListModel<Void>, VmDevicesListModel<VM>>>(){})
+        bind(new TypeLiteral<SearchableDetailModelProvider<Permission, VmListModel<Void>, PermissionListModel<VM>>>() { })
+            .to(new TypeLiteral<PermissionModelProvider<VM, VmListModel<Void>>>() { }).in(Singleton.class);
+        bind(new TypeLiteral<SearchableDetailModelProvider<VmDeviceFeEntity, VmListModel<Void>, VmDevicesListModel<VM>>>() { })
+                .to(new TypeLiteral<SearchableDetailTabModelProvider<VmDeviceFeEntity, VmListModel<Void>, VmDevicesListModel<VM>>>() { })
                 .in(Singleton.class);
     }
 

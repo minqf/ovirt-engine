@@ -18,7 +18,8 @@ public class RemoveImageParameters extends ImagesContainterParametersBase implem
         super(imageId, null);
         setForceDelete(false);
         dbOperationScope = ImageDbOperationScope.IMAGE;
-        shouldLockImage= true;
+        shouldLockImage = true;
+        setEndProcedure(EndProcedure.COMMAND_MANAGED);
     }
 
     public RemoveImageParameters() {

@@ -10,6 +10,7 @@ import org.ovirt.engine.core.common.businessentities.StoragePoolStatus;
 import org.ovirt.engine.core.common.businessentities.VmBase;
 import org.ovirt.engine.core.common.businessentities.VmTemplate;
 import org.ovirt.engine.core.common.businessentities.storage.RepoImage;
+import org.ovirt.engine.core.common.utils.VmCommonUtils;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.StringHelper;
 import org.ovirt.engine.ui.frontend.AsyncCallback;
@@ -43,11 +44,13 @@ public abstract class PoolModelBehaviorBase extends VmModelBehaviorBase<PoolMode
     public void initialize() {
         super.initialize();
 
+        toggleAutoSetVmHostname();
+        getModel().getIsSealed().setIsAvailable(true);
         getModel().getIsSoundcardEnabled().setIsChangeable(true);
 
         getModel().getDisksAllocationModel().setIsVolumeFormatAvailable(true);
         getModel().getDisksAllocationModel().setIsThinProvisioning(true);
-        getModel().getDisksAllocationModel().setIsAliasChangable(true);
+        getModel().getDisksAllocationModel().setIsAliasChangeable(true);
 
         getModel().getProvisioning().setIsAvailable(false);
         getModel().getProvisioning().setEntity(false);
@@ -96,6 +99,7 @@ public abstract class PoolModelBehaviorBase extends VmModelBehaviorBase<PoolMode
 
     @Override
     public void templateWithVersion_SelectedItemChanged() {
+        super.templateWithVersion_SelectedItemChanged();
         updateCdImage();
     }
 
@@ -118,17 +122,25 @@ public abstract class PoolModelBehaviorBase extends VmModelBehaviorBase<PoolMode
 
             // Copy VM parameters from template.
             buildModel(vmBase, (source, destination) -> {
-                setSelectedOSType(vmBase, getModel().getSelectedCluster().getArchitecture());
-                getModel().getVmType().setSelectedItem(vmBase.getVmType());
-                getModel().getUsbPolicy().setSelectedItem(vmBase.getUsbPolicy());
+                // Header
+                updateOSType(vmBase, getModel().getSelectedCluster().getArchitecture());
+                // General
                 getModel().getIsRunAndPause().setEntity(false);
+                // System
+                InstanceType selectedInstanceType = getModel().getInstanceTypes().getSelectedItem();
+                int instanceTypeMinAllocatedMemory = selectedInstanceType != null ? selectedInstanceType.getMinAllocatedMem() : 0;
 
-                boolean hasCd = !StringHelper.isNullOrEmpty(vmBase.getIsoPath());
-
-                getModel().getCdImage().setIsChangeable(hasCd);
-                getModel().getCdAttached().setEntity(hasCd);
-
+                // do not update if specified on template or instance type
+                if (vmBase.getMinAllocatedMem() == 0 && instanceTypeMinAllocatedMemory == 0) {
+                    updateMinAllocatedMemory();
+                }
                 updateTimeZone(vmBase.getTimeZone());
+                // Initial Run
+                getModel().getVmInitModel().init(vmBase);
+                getModel().getVmInitEnabled().setEntity(vmBase.getVmInit() != null);
+                // Resource allocation
+                updateCpuProfile(getModel().getSelectedCluster(), vmBase.getCpuProfileId());
+                updateCpuSharesSelection();
 
                 if (!vmBase.getId().equals(Guid.Empty)) {
                     getModel().getStorageDomain().setIsChangeable(true);
@@ -140,40 +152,21 @@ public abstract class PoolModelBehaviorBase extends VmModelBehaviorBase<PoolMode
                     getModel().setIsDisksAvailable(false);
                     getModel().setDisks(null);
                 }
-
                 getModel().getProvisioning().setEntity(false);
-
                 initStorageDomains();
-
-                InstanceType selectedInstanceType = getModel().getInstanceTypes().getSelectedItem();
-                int instanceTypeMinAllocatedMemory = selectedInstanceType != null ? selectedInstanceType.getMinAllocatedMem() : 0;
-
-                // do not update if specified on template or instance type
-                if (vmBase.getMinAllocatedMem() == 0 && instanceTypeMinAllocatedMemory == 0) {
-                    updateMinAllocatedMemory();
-                }
-
-                getModel().getAllowConsoleReconnect().setEntity(vmBase.isAllowConsoleReconnect());
-
-                toggleAutoSetVmHostname();
-                getModel().getVmInitModel().init(vmBase);
-                getModel().getVmInitEnabled().setEntity(vmBase.getVmInit() != null);
-
-                if (getModel().getSelectedCluster() != null) {
-                    updateCpuProfile(getModel().getSelectedCluster().getId(), vmBase.getCpuProfileId());
-                }
-
-                getModel().getCpuSharesAmount().setEntity(vmBase.getCpuShares());
-                updateCpuSharesSelection();
+                // Host
+                getModel().getHostCpu().setEntity(isHostCpuValueStillBasedOnTemp() ? vmBase.isUseHostCpuFlags() : false);
+                // High availability
+                getModel().updateResumeBehavior();
+                // Boot options
+                boolean hasCd = !StringHelper.isNullOrEmpty(vmBase.getIsoPath());
+                getModel().getCdImage().setIsChangeable(hasCd);
+                getModel().getCdAttached().setEntity(hasCd);
 
                 // A workaround for setting the current saved CustomCompatibilityVersion value after
                 // it was reset by getTemplateWithVersion event
                 getModel().getCustomCompatibilityVersion().setSelectedItem(getSavedCurrentCustomCompatibilityVersion());
                 setCustomCompatibilityVersionChangeInProgress(false);
-
-                getModel().updateResumeBehavior();
-
-                getModel().getHostCpu().setEntity(isHostCpuValueStillBasedOnTemp() ? vmBase.isUseHostCpuFlags() : false);
             });
         }
     }
@@ -186,19 +179,13 @@ public abstract class PoolModelBehaviorBase extends VmModelBehaviorBase<PoolMode
 
     @Override
     public void postDataCenterWithClusterSelectedItemChanged() {
-        updateDefaultHost();
-        updateCustomPropertySheet();
+        super.postDataCenterWithClusterSelectedItemChanged();
         updateMinAllocatedMemory();
-        updateNumOfSockets();
-        updateOSValues();
 
         if (getModel().getTemplateWithVersion().getSelectedItem() != null) {
             VmTemplate template = getModel().getTemplateWithVersion().getSelectedItem().getTemplateVersion();
             updateQuotaByCluster(template.getQuotaId(), template.getQuotaName());
         }
-        updateMemoryBalloon();
-        updateCpuSharesAvailability();
-        updateVirtioScsiAvailability();
     }
 
     @Override
@@ -234,9 +221,9 @@ public abstract class PoolModelBehaviorBase extends VmModelBehaviorBase<PoolMode
             return;
         }
 
-        double overCommitFactor = 100.0 / cluster.getMaxVdsMemoryOverCommit();
-        getModel().getMinAllocatedMemory()
-                .setEntity((int) (getModel().getMemSize().getEntity() * overCommitFactor));
+        int minMemory = VmCommonUtils.calcMinMemory(
+                getModel().getMemSize().getEntity(), cluster.getMaxVdsMemoryOverCommit());
+        getModel().getMinAllocatedMemory().setEntity(minMemory);
     }
 
     @Override
@@ -255,21 +242,21 @@ public abstract class PoolModelBehaviorBase extends VmModelBehaviorBase<PoolMode
         getModel().getNumOfDesktops().validateEntity(
 
                 new IValidation[] {
-                        new NotEmptyValidation(),
-                        new LengthValidation(4),
-                        new IntegerValidation(isNew ? 1 : 0, isNew ? maxAllowedVms : maxAllowedVms - assignedVms)
+                    new NotEmptyValidation(),
+                    new LengthValidation(4),
+                    new IntegerValidation(isNew ? 1 : 0, isNew ? maxAllowedVms : maxAllowedVms - assignedVms)
                 });
 
         getModel().getPrestartedVms().validateEntity(
                 new IValidation[] {
-                        new NotEmptyValidation(),
-                        new IntegerValidation(0, futureNumOfDesktops)
+                    new NotEmptyValidation(),
+                    new IntegerValidation(0, futureNumOfDesktops)
                 });
 
         getModel().getMaxAssignedVmsPerUser().validateEntity(
                 new IValidation[] {
-                        new NotEmptyValidation(),
-                        new IntegerValidation(1, futureNumOfDesktops)
+                    new NotEmptyValidation(),
+                    new IntegerValidation(1, futureNumOfDesktops)
                 });
 
         getModel().setValidTab(TabName.GENERAL_TAB, getModel().isValidTab(TabName.GENERAL_TAB)

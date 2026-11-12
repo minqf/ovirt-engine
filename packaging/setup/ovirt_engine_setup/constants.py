@@ -44,6 +44,8 @@ def osetupattrs(
     answerfile_condition=lambda env: True,
     summary_condition=lambda env: True,
     is_secret=False,
+    asked_on=None,
+    doc_text=None,
 ):
     class decorator(classproperty):
         def __init__(self, o):
@@ -57,7 +59,11 @@ def osetupattrs(
                 answerfile_condition=answerfile_condition,
                 summary_condition=summary_condition,
                 is_secret=is_secret,
+                asked_on=asked_on,
+                doc_text=doc_text,
             )
+    if is_secret and asked_on is None:
+        raise RuntimeError('asked_on must be set when is_secret is set')
     return decorator
 
 
@@ -161,21 +167,6 @@ class FileLocations(object):
         'virtio-win',
     )
 
-    RHEV_GUEST_TOOLS_DIR = os.path.join(
-        DATADIR,
-        'rhev-guest-tools-iso',
-    )
-
-    RHV_GUEST_TOOLS_DIR = os.path.join(
-        DATADIR,
-        'rhv-guest-tools-iso',
-    )
-
-    OVIRT_GUEST_TOOLS_DIR = os.path.join(
-        DATADIR,
-        'ovirt-guest-tools-iso',
-    )
-
     OVIRT_ENGINE_UNINSTALL_DIR = os.path.join(
         OVIRT_ENGINE_SYSCONFDIR,
         'uninstall.d'
@@ -232,6 +223,8 @@ class Stages(object):
 
     SETUP_SELINUX = 'osetup.setup.selinux'
 
+    REMOTE_ENGINE_CLEANUP = 'osetup.remote.engine.cleanup'
+
 
 @util.export
 @util.codegen
@@ -242,18 +235,16 @@ class Const(object):
     RPM_VERSION = config.RPM_VERSION
     RPM_RELEASE = config.RPM_RELEASE
 
-    @classproperty
-    def RPM_LOCK_LIST_SUFFIXES(self):
-        return (
-            '',
-            '-backend',
-            '-dbscripts',
-            '-restapi',
-            '-tools',
-            '-tools-backup',
-            '-webadmin-portal',
-            '-ui-extensions',
-        )
+    RPM_LOCK_LIST_SUFFIXES: tuple[str, ...] = (
+        '',
+        '-backend',
+        '-dbscripts',
+        '-restapi',
+        '-tools',
+        '-tools-backup',
+        '-webadmin-portal',
+        '-ui-extensions',
+    )
 
     FILE_GROUP_SECTION_PREFIX = 'file_group_'
 
@@ -265,7 +256,6 @@ class Const(object):
     FIREWALL_MANAGER_HUMAN = 'skip'
     FIREWALL_MANAGER_IPTABLES = 'iptables'
     FIREWALL_MANAGER_FIREWALLD = 'firewalld'
-    ISO_DOMAIN_NFS_DEFAULT_ACL_FORMAT = '{fqdn}(rw)'
 
     REMOTE_ENGINE_SETUP_STYLE_AUTO_SSH = 'auto_ssh'
     REMOTE_ENGINE_SETUP_STYLE_MANUAL_FILES = 'manual_files'
@@ -347,6 +337,12 @@ class DocsEnv(object):
     DWH_DOC_URL = 'OVESETUP_DOCS/dwhDocUrl'
     REPORTS_DOC_URL = 'OVESETUP_DOCS/reportsDocUrl'
 
+    @osetupattrs(
+        doc_text=_('Show env keys doc text'),
+    )
+    def SHOW_DOC_TEXT(self):
+        return 'OVESETUP_DOCS/showDocText'
+
 
 @util.export
 @util.codegen
@@ -379,14 +375,13 @@ class SystemEnv(object):
     SELINUX_PORTS = 'OVESETUP_SYSTEM/selinuxPorts'
 
     HOSTILE_SERVICES = 'OVESETUP_SYSTEM/hostileServices'
+    RESERVED_PORTS = 'OVESETUP_SYSTEM/reservedPorts'
 
 
 @util.export
 @util.codegen
 @osetupattrsclass
 class ConfigEnv(object):
-
-    ADD_OVIRT_GLANCE_REPOSITORY = 'OVESETUP_CONFIG/addOvirtGlanceRepository'
 
     @osetupattrs(
         answerfile=True,
@@ -484,13 +479,21 @@ class ConfigEnv(object):
     @osetupattrs(
         answerfile=True,
         is_secret=True,
+        asked_on=('SSH_ACCESS_REMOTE_ENGINE_PASSWORD',),
     )
     def REMOTE_ENGINE_HOST_ROOT_PASSWORD(self):
         return 'OVESETUP_CONFIG/remoteEngineHostRootPassword'
 
-    ISO_PATHS_TO_UPLOAD = 'OVESETUP_CONFIG/isoPathsToUpload'
     TOTAL_MEMORY_MB = 'OVESETUP_CONFIG/totalMemoryMB'
-    CONTINUE_SETUP_ON_HE_VM = 'OVESETUP_CONFIG/continueSetupOnHEVM'
+
+    @osetupattrs(
+        doc_text=_(
+            'Allow overriding/ignoring the check for hosted-engine global '
+            'maintenance. Use with care!'
+        ),
+    )
+    def CONTINUE_SETUP_ON_HE_VM(self):
+        return 'OVESETUP_CONFIG/continueSetupOnHEVM'
 
 
 @util.export
@@ -535,6 +538,7 @@ class RenameEnv(object):
     FORCE_OVERWRITE = 'OSETUP_RENAME/forceOverwrite'
     FORCE_IGNORE_AIA_IN_CA = 'OSETUP_RENAME/forceIgnoreAIAInCA'
     FILES_TO_BE_MODIFIED = 'OVESETUP_CORE/filesToBeModified'
+    PKI_ENTITIES = 'OSETUP_RENAME/pkiEntities'
 
 
 @util.export

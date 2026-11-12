@@ -28,15 +28,8 @@ import org.ovirt.engine.ui.uicommonweb.Cloner;
 import org.ovirt.engine.ui.uicommonweb.Linq;
 import org.ovirt.engine.ui.uicommonweb.UICommand;
 import org.ovirt.engine.ui.uicommonweb.builders.BuilderExecutor;
-import org.ovirt.engine.ui.uicommonweb.builders.vm.CoreUnitToVmBaseBuilder;
-import org.ovirt.engine.ui.uicommonweb.builders.vm.CpuProfileUnitToVmBaseBuilder;
-import org.ovirt.engine.ui.uicommonweb.builders.vm.DedicatedVmForVdsUnitToVmBaseBuilder;
-import org.ovirt.engine.ui.uicommonweb.builders.vm.KernelParamsUnitToVmBaseBuilder;
-import org.ovirt.engine.ui.uicommonweb.builders.vm.MigrationOptionsUnitToVmBaseBuilder;
-import org.ovirt.engine.ui.uicommonweb.builders.vm.MultiQueuesVmBaseBuilder;
-import org.ovirt.engine.ui.uicommonweb.builders.vm.NameUnitToVmBaseBuilder;
+import org.ovirt.engine.ui.uicommonweb.builders.vm.PoolUnitToVmBaseBuilder;
 import org.ovirt.engine.ui.uicommonweb.builders.vm.UnitToGraphicsDeviceParamsBuilder;
-import org.ovirt.engine.ui.uicommonweb.builders.vm.UsbPolicyUnitToVmBaseBuilder;
 import org.ovirt.engine.ui.uicommonweb.builders.vm.VmSpecificUnitToVmBuilder;
 import org.ovirt.engine.ui.uicommonweb.dataprovider.AsyncDataProvider;
 import org.ovirt.engine.ui.uicommonweb.help.HelpTag;
@@ -350,9 +343,9 @@ public class PoolListModel extends ListWithSimpleDetailsModel<Void, VmPool> {
         // Check name unicitate.
         AsyncDataProvider.getInstance().isPoolNameUnique(new AsyncQuery<>(
                         isUnique -> {
-                            if ((model.getIsNew() && !isUnique)
-                                    || (!model.getIsNew() && !isUnique
-                                    && name.compareToIgnoreCase(getCurrentPool().getName()) != 0)) {
+                            if (model.getIsNew() && !isUnique
+                                    || !model.getIsNew() && !isUnique
+                                    && name.compareToIgnoreCase(getCurrentPool().getName()) != 0) {
                                 model.getName()
                                         .getInvalidityReasons()
                                         .add(ConstantsManager.getInstance()
@@ -438,15 +431,15 @@ public class PoolListModel extends ListWithSimpleDetailsModel<Void, VmPool> {
                 .getImageToDestinationDomainMap());
         param.setConsoleEnabled(model.getIsConsoleDeviceEnabled().getEntity());
         param.setVirtioScsiEnabled(model.getIsVirtioScsiEnabled().getEntity());
+        param.setSeal(model.getIsSealed().getEntity());
 
         param.setSoundDeviceEnabled(model.getIsSoundcardEnabled().getEntity());
+        param.setTpmEnabled(model.getTpmEnabled().getEntity());
         param.setRngDevice(model.getIsRngEnabled().getEntity() ? model.generateRngDevice() : null);
 
-        param.setSoundDeviceEnabled(model.getIsSoundcardEnabled().getEntity());
-        param.setBalloonEnabled(model.getMemoryBalloonDeviceEnabled().getEntity());
-        if(model.getIsHeadlessModeEnabled().getEntity()) {
+        if (model.getIsHeadlessModeEnabled().getEntity()) {
             param.getVmStaticData().setDefaultDisplayType(DisplayType.none);
-       }
+        }
         BuilderExecutor.build(model, param, new UnitToGraphicsDeviceParamsBuilder());
 
         param.getVmStaticData().setUseHostCpuFlags(model.getHostCpu().getEntity());
@@ -485,15 +478,7 @@ public class PoolListModel extends ListWithSimpleDetailsModel<Void, VmPool> {
 
     protected static VM buildVmOnSave(PoolModel model) {
         VM vm = new VM();
-        BuilderExecutor.build(model, vm.getStaticData(),
-                              new NameUnitToVmBaseBuilder(),
-                              new CoreUnitToVmBaseBuilder(),
-                              new KernelParamsUnitToVmBaseBuilder(),
-                              new MigrationOptionsUnitToVmBaseBuilder(),
-                              new DedicatedVmForVdsUnitToVmBaseBuilder(),
-                              new UsbPolicyUnitToVmBaseBuilder(),
-                              new CpuProfileUnitToVmBaseBuilder(),
-                              new MultiQueuesVmBaseBuilder());
+        BuilderExecutor.build(model, vm.getStaticData(), new PoolUnitToVmBaseBuilder());
         BuilderExecutor.build(model, vm, new VmSpecificUnitToVmBuilder());
         return vm;
     }

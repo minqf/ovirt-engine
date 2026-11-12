@@ -51,7 +51,7 @@ public class BackendGroupsResource
      * execution of the {@code list} operation.
      */
     private String getSearchPattern() {
-        String userProvidedPattern = QueryHelper.getConstraint(httpHeaders, uriInfo, "",  modelType);
+        String userProvidedPattern = QueryHelper.getConstraint(httpHeaders, uriInfo, "", modelType);
         return userProvidedPattern.equals("Groups : ") ?
                userProvidedPattern + GROUPS_SEARCH_PATTERN
                :
@@ -74,7 +74,7 @@ public class BackendGroupsResource
             for (String domain : authzProvidersNames) {
                 Guid domainId = new Guid(domain.getBytes(StandardCharsets.UTF_8));
                 if (domainId.toString().equals(group.getDomain().getId())) {
-                   return domain;
+                    return domain;
                 }
             }
             throw new WebFaultException(
@@ -184,7 +184,7 @@ public class BackendGroupsResource
     private DirectoryGroup getGroupById(String directoryName, String namespace, String groupId) {
         try {
             groupId = DirectoryEntryIdUtils.decode(groupId);
-        } catch(IllegalArgumentException exception) {
+        } catch (IllegalArgumentException exception) {
             return null;
         }
         return getEntity(

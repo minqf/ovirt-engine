@@ -36,9 +36,16 @@ public class VmNic extends NetworkInterface<VmNetworkStatistics> {
      */
     private boolean linked;
 
+    /**
+     * <code>true</code> if the vnic configuration on engine
+     * is identical to the vnic configuration on the VM.
+     */
+    private boolean synced;
+
     public VmNic() {
         super(new VmNetworkStatistics(), VmInterfaceType.pv.getValue());
         linked = true;
+        synced = true;
     }
 
     public void setVmId(Guid vmId) {
@@ -64,8 +71,8 @@ public class VmNic extends NetworkInterface<VmNetworkStatistics> {
     }
 
     @NotNull(message = VALIDATION_MESSAGE_NAME_NOT_NULL,
-             groups = { CreateEntity.class,
-            UpdateEntity.class })
+            groups = { CreateEntity.class,
+                UpdateEntity.class })
     @ValidNameWithDot(groups = { CreateEntity.class, UpdateEntity.class })
     @Override
     public String getName() {
@@ -75,21 +82,21 @@ public class VmNic extends NetworkInterface<VmNetworkStatistics> {
     @NotNull(message = VALIDATION_MESSAGE_MAC_ADDRESS_NOT_NULL,
              groups = UpdateVmNic.class)
     @Pattern.List({
-                   @Pattern(regexp = "(^$)|(" + MacAddressValidationPatterns.VALID_MAC_ADDRESS_FORMAT + ")",
-                            message = VALIDATION_MESSAGE_MAC_ADDRESS_INVALID,
-                            groups = CreateEntity.class),
-                   @Pattern(regexp = "(^$)|(" + MacAddressValidationPatterns.NON_MULTICAST_MAC_ADDRESS_FORMAT + ")",
-                            message = VALIDATION_VM_NETWORK_MAC_ADDRESS_MULTICAST,
-                            groups = CreateEntity.class),
-                   @Pattern(regexp = MacAddressValidationPatterns.VALID_MAC_ADDRESS_FORMAT,
-                            message = VALIDATION_MESSAGE_MAC_ADDRESS_INVALID,
-                            groups = UpdateEntity.class),
-                   @Pattern(regexp = MacAddressValidationPatterns.NON_MULTICAST_MAC_ADDRESS_FORMAT,
-                            message = VALIDATION_VM_NETWORK_MAC_ADDRESS_MULTICAST,
-                            groups = UpdateEntity.class),
-                   @Pattern(regexp = MacAddressValidationPatterns.NON_NULLABLE_MAC_ADDRESS_FORMAT,
-                            message = VALIDATION_MESSAGE_MAC_ADDRESS_INVALID,
-                            groups = { CreateEntity.class, UpdateEntity.class })
+        @Pattern(regexp = "(^$)|(" + MacAddressValidationPatterns.VALID_MAC_ADDRESS_FORMAT + ")",
+                message = VALIDATION_MESSAGE_MAC_ADDRESS_INVALID,
+                groups = CreateEntity.class),
+        @Pattern(regexp = "(^$)|(" + MacAddressValidationPatterns.NON_MULTICAST_MAC_ADDRESS_FORMAT + ")",
+                message = VALIDATION_VM_NETWORK_MAC_ADDRESS_MULTICAST,
+                groups = CreateEntity.class),
+        @Pattern(regexp = MacAddressValidationPatterns.VALID_MAC_ADDRESS_FORMAT,
+                message = VALIDATION_MESSAGE_MAC_ADDRESS_INVALID,
+                groups = UpdateEntity.class),
+        @Pattern(regexp = MacAddressValidationPatterns.NON_MULTICAST_MAC_ADDRESS_FORMAT,
+                message = VALIDATION_VM_NETWORK_MAC_ADDRESS_MULTICAST,
+                groups = UpdateEntity.class),
+        @Pattern(regexp = MacAddressValidationPatterns.NON_NULLABLE_MAC_ADDRESS_FORMAT,
+                message = VALIDATION_MESSAGE_MAC_ADDRESS_INVALID,
+                groups = { CreateEntity.class, UpdateEntity.class })
     })
     @Override
     public String getMacAddress() {
@@ -104,6 +111,14 @@ public class VmNic extends NetworkInterface<VmNetworkStatistics> {
         this.vnicProfileId = vnicProfileId;
     }
 
+    public boolean isSynced() {
+        return synced;
+    }
+
+    public void setSynced(boolean synced) {
+        this.synced = synced;
+    }
+
     @Override
     public String toString() {
         return ToStringBuilder.forInstance(this)
@@ -114,6 +129,7 @@ public class VmNic extends NetworkInterface<VmNetworkStatistics> {
                 .append("macAddress", getMacAddress())
                 .append("linked", isLinked())
                 .append("vmId", getVmId())
+                .append("synced", isSynced())
                 .build();
     }
 
@@ -123,7 +139,8 @@ public class VmNic extends NetworkInterface<VmNetworkStatistics> {
                 super.hashCode(),
                 linked,
                 vmId,
-                vnicProfileId
+                vnicProfileId,
+                synced
         );
     }
 
@@ -139,7 +156,8 @@ public class VmNic extends NetworkInterface<VmNetworkStatistics> {
         return super.equals(obj)
                 && Objects.equals(vmId, other.vmId)
                 && Objects.equals(vnicProfileId, other.vnicProfileId)
-                && linked == other.linked;
+                && linked == other.linked
+                && synced == other.synced;
     }
 
     public boolean isPassthrough() {

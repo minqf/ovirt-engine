@@ -22,6 +22,7 @@ from ovirt_engine import util as outil
 
 from ovirt_engine_setup import constants as osetupcons
 from ovirt_engine_setup.engine import constants as oenginecons
+from ovirt_engine_setup.engine_common import pki_utils
 from ovirt_engine_setup.vmconsole_proxy_helper import constants as ovmpcons
 
 
@@ -35,6 +36,18 @@ class Plugin(plugin.PluginBase):
 
     def _subjectComponentEscape(self, s):
         return outil.escape(s, '/\\')
+
+    def _refresh_needed(self, cert_path, check_cert=True):
+        ca_path = oenginecons.FileLocations.OVIRT_ENGINE_PKI_ENGINE_CA_CERT
+        return (not os.path.exists(cert_path) or
+                os.stat(ca_path).st_mtime > os.stat(cert_path).st_mtime or
+                (check_cert and
+                 pki_utils.cert_expires(
+                     pki_utils.x509_load_cert(cert_path),
+                     False,
+                     self.environment,
+                     self.logger,
+                 )))
 
     def _enrollSSHKeys(self, host_mode, uninstall_files):
         suffix = 'host' if host_mode else 'user'
@@ -85,7 +98,7 @@ class Plugin(plugin.PluginBase):
         )
         uninstall_files.append(cert)
 
-        with open(cert) as f:
+        with open(cert, encoding='utf-8') as f:
             self.environment[otopicons.CoreEnv.MAIN_TRANSACTION].append(
                 filetransaction.FileTransaction(
                     name=os.path.join(
@@ -178,9 +191,9 @@ class Plugin(plugin.PluginBase):
         condition=lambda self: (
             self.environment[
                 ovmpcons.ConfigEnv.VMCONSOLE_PROXY_CONFIG
-            ] and not os.path.exists(
+            ] and self._refresh_needed(
                 ovmpcons.FileLocations.
-                OVIRT_ENGINE_PKI_VMCONSOLE_PROXY_HELPER_KEY
+                OVIRT_ENGINE_PKI_VMCONSOLE_PROXY_HELPER_CERT
             )
         ),
     )
@@ -265,6 +278,16 @@ class Plugin(plugin.PluginBase):
             )
         )
 
+    def _ssh_cert_file(self, suffix):
+        file_name = '%s-%s.cer' % (
+            ovmpcons.Const.VMCONSOLE_PROXY_PKI_NAME,
+            suffix
+        )
+        return os.path.join(
+            oenginecons.FileLocations.OVIRT_ENGINE_PKICERTSDIR,
+            file_name
+        )
+
     @plugin.event(
         stage=plugin.Stages.STAGE_MISC,
         after=(
@@ -273,11 +296,16 @@ class Plugin(plugin.PluginBase):
         condition=lambda self: (
             self.environment[
                 ovmpcons.ConfigEnv.VMCONSOLE_PROXY_CONFIG
-            ] and not os.path.exists(
-                os.path.join(
-                    ovmpcons.FileLocations.VMCONSOLE_PKI_DIR,
-                    'proxy-ssh_host_rsa',
-                )
+            ] and (
+                self._refresh_needed(
+                    os.path.join(
+                        ovmpcons.FileLocations.VMCONSOLE_PKI_DIR,
+                        'proxy-ssh_host_rsa',
+                    ),
+                    check_cert=False
+                ) or
+                self._refresh_needed(self._ssh_cert_file('user')) or
+                self._refresh_needed(self._ssh_cert_file('host'))
             )
         ),
     )

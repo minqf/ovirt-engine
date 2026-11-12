@@ -1,8 +1,10 @@
 package org.ovirt.engine.core.bll;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import javax.inject.Inject;
@@ -29,6 +31,7 @@ import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.RemoveDiskParameters;
 import org.ovirt.engine.core.common.action.VmLeaseParameters;
 import org.ovirt.engine.core.common.action.VmOperationParameterBase;
+import org.ovirt.engine.core.common.action.VolumeBitmapCommandParameters;
 import org.ovirt.engine.core.common.asynctasks.AsyncTaskType;
 import org.ovirt.engine.core.common.asynctasks.EntityInfo;
 import org.ovirt.engine.core.common.businessentities.OriginType;
@@ -38,18 +41,20 @@ import org.ovirt.engine.core.common.businessentities.StorageDomain;
 import org.ovirt.engine.core.common.businessentities.TagsVmMap;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VMStatus;
+import org.ovirt.engine.core.common.businessentities.VdsmImageLocationInfo;
 import org.ovirt.engine.core.common.businessentities.VmBackup;
 import org.ovirt.engine.core.common.businessentities.VmPayload;
 import org.ovirt.engine.core.common.businessentities.VmStatic;
 import org.ovirt.engine.core.common.businessentities.network.VmNic;
 import org.ovirt.engine.core.common.businessentities.storage.BaseDisk;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
-import org.ovirt.engine.core.common.businessentities.storage.DiskInterface;
 import org.ovirt.engine.core.common.businessentities.storage.DiskVmElement;
+import org.ovirt.engine.core.common.businessentities.storage.VmBackupType;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.osinfo.OsRepository;
+import org.ovirt.engine.core.common.utils.PDIVMapBuilder;
 import org.ovirt.engine.core.common.utils.ValidationUtils;
 import org.ovirt.engine.core.common.utils.VmDeviceType;
 import org.ovirt.engine.core.common.vdscommands.VDSCommandType;
@@ -65,6 +70,7 @@ import org.ovirt.engine.core.dao.network.VmNicDao;
 import org.ovirt.engine.core.utils.transaction.TransactionSuccessListener;
 import org.ovirt.engine.core.utils.transaction.TransactionSupport;
 import org.ovirt.engine.core.vdsbroker.ResourceManager;
+import org.ovirt.engine.core.vdsbroker.VdsManager;
 import org.ovirt.engine.core.vdsbroker.VmManager;
 import org.ovirt.engine.core.vdsbroker.builder.vminfo.VmInfoBuildUtils;
 
@@ -97,7 +103,7 @@ public abstract class VmCommand<T extends VmOperationParameterBase> extends Comm
     @Inject
     private SnapshotDao snapshotDao;
     @Inject
-    private StorageDomainDao storageDomainDao;
+    protected StorageDomainDao storageDomainDao;
     @Inject
     private DiskDao diskDao;
     @Inject
@@ -316,14 +322,18 @@ public abstract class VmCommand<T extends VmOperationParameterBase> extends Comm
     }
 
     protected boolean removeMemoryDisks(Snapshot snapshot) {
-        RemoveDiskParameters removeMemoryDumpDiskParameters = new RemoveDiskParameters(snapshot.getMemoryDiskId());
+        return removeMemoryDisks(snapshot.getMemoryDiskId(), snapshot.getMetadataDiskId());
+    }
+
+    protected boolean removeMemoryDisks(Guid memoryDiskId, Guid metadataDiskId) {
+        RemoveDiskParameters removeMemoryDumpDiskParameters = new RemoveDiskParameters(memoryDiskId);
         removeMemoryDumpDiskParameters.setShouldBeLogged(false);
         ActionReturnValue retVal = runInternalAction(ActionType.RemoveDisk, removeMemoryDumpDiskParameters);
         if (!retVal.getSucceeded()) {
             return false;
         }
 
-        RemoveDiskParameters removeMemoryMetadataDiskParameters = new RemoveDiskParameters(snapshot.getMetadataDiskId());
+        RemoveDiskParameters removeMemoryMetadataDiskParameters = new RemoveDiskParameters(metadataDiskId);
         removeMemoryMetadataDiskParameters.setShouldBeLogged(false);
         retVal = runInternalAction(ActionType.RemoveDisk, removeMemoryMetadataDiskParameters);
         if (!retVal.getSucceeded()) {
@@ -392,11 +402,18 @@ public abstract class VmCommand<T extends VmOperationParameterBase> extends Comm
      * The following method should check if os of guest is supported for disk hot plug/unplug operation
      */
     protected boolean isDiskSupportedForPlugUnPlug(DiskVmElement diskVmElement, String diskAlias) {
-        if (diskVmElement.getDiskInterface() == DiskInterface.IDE) {
-            addValidationMessageVariable("diskAlias", diskAlias);
-            addValidationMessageVariable("vmName", getVm().getName());
-            return failValidation(EngineMessage.HOT_PLUG_IDE_DISK_IS_NOT_SUPPORTED);
+        switch (diskVmElement.getDiskInterface()) {
+            case IDE:
+                addValidationMessageVariable("diskAlias", diskAlias);
+                addValidationMessageVariable("vmName", getVm().getName());
+                return failValidation(EngineMessage.HOT_PLUG_IDE_DISK_IS_NOT_SUPPORTED);
+            case SPAPR_VSCSI:
+                addValidationMessageVariable("diskAlias", diskAlias);
+                addValidationMessageVariable("vmName", getVm().getName());
+                return failValidation(EngineMessage.HOT_PLUG_SPAPR_VSCSI_DISK_IS_NOT_SUPPORTED);
+            default:
         }
+
         Set<String> diskHotpluggableInterfaces = osRepository.getDiskHotpluggableInterfaces(getVm().getOs(),
                 getVm().getCompatibilityVersion());
 
@@ -410,23 +427,28 @@ public abstract class VmCommand<T extends VmOperationParameterBase> extends Comm
     }
 
     protected boolean checkPayload(VmPayload payload) {
-        boolean returnValue = true;
         if (payload.getDeviceType() != VmDeviceType.CDROM && payload.getDeviceType() != VmDeviceType.FLOPPY) {
             addValidationMessage(EngineMessage.VMPAYLOAD_INVALID_PAYLOAD_TYPE);
-            returnValue = false;
+            return false;
         } else {
             for (String content : payload.getFiles().values()) {
+                // ensure that the content is present, before checking its size
+                if (content == null) {
+                    addValidationMessage(EngineMessage.VMPAYLOAD_CONTENT_NULL);
+                    return false;
+                }
                 // Check each file individually, no constraint on total size
                 if (!VmPayload.isPayloadSizeLegal(content)) {
-                    Integer lengthInKb = 2 * Config.<Integer> getValue(ConfigValues.PayloadSize) / Kb;
+                    int sizeInKb = content.getBytes(StandardCharsets.UTF_8).length / Kb;
+                    int maxSizeInKb = Config.<Integer> getValue(ConfigValues.PayloadSize) / Kb;
                     addValidationMessage(EngineMessage.VMPAYLOAD_SIZE_EXCEEDED);
-                    addValidationMessageVariable("size", lengthInKb.toString());
-                    returnValue = false;
-                    break;
+                    addValidationMessageVariable("maxSize", String.valueOf(maxSizeInKb));
+                    addValidationMessageVariable("currentSize", String.valueOf(sizeInKb));
+                    return false;
                 }
             }
         }
-        return returnValue;
+        return true;
     }
 
     protected boolean canRunActionOnNonManagedVm() {
@@ -476,6 +498,10 @@ public abstract class VmCommand<T extends VmOperationParameterBase> extends Comm
         return vmDeviceUtils;
     }
 
+    protected VmHandler getVmHandler() {
+        return vmHandler;
+    }
+
     protected SnapshotsManager getSnapshotsManager() {
         return snapshotsManager;
     }
@@ -506,6 +532,20 @@ public abstract class VmCommand<T extends VmOperationParameterBase> extends Comm
         return String.format("%1$s/%2$s", isoPrefix, fileName);
     }
 
+    protected Map<String, String> buildCdPdivFromPath(Guid diskGuid) {
+        Map<String, String> pdiv = null;
+        DiskImage disk = (DiskImage) diskDao.get(diskGuid);
+        if (disk != null) {
+            pdiv = PDIVMapBuilder.create()
+                    .setPoolId(disk.getStoragePoolId())
+                    .setDomainId(disk.getStorageIds().get(0))
+                    .setImageGroupId(disk.getId())
+                    .setVolumeId(disk.getImageId()).build();
+        }
+
+        return pdiv;
+    }
+
     protected boolean removeVmLease(Guid leaseStorageDomainId, Guid vmId) {
         if (leaseStorageDomainId == null) {
             return true;
@@ -513,9 +553,8 @@ public abstract class VmCommand<T extends VmOperationParameterBase> extends Comm
         VmLeaseParameters params = new VmLeaseParameters(getStoragePoolId(), leaseStorageDomainId, vmId);
         params.setParentCommand(getActionType());
         params.setParentParameters(getParameters());
-        if (getParameters().getEntityInfo() == null) {
-            getParameters().setEntityInfo(new EntityInfo(VdcObjectType.VM, vmId));
-        }
+        params.setEntityInfo(getParameters().getEntityInfo() != null ? getParameters().getEntityInfo()
+                : new EntityInfo(VdcObjectType.VM, vmId));
         ActionReturnValue returnValue = runInternalActionWithTasksContext(ActionType.RemoveVmLease, params);
         if (returnValue.getSucceeded()) {
             getTaskIdList().addAll(returnValue.getInternalVdsmTaskIdList());
@@ -544,9 +583,8 @@ public abstract class VmCommand<T extends VmOperationParameterBase> extends Comm
         }
         params.setParentCommand(getActionType());
         params.setParentParameters(getParameters());
-        if (getParameters().getEntityInfo() == null) {
-            getParameters().setEntityInfo(new EntityInfo(VdcObjectType.VM, vmId));
-        }
+        params.setEntityInfo(getParameters().getEntityInfo() != null ? getParameters().getEntityInfo()
+                : new EntityInfo(VdcObjectType.VM, vmId));
         ActionReturnValue returnValue = runInternalActionWithTasksContext(ActionType.AddVmLease, params);
         if (returnValue.getSucceeded()) {
             getTaskIdList().addAll(returnValue.getInternalVdsmTaskIdList());
@@ -595,6 +633,56 @@ public abstract class VmCommand<T extends VmOperationParameterBase> extends Comm
 
     public boolean isVmDuringBackup() {
         List<VmBackup> vmBackups = vmBackupDao.getAllForVm(getVmId());
-        return vmBackups != null && !vmBackups.isEmpty();
+
+        // No need to block during hybrid backup
+        boolean allBackupsHybrid = !CollectionUtils.isEmpty(vmBackups) && vmBackups
+                .stream()
+                .allMatch(vmBackup -> VmBackupType.Hybrid == vmBackup.getBackupType());
+        if (allBackupsHybrid && !shouldBlockDuringBackup()) {
+            return false;
+        }
+
+        return !CollectionUtils.isEmpty(vmBackups) && vmBackups
+                .stream()
+                .anyMatch(vmBackup -> !vmBackup.getPhase().isBackupFinished());
+    }
+
+    protected boolean shouldBlockDuringBackup() {
+        return true;
+    }
+
+    protected VdsManager getVdsManager(Guid vdsId) {
+        return resourceManager.getVdsManager(vdsId);
+    }
+
+    public void clearDiskBitmaps(List<DiskImage> diskImages) {
+        // Remove the bitmap from all the disk snapshots.
+        for (DiskImage image : diskImages) {
+            // RAW volumes do not support bitmaps
+            if (!image.isQcowFormat()) {
+                continue;
+            }
+
+            log.info("Clear all bitmaps from VM '{}' for volume '{}'.", getVmName(), image.getId());
+            VdsmImageLocationInfo locationInfo = new VdsmImageLocationInfo(
+                    image.getStorageIds().get(0),
+                    image.getId(),
+                    image.getImageId(),
+                    null);
+
+            VolumeBitmapCommandParameters parameters =
+                    new VolumeBitmapCommandParameters(
+                            getStoragePoolId(),
+                            locationInfo,
+                            null);
+            parameters.setEndProcedure(ActionParametersBase.EndProcedure.COMMAND_MANAGED);
+            parameters.setParentCommand(getActionType());
+            parameters.setParentParameters(getParameters());
+
+            ActionReturnValue returnValue = runInternalActionWithTasksContext(ActionType.ClearVolumeBitmaps, parameters);
+            if (!returnValue.getSucceeded()) {
+                log.error("Failed to remove all bitmaps for VM '{}' volume '{}'", getVmName(), image.getId());
+            }
+        }
     }
 }

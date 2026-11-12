@@ -36,6 +36,7 @@ import org.ovirt.engine.ui.uicommonweb.models.vms.DiskModel;
 import org.ovirt.engine.ui.uicommonweb.models.vms.EditVmDiskModel;
 import org.ovirt.engine.ui.uicommonweb.models.vms.NewDiskModel;
 import org.ovirt.engine.ui.uicommonweb.models.vms.VmHighPerformanceConfigurationModel;
+import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.AssignTagsPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.ImportTemplatesPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.event.EventPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.ova.ExportOvaPopupPresenterWidget;
@@ -69,6 +70,7 @@ public class TemplateModule extends AbstractGinModule {
     @Singleton
     public MainModelProvider<VmTemplate, TemplateListModel> getTemplateListProvider(EventBus eventBus,
             final Provider<DefaultConfirmationPopupPresenterWidget> defaultConfirmPopupProvider,
+            final Provider<AssignTagsPopupPresenterWidget> assignTagsPopupProvider,
             final Provider<TemplateEditPresenterWidget> popupProvider,
             final Provider<VmExportPopupPresenterWidget> exportPopupProvider,
             final Provider<ExportOvaPopupPresenterWidget> exportOvaPopupProvider,
@@ -92,6 +94,8 @@ public class TemplateModule extends AbstractGinModule {
 
                         if (lastExecutedCommand == model.getEditCommand()) {
                             return popupProvider.get();
+                        } else if (lastExecutedCommand == getModel().getAssignTagsCommand()) {
+                            return assignTagsPopupProvider.get();
                         } else if (lastExecutedCommand == getModel().getExportCommand()) {
                             return exportPopupProvider.get();
                         } else if (lastExecutedCommand == getModel().getExportOvaCommand()) {
@@ -102,7 +106,7 @@ public class TemplateModule extends AbstractGinModule {
                         } else if (lastExecutedCommand == getModel().getCreateVmFromTemplateCommand()) {
                             if (windowModel instanceof AttachDiskModel) {
                                 return attachDiskPopupProvider.get();
-                            } else if ((windowModel instanceof NewDiskModel) || (windowModel instanceof EditVmDiskModel)) {
+                            } else if (windowModel instanceof NewDiskModel || windowModel instanceof EditVmDiskModel) {
                                 return newDiskPopupProvider.get();
                             } else {
                                 return createVmPopupProvider.get();
@@ -185,8 +189,8 @@ public class TemplateModule extends AbstractGinModule {
                     public AbstractModelBoundPopupPresenterWidget<? extends Model, ?> getModelPopup(TemplateInterfaceListModel source,
                             UICommand lastExecutedCommand,
                             Model windowModel) {
-                        if ((lastExecutedCommand == getModel().getNewCommand())
-                                || (lastExecutedCommand == getModel().getEditCommand())) {
+                        if (lastExecutedCommand == getModel().getNewCommand()
+                                || lastExecutedCommand == getModel().getEditCommand()) {
                             return popupProvider.get();
                         } else {
                             return super.getModelPopup(source, lastExecutedCommand, windowModel);
@@ -270,21 +274,21 @@ public class TemplateModule extends AbstractGinModule {
         bind(TemplateStorageListModel.class).in(Singleton.class);
         bind(TemplateVmListModel.class).in(Singleton.class);
         bind(TemplateEventListModel.class).in(Singleton.class);
-        bind(new TypeLiteral<PermissionListModel<VmTemplate>>(){}).in(Singleton.class);
+        bind(new TypeLiteral<PermissionListModel<VmTemplate>>() { }).in(Singleton.class);
         bind(TemplateMainSelectedItems.class).asEagerSingleton();
 
         // Form Detail Models
-        bind(new TypeLiteral<DetailModelProvider<TemplateListModel, TemplateGeneralModel>>(){})
-            .to(new TypeLiteral<DetailTabModelProvider<TemplateListModel, TemplateGeneralModel>>(){}).in(Singleton.class);
-        bind(new TypeLiteral<DetailModelProvider<ImportTemplatesModel, TemplateImportGeneralModel>>(){})
-        .to(new TypeLiteral<DetailTabModelProvider<ImportTemplatesModel, TemplateImportGeneralModel>>(){}).in(Singleton.class);
+        bind(new TypeLiteral<DetailModelProvider<TemplateListModel, TemplateGeneralModel>>() { })
+            .to(new TypeLiteral<DetailTabModelProvider<TemplateListModel, TemplateGeneralModel>>() { }).in(Singleton.class);
+        bind(new TypeLiteral<DetailModelProvider<ImportTemplatesModel, TemplateImportGeneralModel>>() { })
+        .to(new TypeLiteral<DetailTabModelProvider<ImportTemplatesModel, TemplateImportGeneralModel>>() { }).in(Singleton.class);
         // Search-able Detail Models
-        bind(new TypeLiteral<SearchableDetailModelProvider<VM, TemplateListModel, TemplateVmListModel>>(){})
-           .to(new TypeLiteral<SearchableDetailTabModelProvider<VM, TemplateListModel, TemplateVmListModel>>(){})
-           .in(Singleton.class);
+        bind(new TypeLiteral<SearchableDetailModelProvider<VM, TemplateListModel, TemplateVmListModel>>() { })
+            .to(new TypeLiteral<SearchableDetailTabModelProvider<VM, TemplateListModel, TemplateVmListModel>>() { })
+            .in(Singleton.class);
         // Permission Detail Model
-        bind(new TypeLiteral<SearchableDetailModelProvider<Permission, TemplateListModel, PermissionListModel<VmTemplate>>>(){})
-           .to(new TypeLiteral<PermissionModelProvider<VmTemplate, TemplateListModel>>(){}).in(Singleton.class);
+        bind(new TypeLiteral<SearchableDetailModelProvider<Permission, TemplateListModel, PermissionListModel<VmTemplate>>>() { })
+            .to(new TypeLiteral<PermissionModelProvider<VmTemplate, TemplateListModel>>() { }).in(Singleton.class);
     }
 
 }

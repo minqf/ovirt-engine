@@ -29,10 +29,10 @@ public class BackendStorageServerConnectionResourceTest extends AbstractBackendS
         org.ovirt.engine.api.model.StorageType.ISCSI };
 
     protected static final StorageType[] STORAGE_TYPES_MAPPED = {
-            StorageType.NFS,
-            StorageType.LOCALFS,
-            StorageType.POSIXFS,
-            StorageType.ISCSI };
+        StorageType.NFS,
+        StorageType.LOCALFS,
+        StorageType.POSIXFS,
+        StorageType.ISCSI };
 
     public BackendStorageServerConnectionResourceTest() {
         super(new BackendStorageServerConnectionResource(GUIDS[3].toString(),
@@ -148,7 +148,7 @@ public class BackendStorageServerConnectionResourceTest extends AbstractBackendS
                 GUIDS[1].toString()
         );
         setUriInfo(uriInfo);
-        verifyBadRequest(assertThrows(WebApplicationException.class, () ->  resource.remove()));
+        verifyBadRequest(assertThrows(WebApplicationException.class, () -> resource.remove()));
     }
 
     protected void update(boolean valid, boolean executeCommandResult, int getConnectionExecTimes) {

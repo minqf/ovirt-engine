@@ -31,17 +31,17 @@ public class EventModule extends AbstractGinModule {
             final Provider<EventPopupPresenterWidget> popupProvider,
             @Named("main") final Provider<EventListModel<Void>> modelProvider) {
         MainViewModelProvider<AuditLog, EventListModel<Void>> result =
-                new MainViewModelProvider<AuditLog, EventListModel<Void>>(eventBus, defaultConfirmPopupProvider) {
-            @Override
-            public AbstractModelBoundPopupPresenterWidget<? extends Model, ?> getModelPopup(EventListModel<Void> source,
+            new MainViewModelProvider<AuditLog, EventListModel<Void>>(eventBus, defaultConfirmPopupProvider) {
+                @Override
+                public AbstractModelBoundPopupPresenterWidget<? extends Model, ?> getModelPopup(EventListModel<Void> source,
                     UICommand lastExecutedCommand, Model windowModel) {
-                if (lastExecutedCommand == getModel().getDetailsCommand()) {
-                    return popupProvider.get();
-                } else {
-                    return super.getModelPopup(source, lastExecutedCommand, windowModel);
+                    if (lastExecutedCommand == getModel().getDetailsCommand()) {
+                        return popupProvider.get();
+                    } else {
+                        return super.getModelPopup(source, lastExecutedCommand, windowModel);
+                    }
                 }
-            }
-        };
+            };
         result.setModelProvider(modelProvider);
         return result;
     }
@@ -59,11 +59,11 @@ public class EventModule extends AbstractGinModule {
 
     @Override
     protected void configure() {
-        bind(new TypeLiteral<EventListModel<Void>>(){})
-            .annotatedWith(Names.named("main")).to(new TypeLiteral<EventListModel<Void>>(){}) //$NON-NLS-1$
+        bind(new TypeLiteral<EventListModel<Void>>() { })
+            .annotatedWith(Names.named("main")).to(new TypeLiteral<EventListModel<Void>>() { }) //$NON-NLS-1$
             .in(Singleton.class);
-        bind(new TypeLiteral<EventListModel<Void>>(){})
-            .annotatedWith(Names.named("notification")).to(new TypeLiteral<EventListModel<Void>>(){}) //$NON-NLS-1$
+        bind(new TypeLiteral<EventListModel<Void>>() { })
+            .annotatedWith(Names.named("notification")).to(new TypeLiteral<EventListModel<Void>>() { }) //$NON-NLS-1$
             .in(Singleton.class);
     }
 

@@ -21,7 +21,6 @@
   </module>
   <module name="UniqueProperties"/>
   <module name="TreeWalker">
-
     <!-- Built-in checks -->
     <module name="AnnotationLocation" />
     <module name="AnnotationUseStyle" />
@@ -52,6 +51,7 @@
       <property name="separated" value="true"/>
     </module>
     <module name="IllegalInstantiation"/>
+    <module name="Indentation"/>
     <module name="LeftCurly"/>
     <module name="MethodName" />
     <module name="MissingOverride" />
@@ -65,9 +65,11 @@
     <module name="OneStatementPerLine"/>
     <module name="OneTopLevelClass" />
     <module name="PackageDeclaration"/>
+    <module name="ParenPad"/>
     <module name="RedundantImport"/>
     <module name="RightCurly" />
     <module name="SimplifyBooleanExpression"/>
+    <module name="SingleSpaceSeparator"/>
     <module name="StringLiteralEquality"/>
     <module name="SuppressionXpathSingleFilter">
       <property name="checks" value="IllegalType"/>
@@ -77,9 +79,8 @@
     <module name="UnnecessaryParentheses"/>
     <module name="UnusedImports"/>
     <module name="UpperEll"/>
-    <module name="WhitespaceAfter">
-          <property name="tokens" value="COMMA"/>
-    </module>
+    <module name="WhitespaceAfter"/>
+    <module name="WhitespaceAround"/>
 
     <!-- oVirt checks -->
     <module name="org.ovirt.checkstyle.checks.DiamondOperatorCheck"/>

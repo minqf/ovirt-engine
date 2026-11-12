@@ -23,10 +23,12 @@ import org.ovirt.engine.core.bll.hostdev.HostDeviceManager;
 import org.ovirt.engine.core.bll.interfaces.BackendInternal;
 import org.ovirt.engine.core.bll.job.ExecutionHandler;
 import org.ovirt.engine.core.bll.scheduling.SchedulingManager;
+import org.ovirt.engine.core.bll.storage.domain.IsoDomainListSynchronizer;
 import org.ovirt.engine.core.bll.storage.pool.StoragePoolStatusHandler;
 import org.ovirt.engine.core.bll.tasks.CommandCoordinatorUtil;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.action.ActionParametersBase;
+import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.AddUnmanagedVmsParameters;
 import org.ovirt.engine.core.common.action.ConnectHostToStoragePoolServersParameters;
@@ -37,6 +39,7 @@ import org.ovirt.engine.core.common.action.MaintenanceNumberOfVdssParameters;
 import org.ovirt.engine.core.common.action.ProcessDownVmParameters;
 import org.ovirt.engine.core.common.action.ReconstructMasterParameters;
 import org.ovirt.engine.core.common.action.RunVmParams;
+import org.ovirt.engine.core.common.action.SaveVmExternalDataParameters;
 import org.ovirt.engine.core.common.action.SetNonOperationalVdsParameters;
 import org.ovirt.engine.core.common.action.SetStoragePoolStatusParameters;
 import org.ovirt.engine.core.common.action.StorageDomainPoolParametersBase;
@@ -48,6 +51,7 @@ import org.ovirt.engine.core.common.businessentities.IVdsAsyncCommand;
 import org.ovirt.engine.core.common.businessentities.IVdsEventListener;
 import org.ovirt.engine.core.common.businessentities.NonOperationalReason;
 import org.ovirt.engine.core.common.businessentities.StorageDomainStatic;
+import org.ovirt.engine.core.common.businessentities.StorageDomainType;
 import org.ovirt.engine.core.common.businessentities.StoragePool;
 import org.ovirt.engine.core.common.businessentities.StoragePoolStatus;
 import org.ovirt.engine.core.common.businessentities.VDS;
@@ -59,6 +63,7 @@ import org.ovirt.engine.core.common.businessentities.qos.StorageQos;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.DiskStorageType;
+import org.ovirt.engine.core.common.businessentities.storage.ImageFileType;
 import org.ovirt.engine.core.common.errors.EngineError;
 import org.ovirt.engine.core.common.errors.EngineException;
 import org.ovirt.engine.core.common.eventqueue.Event;
@@ -77,6 +82,7 @@ import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogable;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogableImpl;
 import org.ovirt.engine.core.dao.DiskDao;
+import org.ovirt.engine.core.dao.StorageDomainDao;
 import org.ovirt.engine.core.dao.StorageDomainStaticDao;
 import org.ovirt.engine.core.dao.StoragePoolDao;
 import org.ovirt.engine.core.dao.VdsDao;
@@ -116,6 +122,8 @@ public class VdsEventListener implements IVdsEventListener {
     @Inject
     private StoragePoolDao storagePoolDao;
     @Inject
+    private StorageDomainDao storageDomainDao;
+    @Inject
     private CpuQosDao cpuQosDao;
     @Inject
     private StorageQosDao storageQosDao;
@@ -125,8 +133,6 @@ public class VdsEventListener implements IVdsEventListener {
     private DiskDao diskDao;
     @Inject
     private BackendInternal backend;
-    @Inject
-    private Instance<HostedEngineImporter> hostedEngineImporterProvider;
     @Inject
     private SchedulingManager schedulingManager;
     @Inject
@@ -147,6 +153,8 @@ public class VdsEventListener implements IVdsEventListener {
     private StoragePoolStatusHandler storagePoolStatusHandler;
     @Inject
     private HostLocking hostLocking;
+    @Inject
+    private IsoDomainListSynchronizer isoDomainListSynchronizer;
 
     private static final Logger log = LoggerFactory.getLogger(VdsEventListener.class);
 
@@ -256,17 +264,9 @@ public class VdsEventListener implements IVdsEventListener {
         }
 
         vmJobsMonitoring.removeJobsByVmIds(vmIds);
-        ThreadPoolUtil.execute(() -> processOnVmStopInternal(vmIds, hostId));
-    }
-
-    private void processOnVmStopInternal(final Collection<Guid> vmIds, final Guid hostId) {
-        for (Guid vmId : vmIds) {
-            backend.runInternalAction(ActionType.ProcessDownVm,
-                    new ProcessDownVmParameters(vmId, true));
-        }
-
-        HostDeviceManager hostDeviceManager = Injector.get(HostDeviceManager.class);
-        hostDeviceManager.refreshHostIfAnyVmHasHostDevices(vmIds, hostId);
+        ThreadPoolUtil.execute(() -> vmIds.forEach(vmId -> backend.runInternalAction(
+                ActionType.ProcessDownVm,
+                new ProcessDownVmParameters(vmId, true, hostId))));
     }
 
     /**
@@ -274,10 +274,9 @@ public class VdsEventListener implements IVdsEventListener {
      */
     @Override
     public void syncStorageDomainsLuns(Guid vdsId, Collection<Guid> storageDomainsToSync) {
-        ThreadPoolUtil.execute(() -> {
-            backend.runInternalAction(ActionType.SyncStorageDomainsLuns, new SyncStorageDomainsLunsParameters(
-                    vdsId, storageDomainsToSync));
-        });
+        ThreadPoolUtil.execute(() -> backend.runInternalAction(
+                ActionType.SyncStorageDomainsLuns,
+                new SyncStorageDomainsLunsParameters(vdsId, storageDomainsToSync)));
     }
 
     @Override
@@ -450,7 +449,7 @@ public class VdsEventListener implements IVdsEventListener {
         if (command != null) {
             // The command will be invoked in a different VDS in its rerun method, so we're calling
             // its rerun method from a new thread so that it won't be executed within our current VDSM lock
-            ThreadPoolUtil.execute(() -> command.rerun());
+            ThreadPoolUtil.execute(command::rerun);
         }
     }
 
@@ -533,7 +532,7 @@ public class VdsEventListener implements IVdsEventListener {
                     Guid diskProfileId = diskImage.getDiskProfileId();
                     StorageQos storageQos = storageQosMap.get(diskProfileId);
 
-                    if(storageQos != null) {
+                    if (storageQos != null) {
                         params.getStorageQos().put(diskImage, storageQos);
                     }
                 }
@@ -551,15 +550,18 @@ public class VdsEventListener implements IVdsEventListener {
     }
 
     @Override
-    public void refreshHostIfAnyVmHasHostDevices(final List<Guid> vmIds, final Guid hostId) {
-        if (vmIds.isEmpty()) {
+    public void refreshHostIfAnyVmHasHostDevices(List<Guid> succeededToRunVms, List<Guid> movedToDownVms, final Guid hostId) {
+        if (succeededToRunVms.isEmpty() && movedToDownVms.isEmpty()) {
             return;
         }
 
-        ThreadPoolUtil.execute(() -> {
-            HostDeviceManager hostDeviceManager = Injector.get(HostDeviceManager.class);
-            hostDeviceManager.refreshHostIfAnyVmHasHostDevices(vmIds, hostId);
-        });
+        HostDeviceManager hostDeviceManager = Injector.get(HostDeviceManager.class);
+        if (succeededToRunVms.stream().anyMatch(hostDeviceManager::checkVmNeedsHostDevices) ||
+                movedToDownVms.stream().anyMatch(hostDeviceManager::checkVmNeedsHostDevices)) {
+            ThreadPoolUtil.execute(() -> backend.runInternalAction(
+                    ActionType.RefreshHost,
+                    new VdsActionParameters(hostId)));
+        }
     }
 
     @Override
@@ -587,7 +589,7 @@ public class VdsEventListener implements IVdsEventListener {
                                     cluster.isEnableBallooning(),
                                     cluster.isEnableKsm(),
                                     cluster.isKsmMergeAcrossNumaNodes())
-                            );
+                    );
                 } catch (EngineException e) {
                     log.error("Could not update MoM policy on host '{}'", vds.getName());
                 }
@@ -601,13 +603,14 @@ public class VdsEventListener implements IVdsEventListener {
     }
 
     @Override
-    public void restartVmsWithLease(List<Guid> vmIds) {
+    public void restartVmsWithLease(List<Guid> vmIds, Guid hostId) {
         if (vmIds.isEmpty()) {
             return;
         }
 
         EngineLock engineLock = new EngineLock(Collections.emptyMap(), Collections.emptyMap());
         ThreadPoolUtil.execute(() -> {
+            log.info("trying to run VMs with a lease on a non-responding host {} elsewhere", hostId);
             for (Guid vmId : vmIds) {
                 resourceManagerProvider.get().removeAsyncRunningVm(vmId);
                 backend.runInternalAction(
@@ -615,6 +618,18 @@ public class VdsEventListener implements IVdsEventListener {
                         buildRunVmParameters(vmId),
                         ExecutionHandler.createInternalJobContext(engineLock));
             }
+        });
+    }
+
+    @Override
+    public void refreshIsoCache(Guid storagePoolId) {
+        ThreadPoolUtil.execute(() -> {
+            storageDomainDao.getAllForStoragePool(storagePoolId)
+                    .stream()
+                    .filter(sd -> sd.getStorageDomainType() == StorageDomainType.ISO
+                            || sd.getStorageDomainType().isDataDomain())
+                    .forEach(sd -> isoDomainListSynchronizer
+                            .getUserRequestForStorageDomainRepoFileList(sd.getId(), ImageFileType.ISO, true));
         });
     }
 
@@ -626,5 +641,9 @@ public class VdsEventListener implements IVdsEventListener {
         RunVmParams parameters = new RunVmParams(vmId);
         parameters.setRunInUnknownStatus(true);
         return parameters;
+    }
+
+    public ActionReturnValue saveExternalData(SaveVmExternalDataParameters parameters) {
+        return backend.runInternalAction(ActionType.SaveVmExternalData, parameters);
     }
 }

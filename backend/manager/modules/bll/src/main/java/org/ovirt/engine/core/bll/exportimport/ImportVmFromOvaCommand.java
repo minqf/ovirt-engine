@@ -10,10 +10,9 @@ import org.ovirt.engine.core.common.action.AddDiskParameters;
 import org.ovirt.engine.core.common.action.ConvertOvaParameters;
 import org.ovirt.engine.core.common.action.ImportVmFromOvaParameters;
 import org.ovirt.engine.core.common.businessentities.OriginType;
+import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.DiskInterface;
-import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
-import org.ovirt.engine.core.common.businessentities.storage.VolumeType;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.job.StepEnum;
 import org.ovirt.engine.core.compat.Guid;
@@ -40,9 +39,17 @@ public class ImportVmFromOvaCommand<T extends ImportVmFromOvaParameters> extends
     }
 
     @Override
+    protected boolean isHostInSupportedClusterForProxyHost(VDS host) {
+        return isVirtV2VUsed() ? super.isHostInSupportedClusterForProxyHost(host) : true;
+    }
+
+    private boolean isVirtV2VUsed() {
+        return getParameters().getVm().getOrigin() != OriginType.OVIRT;
+    }
+
+    @Override
     protected void convert() {
-        boolean useVirtV2V = getParameters().getVm().getOrigin() != OriginType.OVIRT;
-        if (useVirtV2V) {
+        if (isVirtV2VUsed()) {
             runInternalAction(ActionType.ConvertOva,
                     buildConvertOvaParameters(),
                     createConversionStepContext(StepEnum.CONVERTING_OVA));
@@ -62,6 +69,7 @@ public class ImportVmFromOvaCommand<T extends ImportVmFromOvaParameters> extends
         parameters.setStorageDomainId(getStorageDomainId());
         parameters.setProxyHostId(getParameters().getProxyHostId());
         parameters.setClusterId(getClusterId());
+        parameters.setVirtioIsoStorageDomainId(getParameters().getVirtioIsoStorageDomainId());
         parameters.setVirtioIsoName(getParameters().getVirtioIsoName());
         parameters.setNetworkInterfaces(getParameters().getVm().getInterfaces());
         parameters.setParentCommand(getActionType());
@@ -95,9 +103,6 @@ public class ImportVmFromOvaCommand<T extends ImportVmFromOvaParameters> extends
             return super.buildAddDiskParameters(image);
         }
 
-        // The volume format and type is fixed for disks within oVirt's OVA files:
-        image.setVolumeFormat(VolumeFormat.COW);
-        image.setVolumeType(VolumeType.Sparse);
         AddDiskParameters parameters = super.buildAddDiskParameters(image);
         parameters.setUsePassedDiskId(true);
         parameters.setUsePassedImageId(true);

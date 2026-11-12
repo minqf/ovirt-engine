@@ -5,6 +5,7 @@
 
 package org.ovirt.engine.core.common.utils.ansible;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
@@ -19,7 +20,7 @@ public class AnsibleReturnValue {
     private AnsibleReturnCode ansibleReturnCode;
 
     /**
-     * Stdout of playbook execution. It is set only if user is using custom stdout callback plugin.
+     * Stdout of playbook execution. Holds play execution stdout or set if user is using custom stdout callback plugin.
      */
     private String stdout;
 
@@ -33,6 +34,16 @@ public class AnsibleReturnValue {
      */
     private Path logFile;
 
+    /**
+     *  Holds the playbook execution UUID. Needed to async executions.
+     */
+    private String playUuid;
+
+    /**
+     *  Holds the id of the last event that was processed.
+     */
+    private int lastEventId;
+
     public AnsibleReturnValue(AnsibleReturnCode ansibleReturnCode) {
         this(ansibleReturnCode, null);
     }
@@ -40,6 +51,7 @@ public class AnsibleReturnValue {
     public AnsibleReturnValue(AnsibleReturnCode ansibleReturnCode, String stdout) {
         this.ansibleReturnCode = ansibleReturnCode;
         this.stdout = stdout;
+        this.lastEventId = 0;
     }
 
     public AnsibleReturnCode getAnsibleReturnCode() {
@@ -72,5 +84,27 @@ public class AnsibleReturnValue {
 
     public void setLogFile(Path logFile) {
         this.logFile = logFile;
+    }
+
+    public void setAnsibleRunnerServiceLogFile() {
+        if (!Files.exists(this.logFile)) {
+            this.logFile = AnsibleConstants.ANSIBLE_RUNNER_SERVICE_LOG;
+        }
+    }
+
+    public void setPlayUuid(String playUuid) {
+        this.playUuid = playUuid;
+    }
+
+    public String getPlayUuid() {
+        return playUuid;
+    }
+
+    public void setLastEventId(int lastEventId) {
+        this.lastEventId = lastEventId;
+    }
+
+    public int getLastEventId() {
+        return lastEventId;
     }
 }

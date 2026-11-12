@@ -39,7 +39,11 @@ public class CreateVolumeVDSCommand<P extends CreateVolumeVDSCommandParameters> 
                 getParameters().getNewImageDescription(),
                 getParameters().getSourceImageGroupId().toString(),
                 getParameters().getImageId().toString(),
-                imageInitSize);
+                imageInitSize,
+                getParameters().shouldAddBitmaps(),
+                getParameters().isLegal(),
+                getParameters().getSequenceNumber(),
+                getParameters().getBitmap() != null ? getParameters().getBitmap().toString() : null);
 
         proceedProxyReturnValue();
         Guid taskID = new Guid(uuidReturn.uuid);

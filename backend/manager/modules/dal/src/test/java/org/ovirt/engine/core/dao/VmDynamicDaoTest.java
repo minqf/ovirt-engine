@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.ovirt.engine.core.common.businessentities.ActionGroup;
 import org.ovirt.engine.core.common.businessentities.BusinessEntity;
 import org.ovirt.engine.core.common.businessentities.GuestAgentStatus;
 import org.ovirt.engine.core.common.businessentities.VMStatus;
@@ -18,7 +19,7 @@ import org.ovirt.engine.core.common.businessentities.VmDynamic;
 import org.ovirt.engine.core.compat.Guid;
 
 public class VmDynamicDaoTest extends BaseGenericDaoTestCase<Guid, VmDynamic, VmDynamicDao> {
-    private static final int DYNAMIC_RUNNING_COUNT = 3;
+    private static final int DYNAMIC_RUNNING_COUNT = 4;
 
     /**
      * Test the {@link VmDynamicDao#save(BusinessEntity)} method by adding a vm_dynamic record to a template.
@@ -51,7 +52,7 @@ public class VmDynamicDaoTest extends BaseGenericDaoTestCase<Guid, VmDynamic, Vm
 
     @Override
     protected int getEntitiesTotalCount() {
-        return 10;
+        return 11;
     }
 
     /**
@@ -96,34 +97,6 @@ public class VmDynamicDaoTest extends BaseGenericDaoTestCase<Guid, VmDynamic, Vm
         assertEquals(existingVm2, dao.get(existingVm2.getId()));
     }
 
-    /**
-     * Make sure that saving a new console user id and console user name to a virtual machine
-     * without a previous console user succeeds and returns {@code true}.
-     */
-    @Test
-    public void testUpdateConsoleUserWithOptimisticLockingSuccess() {
-        VmDynamic vmWithoutConsoleUser = dao.get(FixturesTool.VM_RHEL5_POOL_51);
-        vmWithoutConsoleUser.setConsoleUserId(new Guid("9bf7c640-b620-456f-a550-0348f366544b"));
-
-        boolean result = dao.updateConsoleUserWithOptimisticLocking(vmWithoutConsoleUser);
-
-        assertTrue(result);
-    }
-
-    /**
-     * Make sure that saving a new console user id and console user name to a virtual machine
-     * that already as a previous console user fails and returns {@code false}.
-     */
-    @Test
-    public void testUpdateConsoleUserWithOptimisticLockingFailure() {
-        VmDynamic vmWithoutConsoleUser = dao.get(FixturesTool.VM_RHEL5_POOL_57);
-        vmWithoutConsoleUser.setConsoleUserId(new Guid("9bf7c640-b620-456f-a550-0348f366544b"));
-
-        boolean result = dao.updateConsoleUserWithOptimisticLocking(vmWithoutConsoleUser);
-
-        assertFalse(result);
-    }
-
     @Test
     public void testClearMigratingToVds() {
         VmDynamic vmDynamic = dao.get(FixturesTool.VM_RHEL5_POOL_51);
@@ -154,4 +127,28 @@ public class VmDynamicDaoTest extends BaseGenericDaoTestCase<Guid, VmDynamic, Vm
         assertEquals(VMStatus.Unknown, dao.get(existingVm2.getId()).getStatus());
         assertNotEquals(VMStatus.Unknown, dao.get(existingVm3.getId()).getStatus());
     }
+
+    /**
+     * Ensures that getting all VmDynamics with run_on_vds set for specific action group works as expected.
+     */
+    @Test
+    public void testGetAllRunningForUserAndActionGroup() {
+        List<VmDynamic> result = dao.getAllRunningForUserAndActionGroup(PRIVILEGED_USER_ID, ActionGroup.CONNECT_TO_SERIAL_CONSOLE);
+
+        assertNotNull(result);
+        assertFalse(result.isEmpty());
+        assertEquals(3, result.size());
+    }
+
+    /**
+     * Ensures that getting all VmDynamics for unprivileged specific action group works as expected.
+     */
+    @Test
+    public void testGetAllRunningForUnPrivilegedUserAndActionGroup() {
+        List<VmDynamic> result = dao.getAllRunningForUserAndActionGroup(UNPRIVILEGED_USER_ID, ActionGroup.CONNECT_TO_SERIAL_CONSOLE);
+
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
+
 }

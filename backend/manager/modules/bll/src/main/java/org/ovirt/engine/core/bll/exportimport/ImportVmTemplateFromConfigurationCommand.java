@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -38,6 +39,7 @@ import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.DiskVmElement;
 import org.ovirt.engine.core.common.businessentities.storage.FullEntityOvfData;
+import org.ovirt.engine.core.common.businessentities.storage.ImageStatus;
 import org.ovirt.engine.core.common.businessentities.storage.ImageStorageDomainMap;
 import org.ovirt.engine.core.common.businessentities.storage.QcowCompat;
 import org.ovirt.engine.core.common.businessentities.storage.QemuImageInfo;
@@ -75,6 +77,8 @@ public class ImportVmTemplateFromConfigurationCommand<T extends ImportVmTemplate
     private List<String> missingRoles = new ArrayList<>();
     private List<String> missingVnicMappings = new ArrayList<>();
     private Collection<DiskImage> templateDisksToAttach;
+    private Map<Guid, Guid> diskIdToStorageDomainId;
+    private Guid invalidDiskIdToAttach;
 
     @Inject
     private AuditLogDirector auditLogDirector;
@@ -145,7 +149,31 @@ public class ImportVmTemplateFromConfigurationCommand<T extends ImportVmTemplate
 
     @Override
     protected boolean validateSourceStorageDomain() {
-        return templateDisksToAttach == null ? super.validateSourceStorageDomain() : true;
+        if (templateDisksToAttach == null) {
+            return super.validateSourceStorageDomain();
+        }
+        if (invalidDiskIdToAttach != null) {
+            log.error("failed to find an image of disk {} in the database", invalidDiskIdToAttach);
+            return failValidation(EngineMessage.TEMPLATE_IMAGE_NOT_EXIST);
+        }
+        diskIdToStorageDomainId = new HashMap<>();
+        for (DiskImage disk : templateDisksToAttach) {
+            // there should be a single volume for the disk as this is a template's disk
+            if (disk.getImageStatus() != ImageStatus.OK) {
+                log.error("found an image ({}) whose status is {}",
+                        disk.getImageId(), disk.getImageStatus());
+                return failValidation(EngineMessage.ACTION_TYPE_FAILED_TEMPLATE_DISK_STATUS_IS_NOT_VALID);
+            }
+            Iterator<Guid> storageIdsIterator = disk.getStorageIds().iterator();
+            if (!storageIdsIterator.hasNext()) {
+                log.error("found an image with no storage domain {}", disk.getImageId());
+                return failValidation(EngineMessage.TEMPLATE_IMAGE_NOT_EXIST);
+            }
+            // theoretically, a template's disk may reside within several storage domains, however,
+            // it is unlikely to be the case here and anyway, we can just take the first storage domain
+            diskIdToStorageDomainId.put(disk.getId(), storageIdsIterator.next());
+        }
+        return true;
     }
 
     @Override
@@ -173,7 +201,7 @@ public class ImportVmTemplateFromConfigurationCommand<T extends ImportVmTemplate
 
         ImportValidator importValidator = new ImportValidator(getParameters());
 
-        if (!validate(importValidator.validateDiskNotAlreadyExistOnDB(
+        if (!validate(importValidator.validateDiskImagesNotExistOrShareable(
                 getImages(),
                 getParameters().isAllowPartialImport(),
                 imageToDestinationDomainMap,
@@ -207,7 +235,7 @@ public class ImportVmTemplateFromConfigurationCommand<T extends ImportVmTemplate
                     return failValidation(EngineMessage.TEMPLATE_IMAGE_NOT_EXIST);
                 }
                 log.warn("Disk image '{}/{}' doesn't exist on any of its storage domains. " +
-                                "Ignoring since the 'Allow Partial' flag is on", imageGroupId, image.getImageId());
+                        "Ignoring since the 'Allow Partial' flag is on", imageGroupId, image.getImageId());
                 getImages().remove(image);
                 failedDisksToImportForAuditLog.putIfAbsent(image.getId(), image.getDiskAlias());
             }
@@ -221,6 +249,8 @@ public class ImportVmTemplateFromConfigurationCommand<T extends ImportVmTemplate
      */
     private boolean validateImageAvailability(DiskImage image, Guid imageGroupId) {
         boolean imageAvailable = false;
+        Set<Guid> availableStorageDomains = new HashSet<>();
+
         for (Guid storageDomainId : image.getStorageIds()) {
             DiskImage fromIrs = null;
             try {
@@ -237,8 +267,12 @@ public class ImportVmTemplateFromConfigurationCommand<T extends ImportVmTemplate
                         image.getImageId(), storageDomainId);
             } else if (!imageAvailable) {
                 imageAvailable = true;
+                availableStorageDomains.add(storageDomainId);
             }
         }
+
+        getParameters().getImageToAvailableStorageDomains().put(image.getImageId(), availableStorageDomains);
+
         return imageAvailable;
     }
 
@@ -293,6 +327,7 @@ public class ImportVmTemplateFromConfigurationCommand<T extends ImportVmTemplate
         setClusterId(getParameters().getClusterId());
         if (getCluster() != null) {
             setStoragePoolId(getCluster().getStoragePoolId());
+            getParameters().setStoragePoolId(getStoragePoolId());
         }
         super.init();
     }
@@ -301,6 +336,18 @@ public class ImportVmTemplateFromConfigurationCommand<T extends ImportVmTemplate
         templateDisksToAttach = templateFromConfiguration.getDiskTemplateMap().values();
         clearVmDisks(templateFromConfiguration);
         getParameters().setCopyCollapse(true);
+        List<DiskImage> volumesFromDB;
+        for (DiskImage disk : templateDisksToAttach) {
+            volumesFromDB = diskImageDao.getAllSnapshotsForImageGroup(disk.getId());
+            if (volumesFromDB.isEmpty()) {
+                invalidDiskIdToAttach = disk.getId();
+                break;
+            }
+            DiskImage volumeFromDB = volumesFromDB.get(0);
+            disk.setImageId(volumeFromDB.getImageId());
+            disk.setStorageIds(volumeFromDB.getStorageIds());
+            disk.setStoragePoolId(volumeFromDB.getStoragePoolId());
+        }
     }
 
     private static void clearVmDisks(VmTemplate template) {
@@ -589,6 +636,33 @@ public class ImportVmTemplateFromConfigurationCommand<T extends ImportVmTemplate
     @Override
     public AuditLogType getAuditLogTypeValue() {
         return getSucceeded() ? AuditLogType.TEMPLATE_IMPORT_FROM_CONFIGURATION_SUCCESS :
-                AuditLogType.TEMPLATE_IMPORT_FROM_CONFIGURATION_FAILED;
+            AuditLogType.TEMPLATE_IMPORT_FROM_CONFIGURATION_FAILED;
+    }
+
+    @Override
+    protected void updateDiskSizeByQcowImageInfo(DiskImage diskImage, Guid storageId) {
+        Set<Guid> storageDomains = getParameters().getImageToAvailableStorageDomains().get(diskImage.getImageId());
+
+        if (storageDomains != null && !storageDomains.isEmpty()) {
+            // Try to use the target SD, otherwise fallback to one of the available SDs
+            // for the image
+            if (storageDomains.contains(getStorageDomainId())) {
+                storageId = getStorageDomainId();
+            } else {
+                storageId = storageDomains.stream().findFirst().get();
+            }
+        }
+
+        if (!Guid.isNullOrEmpty(storageId)) {
+            super.updateDiskSizeByQcowImageInfo(diskImage, storageId);
+            return;
+        }
+        // otherwise, we have an image whose storage domain(s) is unknown at this point
+        // this may happen when getting here with a template that was read from an OVF
+        // and since the image id in the database may be different than the one specified
+        // within the OVF (e.g., when the image id is generate during upload image),
+        // let's take the storage domain of the disk's image that was queried
+        // from the database.
+        super.updateDiskSizeByQcowImageInfo(diskImage, diskIdToStorageDomainId.get(diskImage.getId()));
     }
 }

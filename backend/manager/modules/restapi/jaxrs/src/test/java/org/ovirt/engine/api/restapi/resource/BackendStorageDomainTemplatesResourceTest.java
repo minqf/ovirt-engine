@@ -35,7 +35,7 @@ public class BackendStorageDomainTemplatesResourceTest
     extends AbstractBackendCollectionResourceTest<Template, VmTemplate, BackendStorageDomainTemplatesResource> {
 
     private static final Guid DATA_CENTER_ID = GUIDS[0];
-    private static final Guid STORAGE_DOMAIN_ID = GUIDS[GUIDS.length-1];
+    private static final Guid STORAGE_DOMAIN_ID = GUIDS[GUIDS.length - 1];
 
     public BackendStorageDomainTemplatesResourceTest() {
         super(new BackendStorageDomainTemplatesResource(STORAGE_DOMAIN_ID), null, null);
@@ -99,24 +99,24 @@ public class BackendStorageDomainTemplatesResourceTest
                                      setUpStorageDomain(domainType));
 
         switch (domainType) {
-        case Data:
-            setUpEntityQueryExpectations(QueryType.GetVmTemplatesFromStorageDomain,
-                                         GetVmTemplatesFromStorageDomainParameters.class,
-                                         new String[] { "Id" },
-                                         new Object[] { STORAGE_DOMAIN_ID },
-                                         setUpTemplates(),
-                                         failure);
-            break;
-        case ImportExport:
-            setUpEntityQueryExpectations(QueryType.GetTemplatesFromExportDomain,
-                                         GetAllFromExportDomainQueryParameters.class,
-                                         new String[] { "StoragePoolId", "StorageDomainId"},
-                                         new Object[] { DATA_CENTER_ID, STORAGE_DOMAIN_ID},
-                                         setUpExportTemplates(),
-                                         failure);
-            break;
-        default:
-            break;
+            case Data:
+                setUpEntityQueryExpectations(QueryType.GetVmTemplatesFromStorageDomain,
+                                            GetVmTemplatesFromStorageDomainParameters.class,
+                                            new String[] { "Id" },
+                                            new Object[] { STORAGE_DOMAIN_ID },
+                                            setUpTemplates(),
+                                            failure);
+                break;
+            case ImportExport:
+                setUpEntityQueryExpectations(QueryType.GetTemplatesFromExportDomain,
+                                            GetAllFromExportDomainQueryParameters.class,
+                                            new String[] { "StoragePoolId", "StorageDomainId"},
+                                            new Object[] { DATA_CENTER_ID, STORAGE_DOMAIN_ID},
+                                            setUpExportTemplates(),
+                                            failure);
+                break;
+            default:
+                break;
         }
     }
 
@@ -162,7 +162,7 @@ public class BackendStorageDomainTemplatesResourceTest
     }
 
     private void setUpGetDataCenterByStorageDomainExpectations(Guid id, int times) {
-        while (times-->0) {
+        while (times-- > 0) {
             setUpEntityQueryExpectations(QueryType.GetStoragePoolsByStorageDomainId,
                     IdQueryParameters.class,
                     new String[] { "Id" },

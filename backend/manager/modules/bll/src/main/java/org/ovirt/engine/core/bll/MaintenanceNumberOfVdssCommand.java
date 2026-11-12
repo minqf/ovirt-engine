@@ -42,9 +42,10 @@ import org.ovirt.engine.core.common.businessentities.VMStatus;
 import org.ovirt.engine.core.common.businessentities.VdsSpmStatus;
 import org.ovirt.engine.core.common.businessentities.VmDynamic;
 import org.ovirt.engine.core.common.businessentities.network.Network;
-import org.ovirt.engine.core.common.businessentities.storage.ImageTransfer;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
+import org.ovirt.engine.core.common.errors.EngineError;
+import org.ovirt.engine.core.common.errors.EngineException;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.job.Step;
 import org.ovirt.engine.core.common.locks.LockingGroup;
@@ -66,6 +67,7 @@ import org.ovirt.engine.core.dao.VmDynamicDao;
 import org.ovirt.engine.core.dao.network.NetworkDao;
 import org.ovirt.engine.core.dao.scheduling.AffinityGroupDao;
 import org.ovirt.engine.core.utils.ReplacementUtils;
+import org.ovirt.engine.core.vdsbroker.monitoring.PollVmStatsRefresher;
 import org.ovirt.engine.core.vdsbroker.vdsbroker.CancelMigrationVDSParameters;
 
 @InternalCommandAttribute
@@ -136,17 +138,38 @@ public class MaintenanceNumberOfVdssCommand<T extends MaintenanceNumberOfVdssPar
             }
         }
 
-        cancelIncommingMigrations();
+        cancelIncomingMigrations();
         freeLock();
     }
 
-    private void cancelIncommingMigrations() {
-        for (Guid hostId :vdssToMaintenance.keySet()) {
+    private void cancelIncomingMigrations() {
+        boolean waitForGetAllVmStats = false;
+        for (Guid hostId : vdssToMaintenance.keySet()) {
             for (VmDynamic vm : vmDynamicDao.getAllMigratingToHost(hostId)) {
                 if (vm.getStatus() == VMStatus.MigratingFrom) {
                     log.info("Cancelling incoming migration of '{}' id '{}'", vm, vm.getId());
-                    runVdsCommand(VDSCommandType.CancelMigrate, new CancelMigrationVDSParameters(vm.getRunOnVds(), vm.getId(), true));
+                    try {
+                        runVdsCommand(VDSCommandType.CancelMigrate, new CancelMigrationVDSParameters(vm.getRunOnVds(), vm.getId(), true));
+                    } catch (EngineException e) {
+                        // The migration might end right before calling cancel, that will cause an exception within
+                        // the CancelMigrate command. Although, it can be fine.
+                        // We should wait 15 seconds to let the DB refresh and continue.
+                        log.warn("Engine exception thrown while sending cancel migration command, {}", vm.getId());
+                        if (e.getErrorCode() == EngineError.MIGRATION_CANCEL_ERROR_NO_VM
+                                || e.getErrorCode() == EngineError.MIGRATION_CANCEL_ERROR) {
+                            waitForGetAllVmStats = true;
+                        } else {
+                            throw e;
+                        }
+                    }
                 }
+            }
+        }
+        if (waitForGetAllVmStats) {
+            try {
+                Thread.sleep(PollVmStatsRefresher.VMS_REFRESH_RATE * PollVmStatsRefresher.NUMBER_VMS_REFRESHES_BEFORE_SAVE);
+            } catch (InterruptedException e) {
+                // Ignore
             }
         }
     }
@@ -257,7 +280,7 @@ public class MaintenanceNumberOfVdssCommand<T extends MaintenanceNumberOfVdssPar
                 continue;
             }
             //TODO make a more efficient call but normally the command just loads one cluster anyway
-            if (!clusters.containsKey(vds.getClusterId())){
+            if (!clusters.containsKey(vds.getClusterId())) {
                 final Cluster cluster = clusterDao.get(vds.getClusterId());
                 clusters.put(cluster.getId(), cluster);
             }
@@ -279,12 +302,12 @@ public class MaintenanceNumberOfVdssCommand<T extends MaintenanceNumberOfVdssPar
             for (Guid vdsId : getParameters().getVdsIdList()) {
                 VDS vds = vdssToMaintenance.get(vdsId);
                 if (vds != null) {
-                    if ((vds.getStatus() != VDSStatus.Maintenance) && (vds.getStatus() != VDSStatus.NonResponsive)
-                            && (vds.getStatus() != VDSStatus.Up) && (vds.getStatus() != VDSStatus.Error)
-                            && (vds.getStatus() != VDSStatus.PreparingForMaintenance)
-                            && (vds.getStatus() != VDSStatus.Down)
-                            && (vds.getStatus() != VDSStatus.NonOperational
-                            && (vds.getStatus() != VDSStatus.InstallFailed))) {
+                    if (vds.getStatus() != VDSStatus.Maintenance && vds.getStatus() != VDSStatus.NonResponsive
+                            && vds.getStatus() != VDSStatus.Up && vds.getStatus() != VDSStatus.Error
+                            && vds.getStatus() != VDSStatus.PreparingForMaintenance
+                            && vds.getStatus() != VDSStatus.Down
+                            && vds.getStatus() != VDSStatus.NonOperational
+                            && vds.getStatus() != VDSStatus.InstallFailed) {
                         result = failValidation(EngineMessage.VDS_CANNOT_MAINTENANCE_VDS_IS_NOT_OPERATIONAL);
                     } else {
                         List<VM> vms = vmDao.getAllRunningForVds(vdsId);
@@ -300,7 +323,7 @@ public class MaintenanceNumberOfVdssCommand<T extends MaintenanceNumberOfVdssPar
                             if (vm.isHostedEngine()) {
                                 List<VDS> clusterVdses =
                                         vdsDao.getAllForClusterWithStatus(vds.getClusterId(), VDSStatus.Up);
-                                if (!HostedEngineHelper.haveHostsAvailableforHE(
+                                if (!HostedEngineHelper.haveHostsAvailableForHE(
                                         clusterVdses,
                                         getParameters().getVdsIdList())) {
                                     failValidation(
@@ -310,7 +333,7 @@ public class MaintenanceNumberOfVdssCommand<T extends MaintenanceNumberOfVdssPar
                             }
 
                             boolean vmNonMigratable = vm.getMigrationSupport() == MigrationSupport.PINNED_TO_HOST ||
-                                    (vm.getMigrationSupport() == MigrationSupport.IMPLICITLY_NON_MIGRATABLE && getParameters().getIsInternal());
+                                    vm.getMigrationSupport() == MigrationSupport.IMPLICITLY_NON_MIGRATABLE && getParameters().getIsInternal();
 
                             // The Hosted Engine VM is migrated by the HA agent;
                             // other non-migratable VMs are reported
@@ -350,8 +373,6 @@ public class MaintenanceNumberOfVdssCommand<T extends MaintenanceNumberOfVdssPar
                             log.warn("There are running tasks on the SPM: '{}'", runningTasks);
                             result = failValidation(EngineMessage.VDS_CANNOT_MAINTENANCE_SPM_WITH_RUNNING_TASKS);
                         } else if (!validateNoRunningJobs(vds)) {
-                            result = false;
-                        } else if (!validateNoActiveImageTransfers(vds)) {
                             result = false;
                         } else if (!clusters.get(vds.getClusterId()).isInUpgradeMode()) {
                             result = handlePositiveEnforcingAffinityGroup(vdsId, vms, clusters.get(vds.getClusterId()).getCompatibilityVersion());
@@ -451,22 +472,6 @@ public class MaintenanceNumberOfVdssCommand<T extends MaintenanceNumberOfVdssPar
         return true;
     }
 
-    private boolean validateNoActiveImageTransfers(VDS vds) {
-        List<ImageTransfer> transfers = imageTransferDao.getByVdsId(vds.getId());
-        if (!transfers.stream().allMatch(ImageTransfer::isPaused)) {
-            List<String> replacements = new ArrayList<>(3);
-            replacements.add(ReplacementUtils.createSetVariableString("host", vds.getName()));
-            replacements.addAll(ReplacementUtils.replaceWith("disks",
-                    transfers.stream()
-                            .filter(imageTransfer -> !imageTransfer.isPaused())
-                            .map(ImageTransfer::getDiskId)
-                            .sorted()
-                            .collect(Collectors.toList())));
-            return failValidation(EngineMessage.VDS_CANNOT_MAINTENANCE_HOST_WITH_RUNNING_IMAGE_TRANSFERS, replacements);
-        }
-        return true;
-    }
-
     /*
      * Validates gluster specific properties before moving the host to maintenance. Following things will be checked as
      * part of this check 1. Ensure gluster quorum can be met for all the volumes 2. Ensure there is no unsynced entry
@@ -529,6 +534,8 @@ public class MaintenanceNumberOfVdssCommand<T extends MaintenanceNumberOfVdssPar
             return true;
         }
 
+        // Only VM-to-VM hard affinity is checked here. Other affinity types, including VM-to-host hard affinity are
+        // probed by SchedulingManager.canSchedule() call in execution phase of the command.
         List<AffinityGroup> affinityGroups =
                 affinityGroupDao.getPositiveEnforcingAffinityGroupsByRunningVmsOnVdsId(vdsId);
         if (!affinityGroups.isEmpty()) {

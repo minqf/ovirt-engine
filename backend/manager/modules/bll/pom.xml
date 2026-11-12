@@ -4,7 +4,7 @@
   <parent>
     <groupId>org.ovirt.engine.core</groupId>
     <artifactId>manager-modules</artifactId>
-    <version>4.4.0-SNAPSHOT</version>
+    <version>4.5.8-SNAPSHOT</version>
   </parent>
 
   <artifactId>bll</artifactId>
@@ -13,10 +13,6 @@
   <name>Backend Logic @Service bean</name>
 
   <dependencies>
-    <dependency>
-      <groupId>javax.annotation</groupId>
-      <artifactId>javax.annotation-api</artifactId>
-    </dependency>
     <dependency>
       <groupId>${engine.groupId}</groupId>
       <artifactId>compat</artifactId>
@@ -38,12 +34,7 @@
       <version>${engine.version}</version>
     </dependency>
     <dependency>
-      <groupId>org.ovirt.engine.api</groupId>
-      <artifactId>ovirt-engine-extensions-api</artifactId>
-      <version>${ovirt-engine-extensions-api.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.ovirt.engine.extensions</groupId>
+      <groupId>org.ovirt.engine.extension.aaa</groupId>
       <artifactId>builtin</artifactId>
       <version>${engine.version}</version>
     </dependency>
@@ -81,25 +72,30 @@
     </dependency>
     <dependency>
       <groupId>${engine.groupId}</groupId>
-      <artifactId>scheduler</artifactId>
+      <artifactId>utils</artifactId>
       <version>${engine.version}</version>
-      <scope>provided</scope>
-      <type>ejb</type>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.ovirt.engine.api</groupId>
+      <artifactId>ovirt-engine-extensions-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>javax.annotation</groupId>
+      <artifactId>javax.annotation-api</artifactId>
     </dependency>
     <dependency>
       <groupId>com.woorea</groupId>
       <artifactId>keystone-client</artifactId>
-      <version>${openstack-client.version}</version>
     </dependency>
     <dependency>
       <groupId>com.woorea</groupId>
       <artifactId>quantum-client</artifactId>
-      <version>${openstack-client.version}</version>
     </dependency>
     <dependency>
       <groupId>com.woorea</groupId>
       <artifactId>resteasy-connector</artifactId>
-      <version>${openstack-client.version}</version>
       <exclusions>
         <exclusion>
           <groupId>commons-httpclient</groupId>
@@ -130,14 +126,25 @@
     <dependency>
       <groupId>org.apache.xmlrpc</groupId>
       <artifactId>xmlrpc-client</artifactId>
+      <exclusions>
+        <!-- Note: avoid junit 3 as a dependency -->
+        <exclusion>
+          <artifactId>junit</artifactId>
+          <groupId>junit</groupId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
-      <groupId>org.codehaus.jackson</groupId>
-      <artifactId>jackson-core-asl</artifactId>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-annotations</artifactId>
     </dependency>
     <dependency>
-      <groupId>org.codehaus.jackson</groupId>
-      <artifactId>jackson-mapper-asl</artifactId>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.datatype</groupId>
+      <artifactId>jackson-datatype-jsr310</artifactId>
     </dependency>
     <dependency>
       <groupId>javax.enterprise</groupId>
@@ -150,21 +157,22 @@
       <scope>provided</scope>
     </dependency>
     <dependency>
-      <groupId>${engine.groupId}</groupId>
-      <artifactId>utils</artifactId>
-      <version>${engine.version}</version>
-      <type>test-jar</type>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-jdk14</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.reflections</groupId>
       <artifactId>reflections</artifactId>
-      <version>${reflections.version}</version>
       <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.ovirt.java-client-kubevirt</groupId>
       <artifactId>java-client-kubevirt</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.glassfish</groupId>
+      <artifactId>jakarta.el</artifactId>
     </dependency>
   </dependencies>
 
@@ -203,6 +211,12 @@
            <ENGINE_DEFAULTS>${basedir}/src/test/resources/engine.conf.defaults</ENGINE_DEFAULTS>
            <ENGINE_VARS>${basedir}/src/test/resources/engine.conf</ENGINE_VARS>
          </environmentVariables>
+         <systemProperties>
+           <property>
+             <name>java.util.logging.config.file</name>
+             <value>src/test/resources/logging.properties</value>
+           </property>
+         </systemProperties>
         </configuration>
       </plugin>
         <plugin>

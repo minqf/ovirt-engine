@@ -10,6 +10,7 @@ import javax.inject.Inject;
 
 import org.ovirt.engine.core.bll.LockMessagesMatchUtil;
 import org.ovirt.engine.core.common.businessentities.storage.ImageTransfer;
+import org.ovirt.engine.core.common.businessentities.storage.ImageTransferPhase;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.locks.LockingGroup;
 import org.ovirt.engine.core.compat.Guid;
@@ -50,16 +51,18 @@ public class ImageTransferUpdater {
                     entity.setId(updates.getId());
                 }
                 if (updates.getPhase() != null) {
-                    String disk = entity.getDiskId() != null
-                            ? String.format(" (image %s)", entity.getDiskId().toString()) : "";
-                    String message = entity.getMessage() != null
-                            ? String.format(" (message: '%s')", entity.getMessage()) : "";
-                    log.info("Updating image transfer {}{} phase to {}{}",
-                            commandId,
-                            disk,
-                            updates.getPhase(),
-                            message);
-                    entity.setPhase(updates.getPhase());
+                    if (!ImageTransferPhase.isValidTransition(entity.getPhase(), updates.getPhase())) {
+                        log.error("Image transfer '{}' transition from phase '{}' to '{}' is invalid",
+                                commandId,
+                                entity.getPhase(),
+                                updates.getPhase());
+                    } else {
+                        log.info("Updating image transfer '{}' phase from '{}' to '{}'",
+                                commandId,
+                                entity.getPhase(),
+                                updates.getPhase());
+                        entity.setPhase(updates.getPhase());
+                    }
                 }
                 if (updates.getType() != null) {
                     entity.setType(updates.getType());
@@ -86,9 +89,6 @@ public class ImageTransferUpdater {
                 if (updates.getDaemonUri() != null) {
                     entity.setDaemonUri(updates.getDaemonUri());
                 }
-                if (updates.getSignedTicket() != null) {
-                    entity.setSignedTicket(updates.getSignedTicket());
-                }
 
                 if (updates.getBytesSent() != null) {
                     entity.setBytesSent(updates.getBytesSent());
@@ -99,6 +99,7 @@ public class ImageTransferUpdater {
             }
 
             imageTransferDao.update(entity);
+
             return entity;
         } finally {
             lockManager.releaseLock(lock);

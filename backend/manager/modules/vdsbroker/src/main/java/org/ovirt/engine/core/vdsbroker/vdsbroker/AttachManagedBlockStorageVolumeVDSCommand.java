@@ -2,7 +2,7 @@ package org.ovirt.engine.core.vdsbroker.vdsbroker;
 
 import org.ovirt.engine.core.common.vdscommands.AttachManagedBlockStorageVolumeVDSCommandParameters;
 
-public class AttachManagedBlockStorageVolumeVDSCommand<P extends AttachManagedBlockStorageVolumeVDSCommandParameters> extends VdsBrokerCommand<P>{
+public class AttachManagedBlockStorageVolumeVDSCommand<P extends AttachManagedBlockStorageVolumeVDSCommandParameters> extends VdsBrokerCommand<P> {
 
     private DeviceInfoReturn deviceInfoReturn;
 
@@ -13,7 +13,9 @@ public class AttachManagedBlockStorageVolumeVDSCommand<P extends AttachManagedBl
     @Override
     protected void executeVdsBrokerCommand() {
         deviceInfoReturn =
-                getBroker().attachManagedBlockStorageVolume(getParameters().getVolumeId(), getParameters().getConnectionInfo());
+                getBroker().attachManagedBlockStorageVolume(getParameters().getVolumeId(),
+                        getParameters().getStorageDomainId(),
+                        getParameters().getConnectionInfo());
         proceedProxyReturnValue();
         setReturnValue(deviceInfoReturn.getDeviceInfo());
     }

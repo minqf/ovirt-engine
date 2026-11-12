@@ -85,7 +85,7 @@ public class FenceVdsManualyCommand<T extends FenceVdsManualyParameters> extends
         // check problematic vds status
         if (isLegalStatus(problematicVds.getStatus())) {
             if (problematicVds.getSpmStatus() == VdsSpmStatus.SPM) {
-                if(!getStoragePool().isLocal()) {
+                if (!getStoragePool().isLocal()) {
                     if (!initializeVds()) {
                         return false;
                     }
@@ -146,20 +146,20 @@ public class FenceVdsManualyCommand<T extends FenceVdsManualyParameters> extends
     private static boolean isLegalStatus(VDSStatus status) {
         boolean result;
         switch (status) {
-        case Down:
-        case InstallFailed:
-        case Maintenance:
-        case NonOperational:
-        case NonResponsive:
-        case Reboot:
-        case Installing:
-        case Connecting:
-        case Kdumping:
-            result = true;
-            break;
-        default:
-            result = false;
-            break;
+            case Down:
+            case InstallFailed:
+            case Maintenance:
+            case NonOperational:
+            case NonResponsive:
+            case Reboot:
+            case Installing:
+            case Connecting:
+            case Kdumping:
+                result = true;
+                break;
+            default:
+                result = false;
+                break;
         }
         return result;
     }
@@ -208,7 +208,7 @@ public class FenceVdsManualyCommand<T extends FenceVdsManualyParameters> extends
     protected void setActionMessageParameters() {
         addValidationMessage(EngineMessage.VAR__ACTION__MANUAL_FENCE);
         addValidationMessage(EngineMessage.VAR__TYPE__HOST);
-     }
+    }
 
     @Override
     protected void freeLock() {

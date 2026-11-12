@@ -1,5 +1,7 @@
 package org.ovirt.engine.core.bll.host.provider.foreman;
 
+import static com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -9,8 +11,6 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.codehaus.jackson.map.DeserializationConfig;
-import org.codehaus.jackson.map.ObjectMapper;
 import org.ovirt.engine.core.bll.host.provider.ContentHostProvider;
 import org.ovirt.engine.core.common.businessentities.ErrataCount;
 import org.ovirt.engine.core.common.businessentities.ErrataCounts;
@@ -20,10 +20,12 @@ import org.ovirt.engine.core.common.queries.ErrataFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 /**
  * A base class for Katello providers
  */
-public abstract class KatelloProvider  implements ContentHostProvider {
+public abstract class KatelloProvider implements ContentHostProvider {
 
     private static final Logger log = LoggerFactory.getLogger(KatelloProvider.class);
     protected static final Integer UNLIMITED_PAGE_SIZE = 999999;
@@ -33,16 +35,16 @@ public abstract class KatelloProvider  implements ContentHostProvider {
     public KatelloProvider(ForemanHostProviderProxy provider) {
         this.provider = provider;
         objectMapper = new ObjectMapper();
-        objectMapper.configure(DeserializationConfig.Feature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        objectMapper.configure(FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
     @Override
-    public Erratum getErratumForHost(String hostName, String erratumId) {
-        String contentHostId = getContentHostId(hostName);
+    public Erratum getErratumForHost(ContentHostIdentifier contentHostIdentifier, String erratumId) {
+        String contentHostId = getContentHostId(contentHostIdentifier);
         if (contentHostId == null) {
             log.error("Failed to find host on provider '{}' by host name '{}' ",
                     provider.getProvider().getName(),
-                    hostName);
+                    contentHostIdentifier.getName());
             return null;
         }
 
@@ -50,12 +52,12 @@ public abstract class KatelloProvider  implements ContentHostProvider {
     }
 
     @Override
-    public ErrataData getErrataForHost(String hostName, ErrataFilter errataFilter) {
-        String contentHostId = getContentHostId(hostName);
+    public ErrataData getErrataForHost(ContentHostIdentifier contentHostIdentifier, ErrataFilter errataFilter) {
+        String contentHostId = getContentHostId(contentHostIdentifier);
         if (contentHostId == null) {
             log.error("Failed to find host on provider '{}' by host name '{}' ",
                     provider.getProvider().getName(),
-                    hostName);
+                    contentHostIdentifier.getName());
             return ErrataData.emptyData();
         }
 
@@ -69,7 +71,7 @@ public abstract class KatelloProvider  implements ContentHostProvider {
         String relativeUrl =
                 FilteredErrataRelativeUrlBuilder.create(contentHostId, errataFilter, getContentHostErrataEntryPoint())
                         .build();
-        return runErrataListMethod(relativeUrl, hostName);
+        return runErrataListMethod(relativeUrl, contentHostIdentifier.getName());
     }
 
     protected ErrataData runErrataListMethod(String relativeUrl, String hostName) {
@@ -116,7 +118,7 @@ public abstract class KatelloProvider  implements ContentHostProvider {
         }
     }
 
-    protected abstract String getContentHostId(String hostName);
+    protected abstract String getContentHostId(ContentHostIdentifier contentHostIdentifier);
 
     protected abstract String getContentHostErrataEntryPoint();
 

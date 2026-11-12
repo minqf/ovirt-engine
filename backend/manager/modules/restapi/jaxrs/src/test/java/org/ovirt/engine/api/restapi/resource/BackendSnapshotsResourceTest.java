@@ -106,7 +106,7 @@ public class BackendSnapshotsResourceTest
         org.ovirt.engine.core.common.businessentities.Snapshot resultSnapshot1 = new org.ovirt.engine.core.common.businessentities.Snapshot();
         resultSnapshot1.setVmConfiguration(ovfData);
         resultSnapshot1.setId(SNAPSHOT_IDS[1]);
-        when(httpHeaders.getRequestHeader(BackendResource.POPULATE)).thenReturn(populates);
+        when(httpHeaders.getRequestHeader(BackendResource.ALL_CONTENT_HEADER)).thenReturn(populates);
         UriInfo uriInfo = setUpUriExpectations(null);
         setUriInfo(setUpBasicUriExpectations());
         setUpGetEntityExpectations(1);
@@ -123,7 +123,7 @@ public class BackendSnapshotsResourceTest
                 new Object[]{SNAPSHOT_IDS[0]},
                 resultSnapshot1);
         collection.setUriInfo(uriInfo);
-        List<Snapshot> snapshots =  getCollection();
+        List<Snapshot> snapshots = getCollection();
         verifyCollection(snapshots);
         for (int i = 0; i < 2; i++) {
             verifyAllContent(snapshots.get(i), ConfigurationType.OVF, ovfData);
@@ -157,14 +157,10 @@ public class BackendSnapshotsResourceTest
     private void doTestAddAsync(AsyncTaskStatusEnum asyncStatus, CreationStatus creationStatus) {
         setUriInfo(setUpBasicUriExpectations());
         String ovfData = "data";
-        org.ovirt.engine.core.common.businessentities.Snapshot resultSnapshot0 = new org.ovirt.engine.core.common.businessentities.Snapshot();
+        org.ovirt.engine.core.common.businessentities.Snapshot resultSnapshot0 = new org.ovirt.engine.core.common.businessentities.Snapshot(false);
         resultSnapshot0.setVmConfiguration(ovfData);
         resultSnapshot0.setId(SNAPSHOT_IDS[0]);
-        setUpEntityQueryExpectations(QueryType.GetSnapshotBySnapshotId,
-                IdQueryParameters.class,
-                new String[]{"Id"},
-                new Object[]{SNAPSHOT_IDS[0]},
-                resultSnapshot0);
+        resultSnapshot0.setDescription(DESCRIPTIONS[0]);
         setUpCreationExpectations(ActionType.CreateSnapshotForVm,
                 CreateSnapshotForVmParameters.class,
                 new String[] { "Description", "VmId" },
@@ -174,23 +170,22 @@ public class BackendSnapshotsResourceTest
                 GUIDS[0],
                 asList(TASK_ID),
                 asList(new AsyncTaskStatus(asyncStatus)),
-                QueryType.GetAllVmSnapshotsByVmId,
+                QueryType.GetSnapshotBySnapshotId,
                 IdQueryParameters.class,
                 new String[] { "Id" },
-                new Object[] { VM_ID },
-                getEntity(0));
+                new Object[] { SNAPSHOT_IDS[0] },
+                resultSnapshot0);
         Snapshot snapshot = new Snapshot();
         snapshot.setDescription(DESCRIPTIONS[0]);
 
         Response response = collection.add(snapshot);
         assertEquals(202, response.getStatus());
         assertTrue(response.getEntity() instanceof Snapshot);
-        Snapshot responseSnapshot = (Snapshot)response.getEntity();
+        Snapshot responseSnapshot = (Snapshot) response.getEntity();
         verifyModel(responseSnapshot, 0);
         verifyAllContent(responseSnapshot, ConfigurationType.OVF, ovfData);
-        Snapshot created = (Snapshot)response.getEntity();
-        assertNotNull(created.getCreationStatus());
-        assertEquals(creationStatus.value(), created.getCreationStatus());
+        assertNotNull(responseSnapshot.getCreationStatus());
+        assertEquals(creationStatus.value(), responseSnapshot.getCreationStatus());
     }
 
     protected void setUpGetEntityExpectations(int times) {
@@ -213,7 +208,7 @@ public class BackendSnapshotsResourceTest
 
     protected List<org.ovirt.engine.core.common.businessentities.Snapshot> getEntities() {
         List<org.ovirt.engine.core.common.businessentities.Snapshot> entities = new ArrayList<>();
-        for (int i = 0; i<2; i++) {
+        for (int i = 0; i < 2; i++) {
             entities.add(getEntity(i));
         }
         return entities;

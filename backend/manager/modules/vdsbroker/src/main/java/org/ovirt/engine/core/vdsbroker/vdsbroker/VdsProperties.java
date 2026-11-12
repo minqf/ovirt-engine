@@ -20,6 +20,12 @@ public final class VdsProperties {
     public static final String cpu_sockets = "cpuSockets";
     public static final String cpu_model = "cpuModel";
     public static final String online_cpus = "onlineCpus";
+    public static final String cpu_topology = "cpuTopology";
+    public static final String socket_id = "socket_id";
+    public static final String numa_id = "numa_cell_id";
+    public static final String core_id = "core_id";
+    public static final String cpu_id = "cpu_id";
+    public static final String vdsm_cpus_affinity = "vdsmToCpusAffinity";
     public static final String cpu_speed_mh = "cpuSpeed";
     public static final String kvm_enabled = "kvmEnabled";
     public static final String physical_mem_mb = "memSize";
@@ -81,6 +87,8 @@ public final class VdsProperties {
     public static final String NUMA_NODE_CPU_LIST = "cpus";
     public static final String NUMA_NODE_TOTAL_MEM = "totalMemory";
     public static final String NUMA_NODE_FREE_MEM_STAT = "numaNodeMemFree";
+    public static final String NUMA_NODE_HUGEPAGES = "hugepages";
+    public static final String NUMA_NODE_HUGEPAGES_FREE = "freePages";
     public static final String CPU_STATS = "cpuStatistics";
     public static final String NUMA_NODE_FREE_MEM = "memFree";
     public static final String NUMA_NODE_MEM_PERCENT = "memPercent";
@@ -135,6 +143,8 @@ public final class VdsProperties {
     public static final String NETMASK = "netmask";
     public static final String ADDR = "addr";
     public static final String OPENVSWITCH = "openvswitch";
+    public static final String NMSTATE = "nmstate";
+    public static final String OVN_CONFIGURED = "ovnConfigured";
 
     // LLDP related properties
     public static final String LLDP_ENABLED = "enabled";
@@ -181,7 +191,6 @@ public final class VdsProperties {
     public static final String Controller = "controller";
     public static final String spapr_vio = "spapr-vio";
 
-    public static final String mem_available = "memAvailable";
     public static final String memFree = "memFree";
     public static final String mem_shared = "memShared";
     public static final String mem_usage = "memUsed";
@@ -197,6 +206,7 @@ public final class VdsProperties {
     public static final String transparent_huge_pages = "transparentHugePages";
     public static final String hugepages = "hugepages";
     public static final String free_hugepages = "vm.free_hugepages";
+    public static final String total_hugepages = "nr_hugepages";
 
     public static final String exit_code = "exitCode";
     public static final String exit_message = "exitMessage";
@@ -209,7 +219,9 @@ public final class VdsProperties {
     // Disks configuration
     public static final String vm_disks = "disks";
     public static final String vm_disk_read_rate = "readRate";
+    public static final String vm_disk_read_ops = "readOps";
     public static final String vm_disk_write_rate = "writeRate";
+    public static final String vm_disk_write_ops = "writeOps";
     public static final String vm_disk_read_latency = "readLatency";
     public static final String vm_disk_write_latency = "writeLatency";
     public static final String vm_disk_flush_latency = "flushLatency";
@@ -219,6 +231,7 @@ public final class VdsProperties {
     public static final String size = "size";
     public static final String lun_guid = "lunGUID";
     public static final String compat_version = "qcow2_compat";
+    public static final String drive_spec = "drive_spec";
 
     // Iso/Floppy related properties
     public static final String iso_list = "isolist";
@@ -257,6 +270,7 @@ public final class VdsProperties {
     public static final String vm_guest_mem_buffered = "mem_buffers";
     public static final String vm_guest_mem_cached = "mem_cached";
     public static final String vm_guest_mem_free = "mem_free";
+    public static final String vm_guest_mem_unused = "mem_unused";
     public static final String vm_guest_mem_stats = "memoryStats";
     public static final String vm_usage_mem_percent = "memUsage";
     public static final String vm_migration_progress_percent = "migrationProgress";
@@ -325,6 +339,10 @@ public final class VdsProperties {
     public static final String memoryDumpVolumeInfo = "memoryDumpVolumeInfo";
     public static final String memoryMetadataVolumeInfo = "memoryMetadataVolumeInfo";
     public static final String engineXml = "xml";
+    public static final String nvramData = "_X_nvramdata";
+    public static final String nvramHash = "nvramHash";
+    public static final String tpmData = "_X_tpmdata";
+    public static final String tpmHash = "tpmHash";
     public static final String pauseCode = "pauseCode";
     public static final String KeyboardMap = "keyMap";
     public static final String TabletEnable = "tabletEnable";
@@ -424,12 +442,16 @@ public final class VdsProperties {
     public static final String MIGRATION_CONVERGENCE_SCHEDULE = "convergenceSchedule";
     public static final String ENABLE_GUEST_EVENTS = "enableGuestEvents";
     public static final String MIGRATION_BANDWIDTH = "maxBandwidth";
+    public static final String PARALLEL_MIGRATION_CONNECTIONS = "parallel";
+    public static final String MIGRATION_ZEROCOPY = "zerocopy";
     public static final String MIGRATION_INIT_STEPS = "init";
     public static final String MIGRATION_STALLING_STEPS = "stalling";
     public static final String MIGRATION_SOURCE = "Migration Source";
     public static final String MIGRATION_DESTINATION = "Migration Destination";
     public static final String MIGRATION_OUTGOING_LIMIT = "outgoingLimit";
     public static final String MIGRATION_INCOMING_LIMIT = "incomingLimit";
+    public static final String MIGRATION_CPUSETS = "cpusets";
+    public static final String MIGRATION_NUMA_NODE_SETS = "numaNodesets";
 
     // multipath health
     public static final String MULTIPATH_HEALTH = "multipathHealth";
@@ -442,6 +464,7 @@ public final class VdsProperties {
     public static final String delay = "delay";
     public static final String actual = "actual";
     public static final String acquired = "acquired";
+    public static final String valid = "valid";
 
     public static final String DISK_STATS = "diskStats";
     public static final String DISK_STATS_FREE = "free";
@@ -473,6 +496,7 @@ public final class VdsProperties {
     public static final String MDEV = "mdev";
     public static final String MDEV_AVAILABLE_INSTANCES = "available_instances";
     public static final String MDEV_DESCRIPTION = "description";
+    public static final String MDEV_NAME = "name";
     public static final String PRODUCT_NAME = "product";
     public static final String PRODUCT_ID = "product_id";
     public static final String VENDOR_NAME = "vendor";
@@ -484,6 +508,11 @@ public final class VdsProperties {
     public static final String NET_INTERFACE_NAME = "interface";
     public static final String HOST_DEVICE_PASSTHROUGH = "hostdevPassthrough";
     public static final String IS_ASSIGNABLE = "is_assignable";
+    public static final String DEVICE_PATH = "device_path";
+    public static final String NUMA_NODE = "numa_node";
+    public static final String MODE = "mode";
+    public static final String DEVICE_SIZE = "device_size";
+    public static final String ALIGN_SIZE = "align_size";
 
     // fencing policy parameters
     public static final String STORAGE_DOMAIN_HOST_ID_MAP = "storageDomainHostIdMap";
@@ -541,12 +570,17 @@ public final class VdsProperties {
     // Network provider agent id
     public static final String OPENSTACK_BINDING_HOST_IDS = "openstack_binding_host_ids";
 
-    // cinderlib
+    // Managed Block Storage
     public static final String CONNECTOR_INFO = "connector_info";
 
     // incremental backup
     public static final String BACKUP_ENABLED = "backupEnabled";
+    public static final String COLD_BACKUP_ENABLED = "coldBackupEnabled";
+    public static final String CLEAR_BITMAPS_ENABLED = "clearBitmapsEnabled";
     public static final String CHECKPOINT = "checkpoint";
+    public static final String CHECKPOINT_IDS = "checkpoint_ids";
+    public static final String BACKUP_MODE = "backup_mode";
+    public static final String SCRATCH_DISK = "scratch_disk";
 
     public static final String TSC_FREQUENCY = "tscFrequency";
 
@@ -555,4 +589,6 @@ public final class VdsProperties {
     public static final String TSC_SCALING = "tscScaling";
 
     public static final String BOOT_UUID = "boot_uuid";
+
+    public static final String CD_CHANGE_PDIV = "cd_change_pdiv";
 }

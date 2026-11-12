@@ -21,6 +21,8 @@ import org.ovirt.engine.core.common.action.RemoveStorageDomainParameters;
 import org.ovirt.engine.core.common.action.StorageDomainManagementParameter;
 import org.ovirt.engine.core.common.action.StorageDomainParametersBase;
 import org.ovirt.engine.core.common.action.StorageServerConnectionParametersBase;
+import org.ovirt.engine.core.common.action.SwitchMasterStorageDomainCommandParameters;
+import org.ovirt.engine.core.common.action.SyncLunsInfoForBlockStorageDomainParameters;
 import org.ovirt.engine.core.common.businessentities.NfsVersion;
 import org.ovirt.engine.core.common.businessentities.StorageDomain;
 import org.ovirt.engine.core.common.businessentities.StorageDomainSharedStatus;
@@ -143,6 +145,16 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
         scanDisksCommand = value;
     }
 
+    private UICommand switchMasterCommand;
+
+    public UICommand getSwitchMasterCommand() {
+        return switchMasterCommand;
+    }
+
+    private void setSwitchMasterCommand(UICommand value) {
+        switchMasterCommand = value;
+    }
+
     @Inject
     public StorageListModel(final StorageGeneralModel storageGeneralModel,
             final StorageDataCenterListModel storageDataCenterListModel,
@@ -155,7 +167,6 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
             final StorageTemplateListModel storageTemplateListModel,
             final StorageIsoListModel storageIsoListModel,
             final StorageDiskListModel storageDiskListModel,
-            final StorageRegisterDiskListModel storageRegisterDiskListModel,
             final StorageSnapshotListModel storageSnapshotListModel,
             final DiskProfileListModel diskProfileListModel,
             final StorageEventListModel storageEventListModel,
@@ -173,7 +184,6 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
         this.templateListModel = storageTemplateListModel;
         this.isoListModel = storageIsoListModel;
         this.diskListModel = storageDiskListModel;
-        this.registerDiskListModel = storageRegisterDiskListModel;
         this.snapshotListModel = storageSnapshotListModel;
         this.diskProfileListModel = diskProfileListModel;
         this.drListModel = storageDRListModel;
@@ -197,6 +207,7 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
         setUpdateOvfsCommand(new UICommand("UpdateOvfs", this)); //$NON-NLS-1$
         setDestroyCommand(new UICommand("Destroy", this)); //$NON-NLS-1$
         setScanDisksCommand(new UICommand("ScanDisks", this)); //$NON-NLS-1$
+        setSwitchMasterCommand(new UICommand("SwitchMaster", this)); //$NON-NLS-1$
 
         updateActionAvailability();
 
@@ -216,7 +227,6 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
         templateListModel.setIsAvailable(false);
         isoListModel.setIsAvailable(false);
         diskListModel.setIsAvailable(false);
-        registerDiskListModel.setIsAvailable(false);
         snapshotListModel.setIsAvailable(false);
         diskProfileListModel.setIsAvailable(false);
         drListModel.setIsAvailable(false);
@@ -235,7 +245,6 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
         list.add(leaseListModel);
         list.add(isoListModel);
         list.add(diskListModel);
-        list.add(registerDiskListModel);
         list.add(snapshotListModel);
         list.add(diskProfileListModel);
         list.add(drListModel);
@@ -255,7 +264,6 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
     private final StorageTemplateListModel templateListModel;
     private final StorageIsoListModel isoListModel;
     private final StorageDiskListModel diskListModel;
-    private final StorageRegisterDiskListModel registerDiskListModel;
     private final StorageSnapshotListModel snapshotListModel;
     private final DiskProfileListModel diskProfileListModel;
     private final StorageDRListModel drListModel;
@@ -318,7 +326,7 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
 
         model.initialize();
 
-        UICommand  command = UICommand.createDefaultOkUiCommand("OnSave", this); //$NON-NLS-1$
+        UICommand command = UICommand.createDefaultOkUiCommand("OnSave", this); //$NON-NLS-1$
         model.getCommands().add(command);
 
         command = createCancelCommand("Cancel"); //$NON-NLS-1$
@@ -392,20 +400,20 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
 
     private IStorageModel getStorageModelByStorage(StorageDomain storage) {
         switch (storage.getStorageType()) {
-        case NFS:
-            return new NfsStorageModel();
-        case FCP:
-            return new FcpStorageModel();
-        case ISCSI:
-            return new IscsiStorageModel();
-        case LOCALFS:
-            return new LocalStorageModel();
-        case POSIXFS:
-            return new PosixStorageModel();
-        case GLUSTERFS:
-            return new GlusterStorageModel();
-        case MANAGED_BLOCK_STORAGE:
-            return new ManagedBlockStorageModel();
+            case NFS:
+                return new NfsStorageModel();
+            case FCP:
+                return new FcpStorageModel();
+            case ISCSI:
+                return new IscsiStorageModel();
+            case LOCALFS:
+                return new LocalStorageModel();
+            case POSIXFS:
+                return new PosixStorageModel();
+            case GLUSTERFS:
+                return new GlusterStorageModel();
+            case MANAGED_BLOCK_STORAGE:
+                return new ManagedBlockStorageModel();
         }
         return null;
     }
@@ -543,7 +551,7 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
                     tempVar2.setMessage(ConstantsManager.getInstance().getMessages()
                                                 .nameCanContainOnlyMsg(nameMaxLength));
                     storageModel.getName().validateEntity(new IValidation[] {
-                            new NotEmptyValidation(), tempVar2});
+                        new NotEmptyValidation(), tempVar2});
                     postStorageNameValidation();
 
                 }));
@@ -692,6 +700,15 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
         if (storageDomain != null) {
             Frontend.getInstance().runAction(ActionType.ScanStorageForUnregisteredDisks,
                     new StorageDomainParametersBase(storageDomain.getStoragePoolId(), storageDomain.getId()));
+        }
+    }
+
+    private void switchMaster() {
+        StorageDomain storageDomain = getSelectedItem();
+        if (storageDomain != null) {
+            Frontend.getInstance().runAction(ActionType.SwitchMasterStorageDomain,
+                    new SwitchMasterStorageDomainCommandParameters(storageDomain.getStoragePoolId(),
+                            storageDomain.getId()));
         }
     }
 
@@ -861,12 +878,6 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
     }
 
     @Override
-    protected void onSelectedItemChanged() {
-        super.onSelectedItemChanged();
-        updateActionAvailability();
-    }
-
-    @Override
     protected void updateDetailsAvailability() {
         if (getSelectedItem() != null) {
             StorageDomain storage = getSelectedItem();
@@ -878,7 +889,6 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
                      storage.getStorageDomainType() == StorageDomainType.ISO;
             boolean isDataCenterAvailable = storage.getStorageType() != StorageType.GLANCE;
             boolean isGeneralAvailable = storage.getStorageType() != StorageType.GLANCE;
-            boolean isCinderStorage = storage.getStorageType().isCinderDomain();
             boolean isManagedBlockStorage = storage.getStorageType().isManagedBlockStorage();
             boolean isGlusterStorage = storage.getStorageType() == StorageType.GLUSTERFS;
 
@@ -900,9 +910,8 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
             vmRegisterListModel.setIsAvailable(isRegisterSubtabsAvailable);
             templateRegisterListModel.setIsAvailable(isRegisterSubtabsAvailable);
             diskImageRegisterListModel.setIsAvailable(isRegisterSubtabsAvailable);
-            diskListModel.setIsAvailable(isDataStorage || isCinderStorage || isManagedBlockStorage);
-            registerDiskListModel.setIsAvailable(isCinderStorage);
-            snapshotListModel.setIsAvailable(isDataStorage || isCinderStorage);
+            diskListModel.setIsAvailable(isDataStorage || isManagedBlockStorage);
+            snapshotListModel.setIsAvailable(isDataStorage || isManagedBlockStorage);
             diskProfileListModel.setIsAvailable(isDataStorage);
             drListModel.setIsAvailable(isGlusterStorage);
             leaseListModel.setIsAvailable(isDataStorage);
@@ -912,9 +921,15 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
     }
 
     @Override
+    protected void onSelectedItemChanged() {
+        super.onSelectedItemChanged();
+        fireModelChangeRelevantForActionsEvent();
+    }
+
+    @Override
     protected void selectedItemsChanged() {
         super.selectedItemsChanged();
-        updateActionAvailability();
+        fireModelChangeRelevantForActionsEvent();
     }
 
     @Override
@@ -922,8 +937,17 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
         super.selectedItemPropertyChanged(sender, e);
 
         if (e.propertyName.equals("storage_domain_shared_status")) { //$NON-NLS-1$
-            updateActionAvailability();
+            fireModelChangeRelevantForActionsEvent();
         }
+    }
+
+    @Override
+    protected void onModelChangeRelevantForActions() {
+        // NOTE: Plugin API buttons listen for this event when they are added.  Nothing
+        //       special needs to be done for them to be updated as long as the event
+        //       is fired properly.
+        super.onModelChangeRelevantForActions();
+        updateActionAvailability();
     }
 
     private void updateActionAvailability() {
@@ -948,6 +972,13 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
                 && item.getStatus() == StorageDomainStatus.Active
                 && item.getStorageDomainType().isDataDomain());
 
+        getSwitchMasterCommand().setIsExecutionAllowed(item != null && items.size() == 1
+                && !items.get(0).getStorageType().isOpenStackDomain()
+                && !items.get(0).getStorageType().isManagedBlockStorage()
+                && item.getStatus() == StorageDomainStatus.Active
+                && item.getStorageDomainType().isDataDomain()
+                && !item.isBackup());
+
         getUpdateOvfsCommand().setIsExecutionAllowed(item != null && items.size() == 1
                 && item.getStorageDomainType().isDataDomain()
                 && item.getStatus() == StorageDomainStatus.Active);
@@ -956,12 +987,12 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
         getDestroyCommand().setIsAvailable(true);
         getScanDisksCommand().setIsAvailable(true);
         getUpdateOvfsCommand().setIsAvailable(true);
+        getSwitchMasterCommand().setIsAvailable(true);
 
     }
 
     private boolean isEditAvailable(StorageDomain storageDomain) {
-        if (storageDomain == null || (storageDomain.getStorageType().isCinderDomain() && !storageDomain.getStorageType()
-                .isManagedBlockStorage())) {
+        if (storageDomain == null) {
             return false;
         }
 
@@ -975,7 +1006,7 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
         boolean isInternalDomain = storageDomain.getStorageDomainType().isInternalDomain();
         boolean isBlockStorage = storageDomain.getStorageType().isBlockDomain();
 
-        isEditAvailable = isActive || isBlockStorage || ((isInMaintenance || isUnattached) && isInternalDomain);
+        isEditAvailable = isActive || isBlockStorage || (isInMaintenance || isUnattached) && isInternalDomain;
         return isEditAvailable;
     }
 
@@ -997,6 +1028,8 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
             destroy();
         } else if (command == getScanDisksCommand()) {
             scanDisks();
+        } else if (command == getSwitchMasterCommand()) {
+            switchMaster();
         } else if ("OnSave".equals(command.getName())) { //$NON-NLS-1$
             onSave();
         } else if ("Cancel".equals(command.getName())) { //$NON-NLS-1$
@@ -1031,6 +1064,19 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
             onDestroy();
         } else if ("OnSaveSanStorage".equals(command.getName())) { //$NON-NLS-1$
             onSaveSanStorage();
+        } else if ("SaveNewNfsStorage".equals(command.getName())) { //$NON-NLS-1$
+            saveNewNfsStorage();
+            cancelConfirm();
+        } else if ("SaveNewPosixStorage".equals(command.getName())) { //$NON-NLS-1$
+            saveNewPosixStorage();
+            cancelConfirm();
+        } else if ("HandleISOForNFS".equals(command.getName())) { //$NON-NLS-1$
+            handleIsoDomain("SaveNewNfsStorage"); //$NON-NLS-1$
+        } else if ("HandleISOForPosix".equals(command.getName())) { //$NON-NLS-1$
+            handleIsoDomain("SaveNewPosixStorage"); //$NON-NLS-1$
+        } else if ("CancelAll".equals(command.getName())) { //$NON-NLS-1$
+            cancelConfirm();
+            cancel();
         }
     }
 
@@ -1075,6 +1121,9 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
                 if (storages != null && storages.size() > 0) {
                     posixModel.getPath().setIsValid(false);
                     handleDomainAlreadyExists(storages.get(0).getStorageName());
+                } else if (storageDomain.getStorageDomainType() == StorageDomainType.ISO) {
+                    UICommand handleISOType = UICommand.createDefaultOkUiCommand("HandleISOForPosix", this); //$NON-NLS-1$
+                    handleISOType.execute();
                 } else {
                     saveNewPosixStorage();
                 }
@@ -1140,7 +1189,7 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
         Map<String, Object> driverOptions = ManagedBlockStorageModel.getDriverOptions().serializeToMap();
         driverOptions.put(AddManagedBlockStorageDomainParameters.VOLUME_BACKEND_NAME, storageDomain.getStorageName());
         parameter.setDriverOptions(driverOptions);
-        parameter.setSriverSensitiveOptions(ManagedBlockStorageModel.getDriverSensitiveOptions().serializeToMap());
+        parameter.setDriverSensitiveOptions(ManagedBlockStorageModel.getDriverSensitiveOptions().serializeToMap());
 
         parameters.add(parameter);
 
@@ -1266,6 +1315,9 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
                 if (storages != null && storages.size() > 0) {
                     nfsModel.getPath().setIsValid(false);
                     handleDomainAlreadyExists(storages.get(0).getStorageName());
+                } else if (storageDomain.getStorageDomainType() == StorageDomainType.ISO) {
+                    UICommand handleISOType = UICommand.createDefaultOkUiCommand("HandleISOForNFS", this); //$NON-NLS-1$
+                    handleISOType.execute();
                 } else {
                     saveNewNfsStorage();
                 }
@@ -1423,20 +1475,20 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
         params.setForce(force);
         Frontend.getInstance().runAction(ActionType.AddSANStorageDomain, params,
                 result -> {
-                        StorageListModel storageListModel = (StorageListModel) result.getState();
-                        StorageModel storageModel = (StorageModel) storageListModel.getWindow();
-                        storageListModel.storageModel = storageModel.getCurrentStorageItem();
-                        if (!result.getReturnValue().getSucceeded()) {
-                            storageListModel.onFinish(storageListModel.context, false, storageListModel.storageModel);
-                            return;
-                        }
+                    StorageListModel storageListModel = (StorageListModel) result.getState();
+                    StorageModel storageModel = (StorageModel) storageListModel.getWindow();
+                    storageListModel.storageModel = storageModel.getCurrentStorageItem();
+                    if (!result.getReturnValue().getSucceeded()) {
+                        storageListModel.onFinish(storageListModel.context, false, storageListModel.storageModel);
+                        return;
+                    }
 
-                        StoragePool dataCenter = storageModel.getDataCenter().getSelectedItem();
-                        if (!dataCenter.getId().equals(StorageModel.UnassignedDataCenterId)) {
-                            ActionReturnValue returnValue = result.getReturnValue();
-                            Guid storageId = returnValue.getActionReturnValue();
-                            storageListModel.attachStorageToDataCenter(storageId, dataCenter.getId(), storageModel.getActivateDomain().getEntity());
-                        }
+                    StoragePool dataCenter = storageModel.getDataCenter().getSelectedItem();
+                    if (!dataCenter.getId().equals(StorageModel.UnassignedDataCenterId)) {
+                        ActionReturnValue returnValue = result.getReturnValue();
+                        Guid storageId = returnValue.getActionReturnValue();
+                        storageListModel.attachStorageToDataCenter(storageId, dataCenter.getId(), storageModel.getActivateDomain().getEntity());
+                    }
 
                     storageListModel.onFinish(storageListModel.context, true, storageListModel.storageModel);
                 }, this);
@@ -1484,6 +1536,26 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
             }
             updateStorageDomain();
         }
+    }
+
+    private void handleIsoDomain(String command) {
+        ConfirmationModel confirmationModel = new ConfirmationModel();
+        confirmationModel.setTitle(ConstantsManager.getInstance().getConstants().areYouSureTitle());
+        confirmationModel.setMessage(ConstantsManager.getInstance().getMessages().creatingIsoDomainDeprecatedMessage());
+        confirmationModel.setAlertType(ConfirmationModel.AlertType.INFO);
+        confirmationModel.setHelpTag(HelpTag.create_iso_domain);
+        confirmationModel.setHashName("create_iso_domain"); //$NON-NLS-1$
+        setConfirmWindow(confirmationModel);
+
+        UICommand onApprove = new UICommand(command, this); //$NON-NLS-1$
+        onApprove.setTitle(ConstantsManager.getInstance().getConstants().ok());
+        onApprove.setIsDefault(true);
+        confirmationModel.getCommands().add(onApprove);
+
+        UICommand cancel = new UICommand("CancelAll", this); //$NON-NLS-1$
+        cancel.setTitle(ConstantsManager.getInstance().getConstants().cancel());
+        cancel.setIsCancel(true);
+        confirmationModel.getCommands().add(cancel);
     }
 
     private void handleDomainAlreadyExists(String storageName) {
@@ -1625,6 +1697,40 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
                                     new ReduceSANStorageDomainDevicesCommandParameters(storageDomain1.getId(),
                                             new ArrayList<>(lunsToRemoveIds)),
                                     null, this);
+                        }
+                    }
+                    boolean hasSanChanges =
+                            !lunIds.isEmpty()
+                                    || !lunToRefreshIds.isEmpty()
+                                    || storageDomain1.getStatus() == StorageDomainStatus.Maintenance
+                                            && !sanStorageModelBase.getLunsToRemove().isEmpty();
+                    if (storageDomain1.getStorageType() == StorageType.ISCSI && !hasSanChanges) {
+                        // Sync LUN connections only on a plain edit (no LUNs
+                        // added, refreshed or removed). The extend path already
+                        // calls GetVGInfo and proceedLUNInDb for every VG LUN,
+                        // persisting all connections including multipath paths,
+                        // so running this sync concurrently would only contend
+                        // for the storage lock and fail.
+                        VDS host = storageModel.getHost().getSelectedItem();
+                        if (host != null) {
+                            // Finish the dialog only once the sync returns, so a failure
+                            // surfaces in the dialog instead of only in the audit log.
+                            Frontend.getInstance().runAction(ActionType.SyncStorageConnectionsForDomain,
+                                    new SyncLunsInfoForBlockStorageDomainParameters(storageDomain1.getId(), host.getId()),
+                                    syncResult -> {
+                                        StorageListModel syncListModel = (StorageListModel) syncResult.getState();
+                                        ActionReturnValue returnValue = syncResult.getReturnValue();
+                                        boolean syncSucceeded = returnValue != null && returnValue.getSucceeded();
+                                        String message = null;
+                                        if (!syncSucceeded && returnValue != null
+                                                && returnValue.getValidationMessages() != null) {
+                                            message = String.join("\n", returnValue.getValidationMessages()); //$NON-NLS-1$
+                                        }
+                                        syncListModel.onFinish(syncListModel.context, syncSucceeded,
+                                                syncListModel.storageModel, message);
+                                    },
+                                    this);
+                            return;
                         }
                     }
                     storageListModel.onFinish(storageListModel.context, true, storageListModel.storageModel);
@@ -1816,10 +1922,10 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
                                 cleanConnection(fileConnection, hostId);
                             }
                         }),
-        hostId,
-        domainType,
-        storageType,
-        path);
+            hostId,
+            domainType,
+            storageType,
+            path);
     }
 
     public void addExistingFileStorageDomain() {
@@ -1827,6 +1933,9 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
         StorageDomainStatic sdsToAdd = sdToAdd.getStorageStaticData();
         storageDomain = sdsToAdd;
         saveBaseStorageProperties((StorageModel) getWindow());
+
+        // clearing cached storage domains
+        storageDomainsToAdd = null;
 
         StorageDomainManagementParameter params = new StorageDomainManagementParameter(sdsToAdd);
         params.setVdsId(hostId);
@@ -1900,9 +2009,6 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
             UICommand okCommand = UICommand.createDefaultOkUiCommand(okCommandName, this);
             okCommand.execute();
         }
-
-        // Clearing cached domains
-        storageDomainsToAdd = null;
     }
 
     private void checkDomainAttachedToDc(String commandName, List<StorageDomain> storageDomains,
@@ -1961,7 +2067,7 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
             saveSanStorage(context);
         } else if ("SaveManagedBlock".equals(key)) { //$NON-NLS-1$
             saveManagedBlockStorage(context);
-        }else if ("ImportFile".equals(key)) { //$NON-NLS-1$
+        } else if ("ImportFile".equals(key)) { //$NON-NLS-1$
             importFileStorage(context);
         } else if ("ImportSan".equals(key)) { //$NON-NLS-1$
             importSanStorage(context);
@@ -2044,10 +2150,6 @@ public class StorageListModel extends ListWithSimpleDetailsModel<Void, StorageDo
 
     public StorageSnapshotListModel getSnapshotListModel() {
         return snapshotListModel;
-    }
-
-    public StorageRegisterDiskListModel getRegisterDiskListModel() {
-        return registerDiskListModel;
     }
 
     public StorageLeaseListModel getLeaseListModel() {

@@ -39,7 +39,9 @@ void attribute() : {} {
     | (<SYSPREP_FILENAME> stringValue())
     | (<PRODUCT_KEY>  stringValue())
     | (<VM_INIT_TYPE>) stringValue()
+    | (<DEPRECATED>) stringValue()
     | ("isTimezoneTypeInteger" booleanValue())
+    | ("q35Support" q35SupportValue())
     | resources()
     | devices()
     )
@@ -58,11 +60,11 @@ void devices() : {} {
     (
       ("display.protocols" displayValue())
     | ("display.vramMultiplier" intValue())
+    | ("display.vgamemMultiplier" intValue())
     | ("watchdog.models" watchdogValue())
     | ("network" networkValue())
     | ("network.hotplugSupport" booleanValue())
     | ("disk.hotpluggableInterfaces" hardwareInterfacesValue())
-    | ("balloon.enabled" booleanValue())
     | ("audio" audioValue())
     | ("audio.enabled" booleanValue())
     | ("cdInterface" cdInterfaceValue())
@@ -73,6 +75,9 @@ void devices() : {} {
     | ("usb.controller" usbControllerModelValue())
     | ("console.target.type" consoleTargetTypeValue())
     | ("memoryHotplug.specialBlock" booleanValue())
+    | ("legacyVirtio" booleanValue())
+    | ("ovirtGuestAgentChannel" booleanValue())
+    | ("tpm" tpmSupportValue())
     )
 }
 
@@ -128,6 +133,14 @@ void consoleTargetTypeValue() : {} {
     valueSpecifier() ("serial" | "virtio" | "sclp")
 }
 
+void q35SupportValue() : {} {
+    valueSpecifier() ("true" | "insecure" | "false")
+}
+
+void tpmSupportValue() : {} {
+    valueSpecifier() ("unsupported" | "supported" | "required")
+}
+
 void valueSpecifier() : {} {
     <VALUE> (<DOT> <VERSION>)* (<WS>)* <EQUALS> (<WS>)*
 }
@@ -161,7 +174,7 @@ void valueSpecifier() : {} {
 |   < COMMA : "," >
 |   < NETWORK_DEVICE_TYPE
     :
-    ("rtl8139_pv" | "rtl8139" | "e1000" | "pv" | "spaprVlan" | "pciPassthrough")
+    ("rtl8139_pv" | "rtl8139" | "e1000" | "e1000e" | "pv" | "spaprVlan" | "pciPassthrough")
     >
 |   < CHIPSET_HARDWARE_INTERFACE_TYPE
     :
@@ -181,7 +194,7 @@ void valueSpecifier() : {} {
     >
 |   < DISPLAY_TYPE
     :
-    ("qxl" | "cirrus" | "vga")
+    ("qxl" | "cirrus" | "vga" | "bochs")
     >
 |   < CHIPSET_CD_INTERFACE_TYPE
     :
@@ -226,6 +239,7 @@ void valueSpecifier() : {} {
 |   < SYSPREP_FILENAME : "sysprepFileName" > : STRING_VALUE
 |   < PRODUCT_KEY : "productKey" > : STRING_VALUE
 |   < VM_INIT_TYPE : "vmInitType" > : STRING_VALUE
+|   < DEPRECATED : "deprecated" > : STRING_VALUE
 |   < CHAR : ["a"-"z","A"-"Z","0"-"9","_"] >
 |   < OS_UNIQUE_NAME : (<CHAR>)+ >
 |   < LINECOMMENT : "#" (~["\r","\n"])* >

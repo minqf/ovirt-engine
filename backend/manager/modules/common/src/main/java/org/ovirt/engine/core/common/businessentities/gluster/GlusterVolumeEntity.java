@@ -493,7 +493,7 @@ public class GlusterVolumeEntity implements Queryable, BusinessEntityWithStatus<
     }
 
     public GlusterBrickEntity getBrickWithId(Guid brickId) {
-        for(GlusterBrickEntity brick : getBricks()) {
+        for (GlusterBrickEntity brick : getBricks()) {
             if (brick.getId().equals(brickId)) {
                 return brick;
             }
@@ -518,7 +518,7 @@ public class GlusterVolumeEntity implements Queryable, BusinessEntityWithStatus<
 
     @Override
     public GlusterAsyncTask getAsyncTask() {
-       return asyncTask;
+        return asyncTask;
     }
 
     @Override

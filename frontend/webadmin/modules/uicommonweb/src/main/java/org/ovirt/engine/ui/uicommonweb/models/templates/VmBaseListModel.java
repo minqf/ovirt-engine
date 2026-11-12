@@ -8,6 +8,10 @@ import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.AddVmParameters;
 import org.ovirt.engine.core.common.action.VmManagementParametersBase;
+import org.ovirt.engine.core.common.businessentities.ArchitectureType;
+import org.ovirt.engine.core.common.businessentities.BiosType;
+import org.ovirt.engine.core.common.businessentities.Cluster;
+import org.ovirt.engine.core.common.businessentities.CpuPinningPolicy;
 import org.ovirt.engine.core.common.businessentities.DisplayType;
 import org.ovirt.engine.core.common.businessentities.StorageDomain;
 import org.ovirt.engine.core.common.businessentities.StorageDomainStatus;
@@ -20,6 +24,7 @@ import org.ovirt.engine.core.common.businessentities.VmWatchdog;
 import org.ovirt.engine.core.common.businessentities.VmWatchdogType;
 import org.ovirt.engine.core.common.businessentities.storage.DiskVmElement;
 import org.ovirt.engine.core.common.queries.GetAllFromExportDomainQueryParameters;
+import org.ovirt.engine.core.common.queries.IdQueryParameters;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
 import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.core.compat.Guid;
@@ -36,12 +41,13 @@ import org.ovirt.engine.ui.uicommonweb.builders.vm.VmSpecificUnitToVmBuilder;
 import org.ovirt.engine.ui.uicommonweb.dataprovider.AsyncDataProvider;
 import org.ovirt.engine.ui.uicommonweb.help.HelpTag;
 import org.ovirt.engine.ui.uicommonweb.models.ConfirmationModel;
+import org.ovirt.engine.ui.uicommonweb.models.ConfirmationModelChain;
+import org.ovirt.engine.ui.uicommonweb.models.ConfirmationModelChain.ConfirmationModelChainItem;
 import org.ovirt.engine.ui.uicommonweb.models.ListWithSimpleDetailsModel;
 import org.ovirt.engine.ui.uicommonweb.models.Model;
 import org.ovirt.engine.ui.uicommonweb.models.TabName;
 import org.ovirt.engine.ui.uicommonweb.models.vms.AbstractDiskModel;
 import org.ovirt.engine.ui.uicommonweb.models.vms.AttachDiskModel;
-import org.ovirt.engine.ui.uicommonweb.models.vms.BalloonEnabled;
 import org.ovirt.engine.ui.uicommonweb.models.vms.ExportOvaModel;
 import org.ovirt.engine.ui.uicommonweb.models.vms.ExportVmModel;
 import org.ovirt.engine.ui.uicommonweb.models.vms.HasDiskWindow;
@@ -358,15 +364,19 @@ public abstract class VmBaseListModel<E, T> extends ListWithSimpleDetailsModel<E
             getcurrentVm().setProviderId(model.getProviders().getSelectedItem().getId());
         }
 
-        if (getcurrentVm().getVmType() == VmType.HighPerformance) {
-            displayHighPerformanceConfirmationPopup();
-        } else {
-            saveOrUpdateVM(model);
-        }
+        ConfirmationModelChain chain = new ConfirmationModelChain();
+        chain.addConfirmation(createConfirmHighPerformanceVm(model));
+        chain.addConfirmation(new TpmDataRemovalConfirmation(model, getcurrentVm().getId()));
+        chain.addConfirmation(new NvramDataRemovalConfirmation(model, getcurrentVm().getId()));
+        chain.execute(this, () -> saveOrUpdateVM(model));
     }
 
     protected void saveOrUpdateVM(final UnitVmModel model) {
         setConfirmWindow(null);
+
+        if (!model.validate()) {
+            return;
+        }
 
         if (model.getIsNew()) {
             newVM(model);
@@ -402,37 +412,10 @@ public abstract class VmBaseListModel<E, T> extends ListWithSimpleDetailsModel<E
         }
     }
 
-    @Override
-    public void executeCommand(UICommand command) {
-        super.executeCommand(command);
-
-        if ("SaveNewVm".equals(command.getName())) { //$NON-NLS-1$
-            cancelConfirmation();
-            saveNewVm(getCurrentVmModel());
-        }
-    }
-
-    private void confirmChipsetDependentVmDeviceChanges() {
-        ConfirmationModel confirmModel = new ConfirmationModel();
-        confirmModel.setTitle(ConstantsManager.getInstance().getConstants().chipsetDependentVmDeviceChangesTitle());
-        confirmModel.setMessage(ConstantsManager.getInstance().getConstants().chipsetDependentVmDeviceChangesMessage());
-
-        confirmModel.getCommands().add(UICommand.createDefaultOkUiCommand("SaveNewVm", this)); //$NON-NLS-1$
-        confirmModel.getCommands().add(UICommand.createCancelUiCommand("CancelConfirmation", this)); //$NON-NLS-1$
-
-        setConfirmWindow(confirmModel);
-    }
-
     private void newVM(UnitVmModel model) {
-        model.needsChipsetDependentVmDeviceChanges(
-                // no changes
-                () -> saveNewVm(model),
-                // needs changes
-                () -> {
-                    setCurrentVmModel(model);
-                    confirmChipsetDependentVmDeviceChanges();
-                }
-        );
+        ConfirmationModelChain chain = new ConfirmationModelChain();
+        chain.addConfirmation(new ChipsetDependentVmDeviceChangesConfirmation(model));
+        chain.execute(this, () -> saveNewVm(model));
     }
 
     private void saveNewVm(final UnitVmModel model) {
@@ -449,10 +432,11 @@ public abstract class VmBaseListModel<E, T> extends ListWithSimpleDetailsModel<E
         vm.setUseLatestVersion(model.getTemplateWithVersion().getSelectedItem().isLatest());
         AddVmParameters parameters = new AddVmParameters(vm);
         parameters.setDiskInfoDestinationMap(model.getDisksAllocationModel().getImageToDestinationDomainMap());
+        parameters.setSeal(model.getIsSealed().getEntity());
         parameters.setConsoleEnabled(model.getIsConsoleDeviceEnabled().getEntity());
-        parameters.setBalloonEnabled(balloonEnabled(model));
         parameters.setCopyTemplatePermissions(model.getCopyPermissions().getEntity());
         parameters.setSoundDeviceEnabled(model.getIsSoundcardEnabled().getEntity());
+        parameters.setTpmEnabled(model.getTpmEnabled().getEntity());
         parameters.setVirtioScsiEnabled(model.getIsVirtioScsiEnabled().getEntity());
         parameters.setVmLargeIcon(IconUtils.filterPredefinedIcons(model.getIcon().getEntity().getIcon()));
         parameters.setAffinityGroups(model.getAffinityGroupList().getSelectedItems());
@@ -475,7 +459,7 @@ public abstract class VmBaseListModel<E, T> extends ListWithSimpleDetailsModel<E
 
     private void addVm(UnitVmModel model, AddVmParameters parameters, VM vm) {
         if (!model.getSelectedCluster().isManaged()) {
-            addVmOnUnmanagedCluster(model, parameters, vm);
+            addVmToKubevirt(model, parameters, vm);
             return;
         }
         Frontend.getInstance().runAction(
@@ -485,7 +469,7 @@ public abstract class VmBaseListModel<E, T> extends ListWithSimpleDetailsModel<E
                         this);
     }
 
-    private void addVmOnUnmanagedCluster(UnitVmModel model, AddVmParameters parameters, VM vm) {
+    private void addVmToKubevirt(UnitVmModel model, AddVmParameters parameters, VM vm) {
         InstanceImagesModel instanceImagesModel = model.getInstanceImages();
         List<DiskVmElement> disksToAttach = new ArrayList<>();
         instanceImagesModel.getItems().forEach(instanceImageLineModel -> {
@@ -502,25 +486,22 @@ public abstract class VmBaseListModel<E, T> extends ListWithSimpleDetailsModel<E
         });
         parameters.setDisksToAttach(disksToAttach);
 
-        Frontend.getInstance().runAction(
-                model.getProvisioning().getEntity() ? ActionType.AddVmFromTemplate : ActionType.AddVm,
+        Frontend.getInstance()
+                .runAction(
+                        ActionType.AddVmToKubevirt,
                         parameters,
                         result -> {
-                            ActionReturnValue retVal = result.getReturnValue();
-                            VmBaseListModel<?, ?> state = (VmBaseListModel<?, ?>) result.getState();
-                            state.stopProgress();
-                            if (retVal != null && retVal.getSucceeded()) {
-                                cancel();
-                            }
+                            model.stopProgress();
+                            cancel();
                         },
                         this);
     }
 
-    protected void updateVM(UnitVmModel model){
+    protected void updateVM(UnitVmModel model) {
         // no-op by default. Override if needed.
     }
 
-    protected void cloneVM(UnitVmModel model){
+    protected void cloneVM(UnitVmModel model) {
         // no-op by default. Override if needed.
     }
 
@@ -553,10 +534,6 @@ public abstract class VmBaseListModel<E, T> extends ListWithSimpleDetailsModel<E
         BuilderExecutor.build(model, vm.getStaticData(),
                 new FullUnitToVmBaseBuilder());
         BuilderExecutor.build(model, vm, new VmSpecificUnitToVmBuilder());
-    }
-
-    protected boolean balloonEnabled(UnitVmModel model) {
-        return BalloonEnabled.balloonEnabled(model);
     }
 
     protected void setVmWatchdogToParams(final UnitVmModel model, VmManagementParametersBase updateVmParams) {
@@ -624,52 +601,206 @@ public abstract class VmBaseListModel<E, T> extends ListWithSimpleDetailsModel<E
         }
     }
 
-    protected void displayHighPerformanceConfirmationPopup() {
-        final UnitVmModel model = (UnitVmModel) getWindow();
+    protected ConfirmationModelChainItem createConfirmHighPerformanceVm(UnitVmModel model) {
+        return new ConfirmationModelChainItem() {
 
-        if (model == null || model.getProgress() != null) {
-            return;
+            private VmHighPerformanceConfigurationModel confirmModel;
+
+            @Override
+            public void init(Runnable callback) {
+                confirmModel = new VmHighPerformanceConfigurationModel();
+
+                if (model.getCpuPinningPolicy().getSelectedItem().getPolicy() == CpuPinningPolicy.NONE) {
+                    // Handle CPU Pinning topology
+                    final boolean isVmAssignedToSpecificHosts = !model.getIsAutoAssign().getEntity();
+                    final boolean isVmCpuPinningSet =
+                            model.getCpuPinning().getIsChangable()
+                                    && model.getCpuPinning().getEntity() != null
+                                    && !model.getCpuPinning().getEntity().isEmpty();
+                    confirmModel.addRecommendationForCpuPinning(isVmAssignedToSpecificHosts, isVmCpuPinningSet);
+
+                    // Handle NUMA
+                    final boolean isVmVirtNumaSet = model.getNumaNodeCount().getEntity() > 0;
+                    final boolean isVmVirtNumaPinned =
+                            model.getVmNumaNodes() != null
+                                    && !model.getVmNumaNodes().isEmpty()
+                                    && model.getVmNumaNodes()
+                                            .stream()
+                                            .filter(x -> !x.getVdsNumaNodeList().isEmpty())
+                                            .count() > 0;
+                    confirmModel.addRecommendationForVirtNumaSetAndPinned(isVmVirtNumaSet, isVmVirtNumaPinned);
+                }
+
+                // Handle Huge Pages
+                KeyValueModel keyValue = model.getCustomPropertySheet();
+                final boolean isVmHugePagesSet = keyValue != null && keyValue.getUsedKeys().contains("hugepages"); //$NON-NLS-1$
+                confirmModel.addRecommendationForHugePages(isVmHugePagesSet);
+
+                // Handle KSM (Kernel Same Page Merging)
+                confirmModel.addRecommendationForKsm(model.getSelectedCluster().isEnableKsm(),
+                        model.getSelectedCluster().getName());
+
+                confirmModel.setTitle(
+                        ConstantsManager.getInstance().getConstants().configurationChangesForHighPerformanceVmTitle());
+                confirmModel.setHelpTag(HelpTag.configuration_changes_for_high_performance_vm);
+                confirmModel.setHashName("configuration_changes_for_high_performance_vm"); //$NON-NLS-1$
+                callback.run();
+            }
+
+            @Override
+            public boolean isRequired() {
+                return getcurrentVm().getVmType() == VmType.HighPerformance &&
+                        !confirmModel.getRecommendationsList().isEmpty() &&
+                        !model.isVmAttachedToPool();
+            }
+
+            @Override
+            public ConfirmationModel getConfirmation() {
+                return confirmModel;
+            }
+        };
+    }
+
+    protected class TpmDataRemovalConfirmation implements ConfirmationModelChainItem {
+
+        private UnitVmModel model;
+
+        private Guid id;
+
+        private boolean required;
+
+        public TpmDataRemovalConfirmation(UnitVmModel model, Guid id) {
+            this.model = model;
+            this.id = id;
         }
 
-        VmHighPerformanceConfigurationModel confirmModel = new VmHighPerformanceConfigurationModel();
+        @Override
+        public void init(Runnable callback) {
+            if (isConfirmTpmRequired()) {
+                loadTpm(callback);
+            } else {
+                callback.run();
+            }
+        }
 
-        // Handle CPU Pinning topology
-        final boolean isVmAssignedToSpecificHosts = !model.getIsAutoAssign().getEntity();
-        final boolean isVmCpuPinningSet = model.getCpuPinning().getIsChangable()
-                && model.getCpuPinning().getEntity() != null && !model.getCpuPinning().getEntity().isEmpty();
-        confirmModel.addRecommendationForCpuPinning(isVmAssignedToSpecificHosts, isVmCpuPinningSet);
+        private void loadTpm(Runnable callback) {
+            Frontend.getInstance()
+                    .runQuery(QueryType.HasTpmData,
+                            new IdQueryParameters(id),
+                            new AsyncQuery<>((AsyncCallback<QueryReturnValue>) returnValue -> {
+                                required = returnValue.getReturnValue();
+                                callback.run();
+                            }));
+        }
 
-        // Handle NUMA
-        final boolean isVmVirtNumaSet = model.getNumaEnabled().getEntity() && model.getNumaNodeCount().getEntity() > 0;
-        final boolean isVmVirtNumaPinned = model.getVmNumaNodes() != null && !model.getVmNumaNodes().isEmpty()
-                && model.getVmNumaNodes().stream().filter(x -> !x.getVdsNumaNodeList().isEmpty()).count() > 0;
-        confirmModel.addRecommendationForVirtNumaSetAndPinned(isVmVirtNumaSet, isVmVirtNumaPinned);
+        private boolean isConfirmTpmRequired() {
+            return id != null && model.getTpmOriginallyEnabled()
+                    && !model.getTpmEnabled().getEntity();
+        }
 
-        // Handle Huge Pages
-        KeyValueModel keyValue = model.getCustomPropertySheet();
-        final boolean isVmHugePagesSet = keyValue != null && keyValue.getUsedKeys().contains("hugepages"); //$NON-NLS-1$
-        confirmModel.addRecommendationForHugePages(isVmHugePagesSet);
+        @Override
+        public boolean isRequired() {
+            return required;
+        }
 
-        // Handle KSM (Kernel Same Page Merging)
-        confirmModel.addRecommendationForKsm(model.getSelectedCluster().isEnableKsm(), model.getSelectedCluster().getName());
+        @Override
+        public ConfirmationModel getConfirmation() {
+            ConfirmationModel confirmModel = new ConfirmationModel();
+            confirmModel.setTitle(ConstantsManager.getInstance().getConstants().confirmTpmDataRemovalTitle());
+            confirmModel.setMessage(ConstantsManager.getInstance()
+                    .getConstants()
+                    .confirmTpmDataRemovalMessage());
+            return confirmModel;
+        }
+    }
 
-        // If there are recommendations to display and it is not a Pool VM then display the popup
-        if (!confirmModel.getRecommendationsList().isEmpty() && !model.isVmAttachedToPool()) {
-            confirmModel.setTitle(ConstantsManager.getInstance().getConstants().configurationChangesForHighPerformanceVmTitle());
-            confirmModel.setHelpTag(HelpTag.configuration_changes_for_high_performance_vm);
-            confirmModel.setHashName("configuration_changes_for_high_performance_vm"); //$NON-NLS-1$
+    protected class NvramDataRemovalConfirmation implements ConfirmationModelChainItem {
 
-            confirmModel.getCommands().add(new UICommand("SaveOrUpdateVM", VmBaseListModel.this) //$NON-NLS-1$
-                    .setTitle(ConstantsManager.getInstance().getConstants().ok())
-                    .setIsDefault(true));
+        private UnitVmModel model;
 
-            confirmModel.getCommands()
-                    .add(UICommand.createCancelUiCommand("CancelConfirmation", VmBaseListModel.this)); //$NON-NLS-1$
+        private Guid id;
 
-            setConfirmWindow(null);
-            setConfirmWindow(confirmModel);
-         } else {
-            saveOrUpdateVM(model);
-         }
+        private boolean required;
+
+        public NvramDataRemovalConfirmation(UnitVmModel model, Guid id) {
+            this.model = model;
+            this.id = id;
+        }
+
+        @Override
+        public void init(Runnable callback) {
+            if (isConfirmNvramRequired()) {
+                loadNvram(callback);
+            } else {
+                callback.run();
+            }
+        }
+
+        private void loadNvram(Runnable callback) {
+            Frontend.getInstance()
+                    .runQuery(QueryType.HasNvramData,
+                            new IdQueryParameters(id),
+                            new AsyncQuery<>((AsyncCallback<QueryReturnValue>) returnValue -> {
+                                required = returnValue.getReturnValue();
+                                callback.run();
+                            }));
+        }
+
+        private boolean isConfirmNvramRequired() {
+            return id != null && model.getSecureBootOriginallyEnabled()
+                    && !model.secureBootEnabled();
+        }
+
+        @Override
+        public boolean isRequired() {
+            return required;
+        }
+
+        @Override
+        public ConfirmationModel getConfirmation() {
+            ConfirmationModel confirmModel = new ConfirmationModel();
+            confirmModel.setTitle(ConstantsManager.getInstance().getConstants().confirmNvramDataRemovalTitle());
+            confirmModel.setMessage(ConstantsManager.getInstance()
+                    .getConstants()
+                    .confirmNvramDataRemovalMessage());
+            return confirmModel;
+        }
+    }
+
+    class ChipsetDependentVmDeviceChangesConfirmation implements ConfirmationModelChainItem {
+
+        private UnitVmModel model;
+
+        public ChipsetDependentVmDeviceChangesConfirmation(UnitVmModel model) {
+            this.model = model;
+        }
+
+        @Override
+        public boolean isRequired() {
+            Cluster cluster = model.getSelectedCluster();
+
+            if (cluster.getArchitecture().getFamily() != ArchitectureType.x86) {
+                return false;
+            }
+
+            if (model.getTemplateWithVersion().getSelectedItem().getTemplateVersion().getClusterId() == null) {
+                return false;
+            }
+
+            BiosType templateBiosType =
+                    model.getTemplateWithVersion().getSelectedItem().getTemplateVersion().getBiosType();
+
+            return model.getBiosType().getSelectedItem().getChipsetType() != templateBiosType.getChipsetType();
+        }
+
+        @Override
+        public ConfirmationModel getConfirmation() {
+            ConfirmationModel confirmModel = new ConfirmationModel();
+            confirmModel.setTitle(
+                    ConstantsManager.getInstance().getConstants().chipsetDependentVmDeviceChangesTitle());
+            confirmModel.setMessage(
+                    ConstantsManager.getInstance().getConstants().chipsetDependentVmDeviceChangesMessage());
+            return confirmModel;
+        }
     }
 }

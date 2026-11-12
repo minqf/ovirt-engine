@@ -19,6 +19,7 @@ PACKAGE_NAME="@PACKAGE_NAME@"
 PACKAGE_VERSION="@PACKAGE_VERSION@"
 DISPLAY_VERSION="@DISPLAY_VERSION@"
 ENGINE_USR="@ENGINE_USR@"
+INSTALL_ROOT=$([ "@DEVMODE@" = "1" ] && echo "@PREFIX@/" || echo "/")
 
 die() {
 	local m="$1"
@@ -39,7 +40,7 @@ load_config() {
 
 source_d() {
 	local stage="$1"
-	local my_cfg_dir="/etc/ovirt-engine-backup/engine-backup-${stage}.d"
+	local my_cfg_dir="${INSTALL_ROOT}etc/ovirt-engine-backup/engine-backup-${stage}.d"
 	for f in \
 		$([ -d "${my_cfg_dir}" ] && find "${my_cfg_dir}" -name '*.sh' | sort) \
 		; do
@@ -52,7 +53,7 @@ source_d init
 my_load_config() {
 	load_config
 
-	DWH_CONFIG=/etc/ovirt-engine-dwh/ovirt-engine-dwhd.conf
+	DWH_CONFIG=${INSTALL_ROOT}etc/ovirt-engine-dwh/ovirt-engine-dwhd.conf
 	for f in "${DWH_CONFIG}" "${DWH_CONFIG}".d/*.conf; do
 		[ -e "${f}" ] && . "${f}"
 	done
@@ -116,7 +117,26 @@ engine_setup_service_enabled() {
 	otopi-config-query match \
 		--key "$1" \
 		--value bool:True \
-		--file /etc/ovirt-engine-setup.conf
+		--file ${INSTALL_ROOT}etc/ovirt-engine-setup.conf
+}
+
+get_engine_constant() {
+	local constant_path="$1"
+	local setup_dir="${ENGINE_USR}/setup"
+	
+	local result
+	result=$(PYTHONPATH="${setup_dir}" python3 -c "
+from ovirt_engine_setup.engine import constants as oenginecons
+print(${constant_path})
+" 2>&1)
+	local exit_code=$?
+	
+	if [ ${exit_code} -ne 0 ]; then
+		log "Warning: Failed to get engine constant ${constant_path}: ${result}"
+		return 1
+	fi
+	
+	echo "${result}"
 }
 
 engine_enabled() {
@@ -127,12 +147,20 @@ dwh_enabled() {
 	engine_setup_service_enabled "OVESETUP_DWH_CORE/enable"
 }
 
-cinderlib_enabled() {
-	engine_setup_service_enabled "OVESETUP_CL_DB/enable"
+managedblock_enabled() {
+	engine_setup_service_enabled "OVESETUP_MB_DB/enable"
+}
+
+keycloak_enabled() {
+	engine_setup_service_enabled "OVESETUP_CONFIG/keycloakEnable"
+}
+
+grafana_enabled() {
+	engine_setup_service_enabled "OVESETUP_GRAFANA_CORE/enable"
 }
 
 load_branding() {
-	for f in /etc/ovirt-engine/branding/*/branding-external-resources.properties; do
+	for f in ${INSTALL_ROOT}etc/ovirt-engine/branding/*/branding-external-resources.properties; do
 		if [ -e "${f}" ]; then
 			eval $(get_java_props \
 				"${f}" \
@@ -143,17 +171,20 @@ load_branding() {
 }
 
 # Globals
-BACKUP_PATHS="/etc/ovirt-engine
-/etc/ovirt-engine-dwh
-/etc/ovirt-provider-ovn/conf.d
-/etc/ovirt-provider-ovn/logger.conf
-/etc/ovirt-vmconsole
-/etc/pki/ovirt-engine
-/etc/pki/ovirt-vmconsole
-/etc/ovirt-engine-setup.conf.d
+BACKUP_PATHS="${INSTALL_ROOT}etc/ovirt-engine
+${INSTALL_ROOT}etc/ovirt-engine-dwh
+${INSTALL_ROOT}etc/ovirt-provider-ovn/conf.d
+${INSTALL_ROOT}etc/ovirt-provider-ovn/logger.conf
+${INSTALL_ROOT}etc/ovirt-vmconsole
+${INSTALL_ROOT}etc/pki/ovirt-engine
+${INSTALL_ROOT}etc/pki/ovirt-vmconsole
+${INSTALL_ROOT}etc/ovirt-engine-setup.conf.d
+/etc/httpd/conf.d/internalsso-openidc.conf
+/etc/httpd/conf.d/ovirt-engine-grafana-proxy.conf
 /etc/httpd/conf.d/ovirt-engine-root-redirect.conf
 /etc/httpd/conf.d/ssl.conf
 /etc/httpd/conf.d/z-ovirt-engine-proxy.conf
+/etc/httpd/conf.d/z-ovirt-engine-keycloak-proxy.conf
 /etc/httpd/http.keytab
 /etc/httpd/conf.d/ovirt-sso.conf
 /etc/yum/pluginconf.d/versionlock.list
@@ -163,12 +194,24 @@ BACKUP_PATHS="/etc/ovirt-engine
 /etc/firewalld/services/ovirt-postgres.xml
 /etc/firewalld/services/ovirt-provider-ovn.xml
 /etc/firewalld/services/ovn-central-firewall-service.xml
-/var/lib/openvswitch"
+/var/lib/openvswitch
+/etc/grafana"
+
 # Add /var/lib/ovirt-engine except a few
-VAR_LIB_EXCLUSIONS="/var/lib/ovirt-engine/backups
-/var/lib/ovirt-engine/jboss_runtime"
-for p in /var/lib/ovirt-engine/*; do
-	echo "${VAR_LIB_EXCLUSIONS}" | grep -q "^${p}\$" || BACKUP_PATHS="${BACKUP_PATHS}
+VAR_LIB_OVIRT_ENGINE_EXCLUSIONS="${INSTALL_ROOT}var/lib/ovirt-engine/backups
+${INSTALL_ROOT}var/lib/ovirt-engine/jboss_runtime
+${INSTALL_ROOT}var/lib/ovirt-engine/ansible-runner-service.log
+${INSTALL_ROOT}var/lib/ovirt-engine/ansible-runner
+${INSTALL_ROOT}var/lib/ovirt-engine/.ansible"
+for p in ${INSTALL_ROOT}var/lib/ovirt-engine/*; do
+	echo "${VAR_LIB_OVIRT_ENGINE_EXCLUSIONS}" | grep -q "^${p}\$" || BACKUP_PATHS="${BACKUP_PATHS}
+${p}"
+done
+
+# Add /var/lib/grafana except its db, which is backed up separately
+VAR_LIB_GRAFANA_EXCLUSIONS="${INSTALL_ROOT}var/lib/grafana/grafana.db"
+for p in ${INSTALL_ROOT}var/lib/grafana/*; do
+	echo "${VAR_LIB_GRAFANA_EXCLUSIONS}" | grep -q "^${p}\$" || BACKUP_PATHS="${BACKUP_PATHS}
 ${p}"
 done
 
@@ -187,6 +230,9 @@ FILE=""
 DB_BACKUP_FILE_NAME="engine_backup.db"
 DWHDB_BACKUP_FILE_NAME="dwh_backup.db"
 CINDERLIBDB_BACKUP_FILE_NAME="cinderlib_backup.db"
+GRAFANA_BACKUP_FILE_NAME="grafana.db"
+KEYCLOAKDB_BACKUP_FILE_NAME="keycloak_backup.db"
+MANAGEDBLOCKDB_BACKUP_FILE_NAME="managedblock_backup.db"
 
 PACKAGE_VERSION_FILENAME="version"
 OS_VERSION_FILENAME="os_version"
@@ -200,8 +246,12 @@ cleanup() {
 		FAILURE_NOTIFIED=1
 		notify_engine "${ENGINE_DB_USER}" "${ENGINE_DB_HOST}" "${ENGINE_DB_PORT}" "${ENGINE_DB_DATABASE}" -1 "Failed"
 	fi
+	if [ "${ec}" = '1' -a -n "${TEMP_FOLDER}" ]; then
+		local avail=$(df -k --output=avail "${TEMP_FOLDER}" | grep -v Avail)
+		[ "${avail}" -lt 10000 ] && output "ERROR: Low free space on ${TEMP_FOLDER}: ${avail}KiB"
+	fi
 
-	[ -n "${TEMP_FOLDER}" ] && rm -rf "${TEMP_FOLDER}"
+	[ -n "${TEMP_FOLDER}" -a -z "${KEEP_TEMP_FOLDER}" ] && rm -rf "${TEMP_FOLDER}"
 }
 
 trap cleanup 0
@@ -221,7 +271,10 @@ USAGE:
     files                           product files only
     db                              Engine database only
     dwhdb                           Data Warehouse database only
-    cinderlibdb                     Cinderlib database only
+    cinderlibdb                     Cinderlib database only (restore only)
+    keycloakdb                      Keycloak database only
+    grafanadb                       Grafana database only
+    managedblockdb                  Managed Block database only
     The option --scope can be passed more than once, with different scopes.
  --file=FILE                        file to use during backup or restore.
                                     If mode is backup,  default to $ENGINE_BACKUP_DEFAULT_DIR/ovirt-engine-backup-YmdHMS.backup
@@ -295,6 +348,41 @@ USAGE:
  --cinderlib-db-name=name                 set Cinderlib database name
  --cinderlib-db-secured                   set a secured connection for the Cinderlib database
  --cinderlib-db-secured-validation        validate host for Cinderlib database
+ --managedblock-db-compressor=COMPRESSOR     compress the Managed Block database, same options as --archive-compressor
+ --managedblock-db-dump-format=FORMAT        Managed Block database dump format, same options as --db-dump-format
+ --managedblock-db-restore-jobs=JOBS         for Managed Block database, same as --db-restore-jobs
+ --provision-managedblock-db                 create a PostgreSQL database for Managed Block on restore
+ --change-managedblock-db-credentials        activate the following options, to restore
+                                    the Managed Block database using credentials other
+                                    than those stored in the backup itself.
+                                    If used, existing credentials are ignored.
+ --managedblock-db-host=host              set Managed Block database host
+ --managedblock-db-port=port              set Managed Block database port
+ --managedblock-db-user=user              set Managed Block database user
+ --managedblock-db-passfile=file          set Managed Block database password - read from file
+ --managedblock-db-password=pass          set Managed Block database password
+ --managedblock-db-password               set Managed Block database password - interactively
+ --managedblock-db-name=name              set Managed Block database name
+ --managedblock-db-secured                set a secured connection for the Managed Block database
+ --managedblock-db-secured-validation     validate host for Managed Block database
+
+ --keycloak-db-compressor=COMPRESSOR     compress the Keycloak database, same options as --archive-compressor
+ --keycloak-db-dump-format=FORMAT        Keycloak database dump format, same options as --db-dump-format
+ --keycloak-db-restore-jobs=JOBS         for Keycloak database, same as --db-restore-jobs
+ --provision-keycloak-db                 create a PostgreSQL database for Keycloak on restore
+ --change-keycloak-db-credentials        activate the following options, to restore
+                                    the Keycloak database using credentials other
+                                    than those stored in the backup itself.
+                                    If used, existing credentials are ignored.
+ --keycloak-db-host=host                 set Keycloak database host
+ --keycloak-db-port=port                 set Keycloak database port
+ --keycloak-db-user=user                 set Keycloak database user
+ --keycloak-db-passfile=file             set Keycloak database password - read from file
+ --keycloak-db-password=pass             set Keycloak database password
+ --keycloak-db-password                  set Keycloak database password - interactively
+ --keycloak-db-name=name                 set Keycloak database name
+ --keycloak-db-secured                   set a secured connection for the Keycloak database
+ --keycloak-db-secured-validation        validate host for Keycloak database
 
  --no-restore-permissions           Affects only the custom dump format. Will pass
                                     to pg_restore '--no-owner --no-privileges'.
@@ -349,6 +437,10 @@ USAGE:
      Database password as if provided by --dwh-db-password=pass option.
  OVIRT_CINDERLIB_DATABASE_PASSWORD
      Database password as if provided by --cinderlib-db-password=pass option.
+ OVIRT_MANAGEDBLOCK_DATABASE_PASSWORD
+     Database password as if provided by --managedblock-db-password=pass option.
+ OVIRT_KEYCLOAK_DATABASE_PASSWORD
+     Database password as if provided by --keycloak-db-password=pass option.
 
  Documentation
 
@@ -372,8 +464,8 @@ USAGE:
 
  and open access there by adding the following lines:
 
- host    <database>      <user>          0.0.0.0/0               md5
- host    <database>      <user>          ::0/0                   md5
+ host    <database>      <user>          0.0.0.0/0               scram-sha-256
+ host    <database>      <user>          ::0/0                   scram-sha-256
 
  Replace <user>, <password>, <database> with appropriate values.
  Repeat for Engine, Data Warehouse as required.
@@ -390,6 +482,9 @@ SCOPE_FILES=
 SCOPE_ENGINE_DB=
 SCOPE_DWH_DB=
 SCOPE_CINDERLIB_DB=
+SCOPE_MANAGEDBLOCK_DB=
+SCOPE_KEYCLOAK_DB=
+SCOPE_GRAFANA_DB=
 KEEP_TEMPORARY_DATA=
 ARCHIVE_COMPRESS_OPTION=z
 FILES_COMPRESS_OPTION=J
@@ -437,11 +532,41 @@ MY_CINDERLIB_DB_DATABASE=
 MY_CINDERLIB_DB_SECURED=False
 MY_CINDERLIB_DB_SECURED_VALIDATION=False
 MY_CINDERLIB_DB_CREDS=
+MANAGEDBLOCK_DB_DUMP_COMPRESSOR=
+MANAGEDBLOCK_DB_DUMP_FORMAT=custom
+MANAGEDBLOCK_DB_RESTORE_JOBS=2
+PROVISION_MANAGEDBLOCK_DB=
+CHANGE_MANAGEDBLOCK_DB_CREDENTIALS=
+MY_MANAGEDBLOCK_DB_HOST=
+MY_MANAGEDBLOCK_DB_PORT="${POSTGRESQL_DEFAULT_PORT}"
+MY_MANAGEDBLOCK_DB_USER=
+ORIG_MANAGEDBLOCK_DB_USER=
+MY_MANAGEDBLOCK_DB_PASSWORD="${OVIRT_MANAGEDBLOCK_DATABASE_PASSWORD}"
+MY_MANAGEDBLOCK_DB_DATABASE=
+MY_MANAGEDBLOCK_DB_SECURED=False
+MY_MANAGEDBLOCK_DB_SECURED_VALIDATION=False
+MY_MANAGEDBLOCK_DB_CREDS=
+KEYCLOAK_DB_DUMP_COMPRESSOR=
+KEYCLOAK_DB_DUMP_FORMAT=custom
+KEYCLOAK_DB_RESTORE_JOBS=2
+PROVISION_KEYCLOAK_DB=
+CHANGE_KEYCLOAK_DB_CREDENTIALS=
+MY_KEYCLOAK_DB_HOST=
+MY_KEYCLOAK_DB_PORT="${POSTGRESQL_DEFAULT_PORT}"
+MY_KEYCLOAK_DB_USER=
+ORIG_KEYCLOAK_DB_USER=
+MY_KEYCLOAK_DB_PASSWORD="${OVIRT_KEYCLOAK_DATABASE_PASSWORD}"
+MY_KEYCLOAK_DB_DATABASE=
+MY_KEYCLOAK_DB_SECURED=False
+MY_KEYCLOAK_DB_SECURED_VALIDATION=False
+MY_KEYCLOAK_DB_CREDS=
+GRAFANA_DB_FILENAME=/var/lib/grafana/grafana.db
 RESTORE_PERMISSIONS=
 PROVISION_ALL_DBS=
 HE_REMOVE_STORAGE_VM=
 HE_REMOVE_HOSTS=
-VALID_BACKUP_RESTORE_PAIRS="4.3 4.4"
+VALID_BACKUP_RESTORE_PAIRS="4.3 4.5
+4.4 4.5"
 # A newline-separated list of pair. E.g. if we want to allow 4.0->4.1,
 #VALID_BACKUP_RESTORE_PAIRS="3.6 4.0
 #4.0 4.1"
@@ -451,7 +576,11 @@ EXCLUDED_FILES_ON_RESTORE="etc/ovirt-engine/engine-config/engine-config.properti
 etc/ovirt-engine-setup.conf.d/*packaging*
 etc/pki/ovirt-engine/cacert.template.in
 etc/pki/ovirt-engine/cert.template.in
-etc/pki/ovirt-engine/openssl.conf"
+etc/pki/ovirt-engine/openssl.conf
+etc/ovirt-engine/engine.conf.d/20-branding-rhv.conf
+etc/ovirt-engine/branding/50-rhv-2.brand
+ovirt-engine/engine.conf.d/10-scl-postgres.conf
+ovirt-engine-dwh/ovirt-engine-dwhd.conf.d/10-scl-postgres.conf"
 
 # Hashers. Must support:
 # - No options, for creation of hash file
@@ -512,6 +641,9 @@ set_scope() {
 			SCOPE_ENGINE_DB=1
 			SCOPE_DWH_DB=1
 			SCOPE_CINDERLIB_DB=1
+			SCOPE_MANAGEDBLOCK_DB=1
+			SCOPE_KEYCLOAK_DB=1
+			SCOPE_GRAFANA_DB=1
 			;;
 		files)
 			SCOPE_FILES=1
@@ -524,6 +656,15 @@ set_scope() {
 			;;
 		cinderlibdb)
 			SCOPE_CINDERLIB_DB=1
+			;;
+		managedblockdb)
+			SCOPE_MANAGEDBLOCK_DB=1
+			;;
+		keycloakdb)
+			SCOPE_KEYCLOAK_DB=1
+			;;
+		grafanadb)
+			SCOPE_GRAFANA_DB=1
 			;;
 		*) die "invalid scope '${s}'"
 	esac
@@ -723,6 +864,106 @@ parseArgs() {
 			--cinderlib-db-sec-validation)
 				MY_CINDERLIB_DB_SECURED_VALIDATION="True"
 			;;
+			--managedblock-db-compressor=*)
+				MANAGEDBLOCK_DB_DUMP_COMPRESSOR=$(compressor_to_command "${v}")
+				[ $? != 0 ] && die "failed parsing compressor"
+			;;
+			--managedblock-db-dump-format=*)
+				MANAGEDBLOCK_DB_DUMP_FORMAT=$(parse_dump_format "${v}")
+				[ $? != 0 ] && die "failed parsing dump format"
+			;;
+			--managedblock-db-restore-jobs=*)
+				MANAGEDBLOCK_DB_RESTORE_JOBS=$(parse_jobs "${v}")
+				[ $? != 0 ] && die "failed parsing jobs"
+			;;
+			--provision-managedblock-db)
+				PROVISION_MANAGEDBLOCK_DB=1
+				PROVISIONING=1
+			;;
+			--change-managedblock-db-credentials)
+				CHANGE_MANAGEDBLOCK_DB_CREDENTIALS=1
+			;;
+			--managedblock-db-host=*)
+				MY_MANAGEDBLOCK_DB_HOST="${v}"
+			;;
+			--managedblock-db-port=*)
+				MY_MANAGEDBLOCK_DB_PORT="${v}"
+			;;
+			--managedblock-db-user=*)
+				MY_MANAGEDBLOCK_DB_USER="${v}"
+				ORIG_MANAGEDBLOCK_DB_USER="${MANAGEDBLOCK_DB_USER}"
+			;;
+			--managedblock-db-passfile=*)
+				DB_PASSFILE="${v}"
+				[ -r "${DB_PASSFILE}" ] || \
+					die "Can not read password file ${DB_PASSFILE}"
+				read -r MY_MANAGEDBLOCK_DB_PASSWORD < "${DB_PASSFILE}"
+			;;
+			--managedblock-db-password=*)
+				MY_MANAGEDBLOCK_DB_PASSWORD="${v}"
+			;;
+			--managedblock-db-password)
+				MY_MANAGEDBLOCK_DB_PASSWORD="$(readdbpassword MANAGEDBLOCK)" || exit 1
+			;;
+			--managedblock-db-name=*)
+				MY_MANAGEDBLOCK_DB_DATABASE="${v}"
+			;;
+			--managedblock-db-secured)
+				MY_MANAGEDBLOCK_DB_SECURED="True"
+			;;
+			--managedblock-db-sec-validation)
+				MY_MANAGEDBLOCK_DB_SECURED_VALIDATION="True"
+			;;
+			--keycloak-db-compressor=*)
+				KEYCLOAK_DB_DUMP_COMPRESSOR=$(compressor_to_command "${v}")
+				[ $? != 0 ] && die "failed parsing compressor"
+			;;
+			--keycloak-db-dump-format=*)
+				KEYCLOAK_DB_DUMP_FORMAT=$(parse_dump_format "${v}")
+				[ $? != 0 ] && die "failed parsing dump format"
+			;;
+			--keycloak-db-restore-jobs=*)
+				KEYCLOAK_DB_RESTORE_JOBS=$(parse_jobs "${v}")
+				[ $? != 0 ] && die "failed parsing jobs"
+			;;
+			--provision-keycloak-db)
+				PROVISION_KEYCLOAK_DB=1
+				PROVISIONING=1
+			;;
+			--change-keycloak-db-credentials)
+				CHANGE_KEYCLOAK_DB_CREDENTIALS=1
+			;;
+			--keycloak-db-host=*)
+				MY_KEYCLOAK_DB_HOST="${v}"
+			;;
+			--keycloak-db-port=*)
+				MY_KEYCLOAK_DB_PORT="${v}"
+			;;
+			--keycloak-db-user=*)
+				MY_KEYCLOAK_DB_USER="${v}"
+				ORIG_KEYCLOAK_DB_USER="${KEYCLOAK_DB_USER}"
+			;;
+			--keycloak-db-passfile=*)
+				DB_PASSFILE="${v}"
+				[ -r "${DB_PASSFILE}" ] || \
+					die "Can not read password file ${DB_PASSFILE}"
+				read -r MY_KEYCLOAK_DB_PASSWORD < "${DB_PASSFILE}"
+			;;
+			--keycloak-db-password=*)
+				MY_KEYCLOAK_DB_PASSWORD="${v}"
+			;;
+			--keycloak-db-password)
+				MY_KEYCLOAK_DB_PASSWORD="$(readdbpassword KEYCLOAK)" || exit 1
+			;;
+			--keycloak-db-name=*)
+				MY_KEYCLOAK_DB_DATABASE="${v}"
+			;;
+			--keycloak-db-secured)
+				MY_KEYCLOAK_DB_SECURED="True"
+			;;
+			--keycloak-db-sec-validation)
+				MY_KEYCLOAK_DB_SECURED_VALIDATION="True"
+			;;
 			--restore-permissions)
 				RESTORE_PERMISSIONS=1
 			;;
@@ -865,10 +1106,45 @@ verifyArgs() {
 			-o -n "${MY_CINDERLIB_DB_DATABASE}" \
 		\) \
 	] && die "Please use --change-cinderlib-db-credentials to change cinderlib db credentials"
+	if [ -n "${CHANGE_MANAGEDBLOCK_DB_CREDENTIALS}" ]; then
+		[ -n "${PROVISION_MANAGEDBLOCK_DB}" -o -n "${PROVISION_ALL_DBS}" ] && die "Cannot change credentials if provisioning a database"
+		[ -n "${MY_MANAGEDBLOCK_DB_HOST}" ] || die "--managedblock-db-host is missing"
+		[ -n "${MY_MANAGEDBLOCK_DB_USER}" ] || die "--managedblock-db-user is missing"
+		[ -n "${MY_MANAGEDBLOCK_DB_PASSWORD}" ] || \
+			die "--managedblock-db-passfile or --managedblock-db-password is missing"
+		[ -n "${MY_MANAGEDBLOCK_DB_DATABASE}" ] || die "--managedblock-db-name is missing"
+	fi
+	[ -z "${CHANGE_MANAGEDBLOCK_DB_CREDENTIALS}" -a \
+		\( \
+			-n "${MY_MANAGEDBLOCK_DB_HOST}" \
+			-o -n "${MY_MANAGEDBLOCK_DB_USER}" \
+			-o -n "${MY_MANAGEDBLOCK_DB_PASSWORD}" \
+			-o -n "${MY_MANAGEDBLOCK_DB_DATABASE}" \
+		\) \
+	] && die "Please use --change-managedblock-db-credentials to change managedblock db credentials"
+
+	if [ -n "${CHANGE_KEYCLOAK_DB_CREDENTIALS}" ]; then
+		[ -n "${PROVISION_KEYCLOAK_DB}" -o -n "${PROVISION_ALL_DBS}" ] && die "Cannot change credentials if provisioning a database"
+		[ -n "${MY_KEYCLOAK_DB_HOST}" ] || die "--keycloak-db-host is missing"
+		[ -n "${MY_KEYCLOAK_DB_USER}" ] || die "--keycloak-db-user is missing"
+		[ -n "${MY_KEYCLOAK_DB_PASSWORD}" ] || \
+			die "--keycloak-db-passfile or --keycloak-db-password is missing"
+		[ -n "${MY_KEYCLOAK_DB_DATABASE}" ] || die "--keycloak-db-name is missing"
+	fi
+	[ -z "${CHANGE_KEYCLOAK_DB_CREDENTIALS}" -a \
+		\( \
+			-n "${MY_KEYCLOAK_DB_HOST}" \
+			-o -n "${MY_KEYCLOAK_DB_USER}" \
+			-o -n "${MY_KEYCLOAK_DB_PASSWORD}" \
+			-o -n "${MY_KEYCLOAK_DB_DATABASE}" \
+		\) \
+	] && die "Please use --change-keycloak-db-credentials to change keycloak db credentials"
 
 	if [ "${DB_DUMP_FORMAT}" = "plain" \
 		-o "${DWH_DB_DUMP_FORMAT}" = "plain" \
 		-o "${CINDERLIB_DB_DUMP_FORMAT}" = "plain" \
+		-o "${MANAGEDBLOCK_DB_DUMP_FORMAT}" = "plain" \
+		-o "${KEYCLOAK_DB_DUMP_FORMAT}" = "plain" \
 	]; then
 		output "#####################################################################################################"
 		output "Please note: permissions are not backed up with a plain dump format, thus not restored during restore"
@@ -890,6 +1166,8 @@ verifyArgsConfig() {
 				"${DB_DUMP_FORMAT}" = "custom" \
 				-o "${DWH_DB_DUMP_FORMAT}" = "custom" \
 				-o "${CINDERLIB_DB_DUMP_FORMAT}" = "custom" \
+				-o "${MANAGEDBLOCK_DB_DUMP_FORMAT}" = "custom" \
+				-o "${KEYCLOAK_DB_DUMP_FORMAT}" = "custom" \
 			\) \
 		] && die "Please pass one of --restore-permissions or --no-restore-permissions when restoring a backup with a custom dump format"
 	fi
@@ -941,10 +1219,20 @@ dobackup() {
 		log "Backing up dwh database to ${tardir}/db/${DWHDB_BACKUP_FILE_NAME}"
 		backupDB "${tardir}/db/${DWHDB_BACKUP_FILE_NAME}" "${DWH_DB_USER}" "${DWH_DB_HOST}" "${DWH_DB_PORT}" "${DWH_DB_DATABASE}" "${DWH_DB_DUMP_COMPRESSOR}" "${DWH_DB_DUMP_FORMAT}"
 	fi
-	if cinderlib_enabled && [ -n "${SCOPE_CINDERLIB_DB}" -a -n "${CINDERLIB_DB_USER}" ]; then
-		output "- CINDERLIB database '"${CINDERLIB_DB_DATABASE}"'"
-		log "Backing up cinderlib database to ${tardir}/db/${CINDERLIBDB_BACKUP_FILE_NAME}"
-		backupDB "${tardir}/db/${CINDERLIBDB_BACKUP_FILE_NAME}" "${CINDERLIB_DB_USER}" "${CINDERLIB_DB_HOST}" "${CINDERLIB_DB_PORT}" "${CINDERLIB_DB_DATABASE}" "${CINDERLIB_DB_DUMP_COMPRESSOR}" "${CINDERLIB_DB_DUMP_FORMAT}"
+	if managedblock_enabled && [ -n "${SCOPE_MANAGEDBLOCK_DB}" -a -n "${MANAGEDBLOCK_DB_USER}" ]; then
+		output "- MANAGEDBLOCK database '"${MANAGEDBLOCK_DB_DATABASE}"'"
+		log "Backing up managedblock database to ${tardir}/db/${MANAGEDBLOCKDB_BACKUP_FILE_NAME}"
+		backupDB "${tardir}/db/${MANAGEDBLOCKDB_BACKUP_FILE_NAME}" "${MANAGEDBLOCK_DB_USER}" "${MANAGEDBLOCK_DB_HOST}" "${MANAGEDBLOCK_DB_PORT}" "${MANAGEDBLOCK_DB_DATABASE}" "${MANAGEDBLOCK_DB_DUMP_COMPRESSOR}" "${MANAGEDBLOCK_DB_DUMP_FORMAT}"
+	fi
+	if keycloak_enabled && [ -n "${SCOPE_KEYCLOAK_DB}" -a -n "${KEYCLOAK_DB_USER}" ]; then
+		output "- KEYCLOAK database '"${KEYCLOAK_DB_DATABASE}"'"
+		log "Backing up keycloak database to ${tardir}/db/${KEYCLOAKDB_BACKUP_FILE_NAME}"
+		backupDB "${tardir}/db/${KEYCLOAKDB_BACKUP_FILE_NAME}" "${KEYCLOAK_DB_USER}" "${KEYCLOAK_DB_HOST}" "${KEYCLOAK_DB_PORT}" "${KEYCLOAK_DB_DATABASE}" "${KEYCLOAK_DB_DUMP_COMPRESSOR}" "${KEYCLOAK_DB_DUMP_FORMAT}"
+	fi
+	if grafana_enabled && [ -n "${SCOPE_GRAFANA_DB}" ]; then
+		output "- Grafana database '"${GRAFANA_DB_FILENAME}"'"
+		log "Backing up grafana database to ${tardir}/db/${GRAFANA_BACKUP_FILE_NAME}"
+		backupSQLiteDB "${tardir}/db/${GRAFANA_BACKUP_FILE_NAME}" "${GRAFANA_DB_FILENAME}"
 	fi
 	echo "${PACKAGE_VERSION}" > "${tardir}/${PACKAGE_VERSION_FILENAME}" || logdie "Can't create ${tardir}/${PACKAGE_VERSION_FILENAME}"
 	getOSVersion > "${tardir}/${OS_VERSION_FILENAME}" || logdie "Can't create ${tardir}/${OS_VERSION_FILENAME}"
@@ -962,7 +1250,12 @@ dobackup() {
 }
 
 getOSVersion() {
-	python@PY_VERSION@ -c 'import platform; d = platform.linux_distribution(full_distribution_name=0); print("%s%s" % (d[0], d[1].split(".")[0]))'
+	python@PY_VERSION@ -c 'import distro; print(distro.id()+distro.major_version())'
+}
+
+looseVersion_le() {
+	# return 0 if first arg is <= second arg
+	python@PY_VERSION@ -c 'import sys; from looseversion import LooseVersion; sys.exit(0 if LooseVersion(sys.argv[1]) <= LooseVersion(sys.argv[2]) else 1)' "$1" "$2"
 }
 
 createtar() {
@@ -1004,12 +1297,15 @@ verifyhash() {
 backupFiles() {
 	local paths="$1"
 	local target="$2"
-	echo "${paths}" | \
-		while read -r path; do
-			[ -e "${path}" ] && echo "${path}"
-		done | \
-		sed 's;^/;;' | \
-		tar -C / --files-from - -cpS"${FILES_COMPRESS_OPTION}"f "${target}" || logdie "Failed backing up ${paths}"
+	(
+		echo "${paths}" | \
+			while read -r path; do
+				[ -e "${path}" ] && echo "${path}"
+			done | \
+			sed "s;^${INSTALL_ROOT};;" | \
+			tar -C "${INSTALL_ROOT}" --files-from - -cpS"${FILES_COMPRESS_OPTION}"f "${target}"
+	) 2>> "${LOG}" \
+		|| logdie "Failed backing up ${paths}"
 }
 
 backupDB() {
@@ -1056,6 +1352,19 @@ backupDB() {
 	[ -n "${failed_msg}" ] && logdie "${failed_msg}"
 }
 
+backupSQLiteDB() {
+	local backup_file="$1"
+	local db_file="$2"
+
+	# Backup with sqlite, attempt to lock for up to 10 seconds
+	sqlite3 "${db_file}" << __EOF__ 2>> "${LOG}" || logdie "failed to backup ${db_file} with sqlite3"
+.timeout 10000
+.backup ${backup_file}
+__EOF__
+	chown --reference="${db_file}" "${backup_file}" 2>> "${LOG}" || logdie "chown failed"
+	chmod --reference="${db_file}" "${backup_file}" 2>> "${LOG}" || logdie "chmod failed"
+}
+
 dorestore() {
 	output "Preparing to restore:"
 	if [ -r "${ENGINE_UP_MARK}" ]; then
@@ -1081,10 +1390,22 @@ dorestore() {
 		generatePgPass
 		verifyConnection "${CINDERLIB_DB_USER}" "${CINDERLIB_DB_HOST}" "${CINDERLIB_DB_PORT}" "${CINDERLIB_DB_DATABASE}"
 	fi
+	if [ -n "${CHANGE_MANAGEDBLOCK_DB_CREDENTIALS}" ]; then
+		output "- Setting credentials for Managed Block database '${MY_MANAGEDBLOCK_DB_DATABASE}'"
+		setMyManagedBlockDBCredentials
+		generatePgPass
+		verifyConnection "${MANAGEDBLOCK_DB_USER}" "${MANAGEDBLOCK_DB_HOST}" "${MANAGEDBLOCK_DB_PORT}" "${MANAGEDBLOCK_DB_DATABASE}"
+	fi
+	if [ -n "${CHANGE_KEYCLOAK_DB_CREDENTIALS}" ]; then
+		output "- Setting credentials for Keycloak database '${MY_KEYCLOAK_DB_DATABASE}'"
+		setMyKeycloakDBCredentials
+		generatePgPass
+		verifyConnection "${KEYCLOAK_DB_USER}" "${KEYCLOAK_DB_HOST}" "${KEYCLOAK_DB_PORT}" "${KEYCLOAK_DB_DATABASE}"
+	fi
 
 	output "- Unpacking file '${FILE}'"
 	log "Opening tarball ${FILE} to ${TEMP_FOLDER}"
-	tar -C "${TEMP_FOLDER}" -pSsxf "${FILE}" || logdie "cannot open ${TEMP_FOLDER}"
+	tar -C "${TEMP_FOLDER}" -pSsxf "${FILE}" 2>> "${LOG}" || logdie "cannot open ${TEMP_FOLDER}"
 	log "Verifying hash"
 	verifyhash "${TEMP_FOLDER}"
 	log "Verifying version"
@@ -1093,18 +1414,30 @@ dorestore() {
 	log "Reading config"
 	. "${TEMP_FOLDER}/config"
 
-	verifyArgsConfig
-
 	# Refresh scope vars according to what actually found
 	[ -s "${TEMP_FOLDER}/files" ] || SCOPE_FILES=
 	[ -s "${TEMP_FOLDER}/db/${DB_BACKUP_FILE_NAME}" ] || SCOPE_ENGINE_DB=
 	[ -s "${TEMP_FOLDER}/db/${DWHDB_BACKUP_FILE_NAME}" ] || SCOPE_DWH_DB=
 	[ -s "${TEMP_FOLDER}/db/${CINDERLIBDB_BACKUP_FILE_NAME}" ] || SCOPE_CINDERLIB_DB=
+	[ -s "${TEMP_FOLDER}/db/${MANAGEDBLOCKDB_BACKUP_FILE_NAME}" ] || SCOPE_MANAGEDBLOCK_DB=
+	[ -s "${TEMP_FOLDER}/db/${KEYCLOAKDB_BACKUP_FILE_NAME}" ] || SCOPE_KEYCLOAK_DB=
+	[ -s "${TEMP_FOLDER}/db/${GRAFANA_BACKUP_FILE_NAME}" ] || SCOPE_GRAFANA_DB=
+
+	log 'Scope after checking backup content:'
+	for v in SCOPE_FILES SCOPE_ENGINE_DB SCOPE_DWH_DB SCOPE_CINDERLIB_DB SCOPE_MANAGEDBLOCK_DB SCOPE_KEYCLOAK_DB SCOPE_GRAFANA_DB; do
+		log "$v:${!v}"
+	done
+
+	if [ -n "${SCOPE_CINDERLIB_DB}" -a -n "${SCOPE_MANAGEDBLOCK_DB}" ]; then
+		output "Warning: both Cinderlib and Managed Block dumps found in the backup file"
+	fi
 
 	if [ -n "${PROVISION_ALL_DBS}" ]; then
 		[ -n "${SCOPE_ENGINE_DB}" ] && PROVISION_DB=1
 		[ -n "${SCOPE_DWH_DB}" ] && PROVISION_DWH_DB=1
 		[ -n "${SCOPE_CINDERLIB_DB}" ] && PROVISION_CINDERLIB_DB=1
+		[ -n "${SCOPE_MANAGEDBLOCK_DB}" ] && PROVISION_MANAGEDBLOCK_DB=1
+		[ -n "${SCOPE_KEYCLOAK_DB}" ] && PROVISION_KEYCLOAK_DB=1
 	fi
 
 	output "Restoring:"
@@ -1117,6 +1450,38 @@ dorestore() {
 	log "Reloading configuration"
 	my_load_config
 
+	# Update provisioning vars if all DBs are on localhost and are inaccessible
+	generatePgPass # Needed for canConnectToDB
+	if [ \
+		-z "${CHANGE_DB_CREDENTIALS}" -a \
+		-z "${CHANGE_DWH_DB_CREDENTIALS}" -a \
+		-z "${CHANGE_KEYCLOAK_DB_CREDENTIALS}" -a \
+		-z "${CHANGE_CINDERLIB_DB_CREDENTIALS}" -a \
+		-z "${CHANGE_MANAGEDBLOCK_DB_CREDENTIALS}" -a \
+		"${ENGINE_DB_HOST}" == "localhost" -a \
+		"${DWH_DB_HOST}" == "localhost" -a \
+		"${KEYCLOAK_DB_HOST}" == "localhost" -a \
+		"${CINDERLIB_DB_HOST}" == "localhost" -a \
+		"${MANAGEDBLOCK_DB_HOST}" == "localhost" \
+	] && \
+		! canConnectToDB "${ENGINE_DB_USER}" "${ENGINE_DB_HOST}" "${ENGINE_DB_PORT}" "${ENGINE_DB_DATABASE}" && \
+		! canConnectToDB "${DWH_DB_USER}" "${DWH_DB_HOST}" "${DWH_DB_PORT}" "${DWH_DB_DATABASE}" && \
+		! canConnectToDB "${CINDERLIB_DB_USER}" "${CINDERLIB_DB_HOST}" "${CINDERLIB_DB_PORT}" "${CINDERLIB_DB_DATABASE}" && \
+		! canConnectToDB "${MANAGEDBLOCK_DB_USER}" "${MANAGEDBLOCK_DB_HOST}" "${MANAGEDBLOCK_DB_PORT}" "${MANAGEDBLOCK_DB_DATABASE}" && \
+		! canConnectToDB "${KEYCLOAK_DB_USER}" "${KEYCLOAK_DB_HOST}" "${KEYCLOAK_DB_PORT}" "${KEYCLOAK_DB_DATABASE}" \
+	; then
+		PROVISIONING=1
+		PROVISION_ALL_DBS=1
+		PROVISION_DB=1
+		PROVISION_DWH_DB=1
+		PROVISION_CINDERLIB_DB=1
+		PROVISION_MANAGEDBLOCK_DB=1
+		PROVISION_KEYCLOAK_DB=1
+		[ -z "${RESTORE_PERMISSIONS}" ] && RESTORE_PERMISSIONS="1"
+	fi
+
+	verifyArgsConfig
+
 	if [ -n "${PROVISIONING}" ]; then
 		output "Provisioning PostgreSQL users/databases:"
 		if [ -n "${PROVISION_DB}" -a -n "${SCOPE_ENGINE_DB}" ]; then
@@ -1128,12 +1493,20 @@ dorestore() {
 		if [ -n "${PROVISION_CINDERLIB_DB}" -a -n "${SCOPE_CINDERLIB_DB}" ]; then
 			provisionDB "${CINDERLIB_DB_USER}" "${CINDERLIB_DB_HOST}" "${CINDERLIB_DB_PORT}" "${CINDERLIB_DB_DATABASE}" "${CINDERLIB_DB_PASSWORD}" "${CINDERLIB_DB_SECURED}" "${CINDERLIB_DB_SECURED_VALIDATION}" "${TEMP_FOLDER}/db/${CINDERLIBDB_BACKUP_FILE_NAME}" "${CINDERLIB_DB_DUMP_COMPRESSOR}" "${CINDERLIB_DB_DUMP_FORMAT}"
 		fi
+		if [ -n "${PROVISION_MANAGEDBLOCK_DB}" -a -n "${SCOPE_MANAGEDBLOCK_DB}" ]; then
+			provisionDB "${MANAGEDBLOCK_DB_USER}" "${MANAGEDBLOCK_DB_HOST}" "${MANAGEDBLOCK_DB_PORT}" "${MANAGEDBLOCK_DB_DATABASE}" "${MANAGEDBLOCK_DB_PASSWORD}" "${MANAGEDBLOCK_DB_SECURED}" "${MANAGEDBLOCK_DB_SECURED_VALIDATION}" "${TEMP_FOLDER}/db/${MANAGEDBLOCKDB_BACKUP_FILE_NAME}" "${MANAGEDBLOCK_DB_DUMP_COMPRESSOR}" "${MANAGEDBLOCK_DB_DUMP_FORMAT}"
+		fi
+		if [ -n "${PROVISION_KEYCLOAK_DB}" -a -n "${SCOPE_KEYCLOAK_DB}" ]; then
+			provisionDB "${KEYCLOAK_DB_USER}" "${KEYCLOAK_DB_HOST}" "${KEYCLOAK_DB_PORT}" "${KEYCLOAK_DB_DATABASE}" "${KEYCLOAK_DB_PASSWORD}" "${KEYCLOAK_DB_SECURED}" "${KEYCLOAK_DB_SECURED_VALIDATION}" "${TEMP_FOLDER}/db/${KEYCLOAKDB_BACKUP_FILE_NAME}" "${KEYCLOAK_DB_DUMP_COMPRESSOR}" "${KEYCLOAK_DB_DUMP_FORMAT}"
+		fi
 		output "Restoring:"
 	fi
 
 	[ -n "${CHANGE_DB_CREDENTIALS}" ] && setMyEngineDBCredentials
 	[ -n "${CHANGE_DWH_DB_CREDENTIALS}" ] && setMyDwhDBCredentials
 	[ -n "${CHANGE_CINDERLIB_DB_CREDENTIALS}" ] && setMyCinderlibDBCredentials
+	[ -n "${CHANGE_MANAGEDBLOCK_DB_CREDENTIALS}" ] && setMyManagedBlockDBCredentials
+	[ -n "${CHANGE_KEYCLOAK_DB_CREDENTIALS}" ] && setMyKeycloakDBCredentials
 
 	log "Generating pgpass"
 	generatePgPass # Must run after configuration reload
@@ -1141,6 +1514,8 @@ dorestore() {
 	[ -n "${SCOPE_ENGINE_DB}" -a -n "${ENGINE_DB_USER}" ] && verifyConnection "${ENGINE_DB_USER}" "${ENGINE_DB_HOST}" "${ENGINE_DB_PORT}" "${ENGINE_DB_DATABASE}"
 	[ -n "${SCOPE_DWH_DB}" -a -n "${DWH_DB_USER}" ] && verifyConnection "${DWH_DB_USER}" "${DWH_DB_HOST}" "${DWH_DB_PORT}" "${DWH_DB_DATABASE}"
 	[ -n "${SCOPE_CINDERLIB_DB}" -a -n "${CINDERLIB_DB_USER}" ] && verifyConnection "${CINDERLIB_DB_USER}" "${CINDERLIB_DB_HOST}" "${CINDERLIB_DB_PORT}" "${CINDERLIB_DB_DATABASE}"
+	[ -n "${SCOPE_MANAGEDBLOCK_DB}" -a -n "${MANAGEDBLOCK_DB_USER}" ] && verifyConnection "${MANAGEDBLOCK_DB_USER}" "${MANAGEDBLOCK_DB_HOST}" "${MANAGEDBLOCK_DB_PORT}" "${MANAGEDBLOCK_DB_DATABASE}"
+	[ -n "${SCOPE_KEYCLOAK_DB}" -a -n "${KEYCLOAK_DB_USER}" ] && verifyConnection "${KEYCLOAK_DB_USER}" "${KEYCLOAK_DB_HOST}" "${KEYCLOAK_DB_PORT}" "${KEYCLOAK_DB_DATABASE}"
 
 	if [ -n "${SCOPE_ENGINE_DB}" -a -n "${ENGINE_DB_USER}" ]; then
 		output "- Engine database '"${ENGINE_DB_DATABASE}"'"
@@ -1178,11 +1553,37 @@ __EOF__
 		log "Restoring Cinderlib database backup at ${TEMP_FOLDER}/db/${CINDERLIBDB_BACKUP_FILE_NAME}"
 		restoreDB "${TEMP_FOLDER}/db/${CINDERLIBDB_BACKUP_FILE_NAME}" "${CINDERLIB_DB_USER}" "${CINDERLIB_DB_HOST}" "${CINDERLIB_DB_PORT}" "${CINDERLIB_DB_DATABASE}" "${ORIG_CINDERLIB_DB_USER}" "${CINDERLIB_DB_DUMP_COMPRESSOR}" "${CINDERLIB_DB_DUMP_FORMAT}" "${CINDERLIB_DB_RESTORE_JOBS}"
 	fi
+	if [ -n "${SCOPE_MANAGEDBLOCK_DB}" -a -n "${MANAGEDBLOCK_DB_USER}" ]; then
+		output "- Managed Block database '"${MANAGEDBLOCK_DB_DATABASE}"'"
+		log "Restoring Managed Block database backup at ${TEMP_FOLDER}/db/${MANAGEDBLOCKDB_BACKUP_FILE_NAME}"
+		restoreDB "${TEMP_FOLDER}/db/${MANAGEDBLOCKDB_BACKUP_FILE_NAME}" "${MANAGEDBLOCK_DB_USER}" "${MANAGEDBLOCK_DB_HOST}" "${MANAGEDBLOCK_DB_PORT}" "${MANAGEDBLOCK_DB_DATABASE}" "${ORIG_MANAGEDBLOCK_DB_USER}" "${MANAGEDBLOCK_DB_DUMP_COMPRESSOR}" "${MANAGEDBLOCK_DB_DUMP_FORMAT}" "${MANAGEDBLOCK_DB_RESTORE_JOBS}"
+	fi
+	if [ -n "${SCOPE_KEYCLOAK_DB}" -a -n "${KEYCLOAK_DB_USER}" ]; then
+		output "- KEYCLOAK database '"${KEYCLOAK_DB_DATABASE}"'"
+		log "Restoring KEYCLOAK database backup at ${TEMP_FOLDER}/db/${KEYCLOAKDB_BACKUP_FILE_NAME}"
+		restoreDB "${TEMP_FOLDER}/db/${KEYCLOAKDB_BACKUP_FILE_NAME}" "${KEYCLOAK_DB_USER}" "${KEYCLOAK_DB_HOST}" "${KEYCLOAK_DB_PORT}" "${KEYCLOAK_DB_DATABASE}" "${ORIG_KEYCLOAK_DB_USER}" "${KEYCLOAK_DB_DUMP_COMPRESSOR}" "${KEYCLOAK_DB_DUMP_FORMAT}" "${KEYCLOAK_DB_RESTORE_JOBS}"
+	fi
+	if [ -n "${SCOPE_GRAFANA_DB}" ]; then
+		output "- Grafana database '"${GRAFANA_DB_FILENAME}"'"
+		restoreSQLiteDB "${TEMP_FOLDER}/db/${GRAFANA_BACKUP_FILE_NAME}" "${GRAFANA_DB_FILENAME}" "grafana:grafana"
+	fi
 	[ -n "${CHANGE_DB_CREDENTIALS}" ] && changeEngineDBConf
-	[ -n "${CHANGE_DWH_DB_CREDENTIALS}" -o -n "${CHANGE_DB_CREDENTIALS}" -a "${DWH_DB_USER}" ] && changeDwhDBConf
-	[ -n "${CHANGE_CINDERLIB_DB_CREDENTIALS}" -o -n "${CHANGE_DB_CREDENTIALS}" -a "${CINDERLIB_DB_USER}" ] && changeCinderlibDBConf
+	[ -n "${DWH_DB_USER}" ] && [ -n "${CHANGE_DWH_DB_CREDENTIALS}" -o -n "${CHANGE_DB_CREDENTIALS}" ] && changeDwhDBConf
+	[ -n "${CINDERLIB_DB_USER}" ] && [ -n "${CHANGE_CINDERLIB_DB_CREDENTIALS}" -o -n "${CHANGE_DB_CREDENTIALS}" ] && changeCinderlibDBConf
+	[ -n "${MANAGEDBLOCK_DB_USER}" ] && [ -n "${CHANGE_MANAGEDBLOCK_DB_CREDENTIALS}" -o -n "${CHANGE_DB_CREDENTIALS}" ] && changeManagedBlockDBConf
+	[ -n "${KEYCLOAK_DB_USER}" ] && [ -n "${CHANGE_KEYCLOAK_DB_CREDENTIALS}" -o -n "${CHANGE_DB_CREDENTIALS}" ] && changeKeycloakDBConf
 	source_d dorestore
 	output "You should now run engine-setup."
+}
+
+canConnectToDB() {
+	local user="$1"
+	local host="$2"
+	local port="$3"
+	local database="$4"
+
+	pg_cmd psql -c "select 1" >> "${LOG}" 2>&1 \
+		|| return 1
 }
 
 verifyConnection() {
@@ -1193,7 +1594,7 @@ verifyConnection() {
 
 	local pgrestorelog="${TEMP_FOLDER}/pg-restore-log"
 
-	pg_cmd psql -c "select 1" >> "${LOG}" 2>&1 \
+	canConnectToDB "${user}" "${host}" "${port}" "${database}" \
 		|| logdie "Can't connect to database '${database}'. Please see '${0} --help'."
 
 	pg_cmd psql -t -c "show lc_messages" 2> /dev/null \
@@ -1218,15 +1619,27 @@ __EOF
 }
 
 verifyVersion() {
-	INSTALLED_VERSION="$(echo ${PACKAGE_VERSION} | cut -d . -f 1-2)"
-	BACKUP_VERSION="$(cat ${TEMP_FOLDER}/${PACKAGE_VERSION_FILENAME} | cut -d . -f 1-2)"
+	INSTALLED_VERSION="${PACKAGE_VERSION}"
+	INSTALLED_VERSION_X_Y="$(echo ${INSTALLED_VERSION} | cut -d . -f 1-2)"
+	BACKUP_VERSION="$(cat ${TEMP_FOLDER}/${PACKAGE_VERSION_FILENAME})"
+	BACKUP_VERSION_X_Y="$(echo ${BACKUP_VERSION} | cut -d . -f 1-2)"
 	local ok=
 	while read validbck validres; do
-		[ "${BACKUP_VERSION}" = "${validbck}" -a "${INSTALLED_VERSION}" = "${validres}" ] && ok=1
+		[ "${BACKUP_VERSION_X_Y}" = "${validbck}" -a "${INSTALLED_VERSION_X_Y}" = "${validres}" ] && ok=1
 	done << __EOF__
 ${VALID_BACKUP_RESTORE_PAIRS}
 __EOF__
-	[ "${INSTALLED_VERSION}" == "${BACKUP_VERSION}" ] && ok=1
+	[ "${INSTALLED_VERSION_X_Y}" == "${BACKUP_VERSION_X_Y}" ] && looseVersion_le "${BACKUP_VERSION}" "${INSTALLED_VERSION}" && ok=1
+	if [ "${BACKUP_VERSION_X_Y}" = "4.3" ]; then
+		# Prevent upgrading from < 4.3.10.
+		# We already document to upgrade first to latest 4.3, before upgrading to 4.4.
+		# Also, specifically, cinderlib backup was added in 4.3.10,
+		# So a backup taken with 4.3.9 on a setup with cinderlib,
+		# will not include its db, and engine-setup will fail, and
+		# this will leave the system in a broken state. Prevent that.
+		local z="$(echo ${BACKUP_VERSION} | cut -d . -f 3)"
+		[ "${z}" -lt 10 ] && ok=
+	fi
 	[ -z "${ok}" ] && logdie "Backup was created by version '${BACKUP_VERSION}' and can not be restored using the installed version ${INSTALLED_VERSION}"
 }
 
@@ -1256,6 +1669,8 @@ provisionDB() {
 
 	cat << __EOF__ > "${answerfile}"
 [environment:default]
+OVESETUP_PROVISIONDB_CONFIG/provisionDb=bool:True
+OVESETUP_PROVISIONDB_CONFIG/provisionUser=bool:True
 OVESETUP_PROVISION_DB/host=str:localhost
 OVESETUP_PROVISION_DB/port=int:5432
 OVESETUP_PROVISION_DB/secured=bool:False
@@ -1269,7 +1684,7 @@ OVESETUP_PROVISION_DB/restoreJobs=int:2
 OVESETUP_CORE/engineStop=bool:False
 __EOF__
 
-	/usr/share/ovirt-engine/setup/bin/ovirt-engine-provisiondb --config-append="${answerfile}" < /dev/null > "${pgprovisionlog}" 2>&1
+	${ENGINE_USR}/setup/bin/ovirt-engine-provisiondb --config-append="${answerfile}" < /dev/null > "${pgprovisionlog}" 2>&1
 	provrc=$?
 	cat "${pgprovisionlog}" >> "${LOG}"  2>&1 \
 		|| logdie "Failed to append pg provisioning log to restore log"
@@ -1296,11 +1711,11 @@ __EOF__
 		elif [ "${format}" = "custom" ]; then
 			local no_perms=
 			if [ -z "${compressor}" ]; then
-				pg_restore "${backupfile}" -s 2> "${pgrestorelog}"
+				pg_restore "${backupfile}" -s -f - 2> "${pgrestorelog}"
 			else
 				# Requires the compressor to support '-d'. All our current ones do.
 				"${compressor}" -d < "${backupfile}" | \
-					pg_restore -s 2> "${pgrestorelog}"
+					pg_restore -s -f - 2> "${pgrestorelog}"
 			fi
 		else
 			logdie "Unsupported format ${format}"
@@ -1310,8 +1725,32 @@ __EOF__
 				grep -Ev "^${user}\$|^postgres\$|^PUBLIC\$" > "${extra_users}"
 
 		for extrau in $(cat "${extra_users}"); do
-			output "- extra user '${extrau}' having grants on database ${database}, created with a random password"
-			/usr/share/ovirt-engine/setup/bin/ovirt-engine-provisiondb --otopi-environment="OVESETUP_PROVISION_DB/user=str:${extrau}" < /dev/null > "${pgprovisionlog}" 2>&1
+			cat << __EOF__ > "${answerfile}"
+[environment:default]
+OVESETUP_PROVISIONDB_CONFIG/provisionDb=bool:False
+OVESETUP_PROVISIONDB_CONFIG/provisionUser=bool:True
+OVESETUP_PROVISION_DB/host=str:localhost
+OVESETUP_PROVISION_DB/port=int:5432
+OVESETUP_PROVISION_DB/secured=bool:False
+OVESETUP_PROVISION_DB/securedHostValidation=bool:False
+OVESETUP_PROVISION_DB/database=str:${database}
+OVESETUP_PROVISION_DB/user=str:${extrau}
+OVESETUP_PROVISION_DB/dumper=str:pg_custom
+OVESETUP_PROVISION_DB/filter=none:None
+OVESETUP_PROVISION_DB/restoreJobs=int:2
+OVESETUP_CORE/engineStop=bool:False
+__EOF__
+			if [ "${extrau}" = "${GRAFANA_DB_USER}" -a "${database}" = "${DWH_DB_DATABASE}" ]; then
+				output "- user '${extrau}' on database '${database}'"
+				cat << __EOF__ >> "${answerfile}"
+OVESETUP_PROVISION_DB/password=str:${GRAFANA_DB_PASSWORD}
+OVESETUP_PROVISIONDB_CONFIG/addToPGHBA=bool:True
+OVESETUP_PROVISIONDB_CONFIG/grantReadOnly=bool:True
+__EOF__
+			else
+				output "- extra user '${extrau}' having grants on database ${database}, created with a random password"
+			fi
+			${ENGINE_USR}/setup/bin/ovirt-engine-provisiondb --config-append="${answerfile}" < /dev/null > "${pgprovisionlog}" 2>&1
 			provrc=$?
 			cat "${pgprovisionlog}" >> "${LOG}"  2>&1 \
 				|| logdie "Failed to append pg provisioning log to restore log"
@@ -1369,11 +1808,23 @@ restoreDB() {
 
 	[ -n "${failed_msg}" ] && logdie "${failed_msg}"
 
-	local IGNORED_ERRORS=$(cat << __EOF | egrep -v '^$|^#' | tr '\012' '|' | sed 's/|$//'
+	local IGNORED_ERRORS=$(cat << __EOF | grep -Ev '^$|^#' | tr '\012' '|' | sed 's/|$//'
 language "plpgsql" already exists
 must be owner of language plpgsql
 must be owner of extension plpgsql
 must be owner of extension uuid-ossp
+# PG 11 does not dump "public" schema creation, and emits errors
+# when restoring backups from older versions, that do include this
+schema "public" already exists
+must be owner of schema public
+must be member of role "postgres"
+# The following command:
+# ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES  TO ovirt_engine_history_grafana;
+# gives the next error
+# We add those privileges via dwh install, so safe to ignore here.
+# This is changed since PostgreSQL 16:
+# https://git.postgresql.org/gitweb/?p=postgresql.git;a=commitdiff;h=48a257d444a787941ba3da24d65e6cbe31461d0a
+permission denied to change default privileges
 #
 # engine uses uuid-ossp PG extension, which requires special privs,
 permission denied for language c
@@ -1387,6 +1838,9 @@ function public.uuid_ns_dns\(\) does not exist
 function public.uuid_ns_oid\(\) does not exist
 function public.uuid_ns_url\(\) does not exist
 function public.uuid_ns_x500\(\) does not exist
+# Ignore errors caused by custom extensions in backed up db
+permission denied to create extension
+extension .* does not exist
 __EOF
 )
 	grep 'ERROR: ' "${pgrestorelog}" | grep -Ev "${IGNORED_ERRORS}" > "${non_ignored_errors}" 2>&1
@@ -1398,6 +1852,23 @@ __EOF
 	fi
 }
 
+restoreSQLiteDB() {
+	local backupfile="$1"
+	local db_file="$2"
+	local dir_owner="$3"
+
+	local db_dir=$(dirname ${db_file})
+	if ! [ -d "${db_dir}" ]; then
+		# Can happen if using scope=grafanadb only, without scope=files.
+		# Not very likely, but better safe than sorry.
+		mkdir -p "${db_dir}" 2>> "${LOG}" || logdie "mkdir failed"
+		chmod 0750 "${db_dir}" 2>> "${LOG}" || logdie "chmod failed"
+		chown "${dir_owner}" "${db_dir}" 2>> "${LOG}" || output "Warning: ${dir_owner} user or group missing"
+	fi
+	cp -a "${backupfile}" "${db_file}" 2>> "${LOG}" || logdie "cp failed"
+	restorecon "${db_file}" || log "Restoring selinux context failed"
+}
+
 verifyEngineDb() {
 	local backupfile="$1"
 	local compressor="$2"
@@ -1406,6 +1877,7 @@ verifyEngineDb() {
 	log "verifyEngineDb: backupfile ${backupfile} compressor ${compressor} format ${format}"
 	local pgrestorelog="${TEMP_FOLDER}/pg-restore-log"
 	local vdc_options_dump="${TEMP_FOLDER}/vdc_options_dump"
+	local pg_restore_errors="${TEMP_FOLDER}/pg_restore_errors"
 
 	# TODO perhaps refactor out the format/compressor logic and reuse in restoreDB
 	if [ "${format}" = "plain" ]; then
@@ -1418,11 +1890,11 @@ verifyEngineDb() {
 	elif [ "${format}" = "custom" ]; then
 		local no_perms=
 		if [ -z "${compressor}" ]; then
-			pg_restore "${backupfile}" -t vdc_options 2> "${pgrestorelog}"
+			pg_restore "${backupfile}" -f - -t vdc_options 2> "${pgrestorelog}"
 		else
 			# Requires the compressor to support '-d'. All our current ones do.
 			"${compressor}" -d < "${backupfile}" | \
-				pg_restore -t vdc_options 2> "${pgrestorelog}"
+				pg_restore -f - -t vdc_options 2> "${pgrestorelog}"
 		fi
 	else
 		logdie "Unsupported format ${format}"
@@ -1436,6 +1908,14 @@ verifyEngineDb() {
 
 	[ -z "$(awk '$2=="DomainName" {print $3}' < ${vdc_options_dump})" ] || \
 		logdie "legacy kerberos/ldap directory integration was in use. Please migrate to ovirt-engine-extension-aaa-ldap and backup/restore again"
+
+	grep -i 'error: ' "${pgrestorelog}" > "${pg_restore_errors}" 2>&1
+	local numerrors=$(cat "${pg_restore_errors}" | wc -l)
+	if [ ${numerrors} -ne 0 ]; then
+		log "Errors in pg_restore log:"
+		cat "${pg_restore_errors}" >> "${LOG}"
+		logdie "Errors while running pg_restore ${database}"
+	fi
 }
 
 cleanDbTempData() {
@@ -1546,6 +2026,106 @@ resetHAVMStatus() {
 		|| logdie "Failed resetting HA VM status"
 }
 
+restoreP12Backup() {
+	local file="$1"
+	local backup="$2"
+	local reason="$3"
+
+	output "  - Warning: ${reason}; restoring $(basename "${file}") from backup"
+	mv -f "${backup}" "${file}" || logdie "Failed to restore ${file}"
+}
+
+reencryptLegacyP12() {
+	local file="$1"
+	local pki_password="$2"
+	local timestamp="$3"
+	local backup="${file}.backup.${timestamp}"
+	local temp_key="${TEMP_FOLDER}/temp_key_${timestamp}_$$.pem"
+	local temp_certs="${TEMP_FOLDER}/temp_certs_${timestamp}_$$.pem"
+	local result=0
+
+	log "Found legacy encryption in ${file}, re-encrypting."
+
+	mv -f "${file}" "${backup}" || logdie "Failed to backup ${file}"
+
+	if ! { openssl pkcs12 -in "${backup}" -passin "pass:${pki_password}" -legacy \
+			-nocerts -out "${temp_key}" -passout "pass:${pki_password}" 2>> "${LOG}" && \
+		openssl pkcs12 -in "${backup}" -passin "pass:${pki_password}" -legacy \
+			-nokeys -out "${temp_certs}" 2>> "${LOG}"; }; then
+		restoreP12Backup "${file}" "${backup}" "Failed to extract key/cert from ${file}"
+		result=1
+	elif ! openssl pkcs12 -export -in "${temp_certs}" -inkey "${temp_key}" \
+			-passin "pass:${pki_password}" -passout "pass:${pki_password}" \
+			-out "${file}" 2>> "${LOG}"; then
+		restoreP12Backup "${file}" "${backup}" "Failed to re-encrypt ${file}"
+		result=1
+	elif ! { chown --reference="${backup}" "${file}" 2>> "${LOG}" && \
+		chmod --reference="${backup}" "${file}" 2>> "${LOG}"; }; then
+		restoreP12Backup "${file}" "${backup}" "Failed to restore ownership/permissions on ${file}"
+		result=1
+	else
+		output "  - Successfully re-encrypted $(basename "${file}") (backup: $(basename "${backup}"))"
+	fi
+
+	rm -f "${temp_key}" "${temp_certs}"
+	return ${result}
+}
+
+migrateLegacyCerts() {
+	output 'Checking certificates for legacy encryption:'
+	
+	# Re-encrypt old p12 files that use legacy encryption (3DES/RC2) incompatible with OpenSSL >=3.0
+	# More info on https://github.com/openssl/openssl/discussions/23089
+	
+	local pki_config_file=$(get_engine_constant "oenginecons.FileLocations.OVIRT_ENGINE_SERVICE_CONFIG_PKI")
+	local default_pki_password=$(get_engine_constant "oenginecons.Const.PKI_PASSWORD")
+	local pki_keys_dir=$(get_engine_constant "oenginecons.FileLocations.OVIRT_ENGINE_PKIKEYSDIR")
+	
+	if [ -z "${pki_keys_dir}" ] || [ -z "${default_pki_password}" ]; then
+		output "  - Warning: Could not determine PKI configuration, skipping certificate check"
+		log "PKI config file: '${pki_config_file}', password: '${default_pki_password}', keys dir: '${pki_keys_dir}'"
+		return 0
+	fi
+	
+	local pki_password="${default_pki_password}"
+	if [ -f "${pki_config_file}" ]; then
+		. "${pki_config_file}"
+		[ -n "${ENGINE_PKI_ENGINE_STORE_PASSWORD}" ] && pki_password="${ENGINE_PKI_ENGINE_STORE_PASSWORD}"
+	fi
+	
+	output "  - Scanning ${pki_keys_dir}"
+	
+	local timestamp=$(date +"%Y%m%d%H%M%S")
+	local processed_count=0
+	for file in ${pki_keys_dir}/*.p12; do
+		[ -f "${file}" ] || continue
+		
+		openssl pkcs12 -info -in "${file}" -passin "pass:${pki_password}" -noout &>/dev/null
+		local can_read=$?
+		
+		if [ ${can_read} -ne 0 ]; then
+			log "Cannot read ${file} with standard openssl, trying with -legacy"
+			openssl pkcs12 -info -in "${file}" -passin "pass:${pki_password}" -legacy -noout &>/dev/null
+			can_read=$?
+			
+			if [ ${can_read} -eq 0 ]; then
+				if reencryptLegacyP12 "${file}" "${pki_password}" "${timestamp}"; then
+					processed_count=$((processed_count + 1))
+				fi
+			else
+				log "Cannot read ${file} even with -legacy flag"
+				output "    - Warning: Cannot read $(basename "${file}") (may be corrupt or use wrong password)"
+			fi
+		fi
+	done
+	
+	if [ ${processed_count} -eq 0 ]; then
+		output "  - Check complete (no legacy certificates found)"
+	else
+		output "  - Check complete (re-encrypted ${processed_count} certificate(s))"
+	fi
+}
+
 restoreFiles() {
 	local paths="$1"
 	local archive="$2"
@@ -1558,13 +2138,13 @@ restoreFiles() {
 		# In previous versions we didn't keep this inside the backup
 		os_at_backup="Unknown"
 	fi
-	local POSTINSTALL="/etc/ovirt-engine-setup.conf.d/20-setup-ovirt-post.conf"
+	local POSTINSTALL_RELATIVE="etc/ovirt-engine-setup.conf.d/20-setup-ovirt-post.conf"
 	local APACHE_CONFIGURED_LINE="OVESETUP_APACHE/configured=bool:True"
 
 	# Extract files to temp dir
 	local temp_files="${TEMP_FOLDER}/files.d"
 	mkdir -p "${temp_files}"
-	tar -C "${temp_files}" -pSsx -f "${archive}" || \
+	tar -C "${temp_files}" -pSsx -f "${archive}" 2>> "${LOG}" || \
 		logdie "Failed extracting ${archive}"
 
 	# Do not restore/overwrite some files
@@ -1573,7 +2153,7 @@ restoreFiles() {
 ${EXCLUDED_FILES_ON_RESTORE}
 __EOF__
 	local exclude_apache=
-	if [ "${os}" != "${os_at_backup}" ] && grep -q "^${APACHE_CONFIGURED_LINE}\$" "${temp_files}/${POSTINSTALL}"; then
+	if [ "${os}" != "${os_at_backup}" ] && grep -q "^${APACHE_CONFIGURED_LINE}\$" "${temp_files}/${POSTINSTALL_RELATIVE}"; then
 		exclude_apache=1
 		cat << __EOF__
 ------------------------------------------------------------------------------
@@ -1594,14 +2174,16 @@ __EOF__
 	fi
 
 	# Restore!
-	tar -C / -pSsx --exclude-from "${excluded_files}" -f "${archive}" || \
+	tar -C "${INSTALL_ROOT}"  -pSsx --exclude-from "${excluded_files}" -f "${archive}" 2>> "${LOG}" || \
 		logdie "Failed restoring ${paths}"
 
 	# Make next engine-setup ask about apache
 	if [ -n "${exclude_apache}" ]; then
 		local ESC_APACHE_CONFIGURED_LINE=$(echo "${APACHE_CONFIGURED_LINE}" | sed 's;/;\\/;')
-		sed -i "/^${ESC_APACHE_CONFIGURED_LINE}\$/d" "${POSTINSTALL}"
+		sed -i "/^${ESC_APACHE_CONFIGURED_LINE}\$/d" "${INSTALL_ROOT}/${POSTINSTALL_RELATIVE}"
 	fi
+
+	migrateLegacyCerts
 
 	if selinuxenabled; then
 		echo "${paths}" | while read -r path; do
@@ -1702,6 +2284,66 @@ __EOF__
 	eval "${MY_CINDERLIB_DB_CREDS}"
 }
 
+setMyManagedBlockDBCredentials() {
+	local options
+
+	[ "${MY_MANAGEDBLOCK_DB_SECURED}" = "True" ] && \
+		options="${options}&ssl=true"
+	[ "${MY_MANAGEDBLOCK_DB_SECURED_VALIDATION}" != "True" ] && \
+		options="${options}&sslfactory=org.postgresql.ssl.NonValidatingFactory"
+
+	[ -n "${options}" ] && options="${options#&}"
+
+	local encpass="$(sed 's;\(["\$]\);\\\1;g' << __EOF__
+${MY_MANAGEDBLOCK_DB_PASSWORD}
+__EOF__
+)"
+
+	MY_MANAGEDBLOCK_DB_CREDS="$(cat << __EOF__
+MANAGEDBLOCK_DB_HOST="${MY_MANAGEDBLOCK_DB_HOST}"
+MANAGEDBLOCK_DB_PORT="${MY_MANAGEDBLOCK_DB_PORT}"
+MANAGEDBLOCK_DB_USER="${MY_MANAGEDBLOCK_DB_USER}"
+MANAGEDBLOCK_DB_PASSWORD="${encpass}"
+MANAGEDBLOCK_DB_DATABASE="${MY_MANAGEDBLOCK_DB_DATABASE}"
+MANAGEDBLOCK_DB_SECURED="${MY_MANAGEDBLOCK_DB_SECURED}"
+MANAGEDBLOCK_DB_SECURED_VALIDATION="${MY_MANAGEDBLOCK_DB_SECURED_VALIDATION}"
+MANAGEDBLOCK_DB_DRIVER="org.postgresql.Driver"
+MANAGEDBLOCK_DB_URL="jdbc:postgresql://\${MANAGEDBLOCK_DB_HOST}:\${MANAGEDBLOCK_DB_PORT}/\${MANAGEDBLOCK_DB_DATABASE}?${options}"
+__EOF__
+)"
+	eval "${MY_MANAGEDBLOCK_DB_CREDS}"
+}
+
+setMyKeycloakDBCredentials() {
+	local options
+
+	[ "${MY_KEYCLOAK_DB_SECURED}" = "True" ] && \
+		options="${options}&ssl=true"
+	[ "${MY_KEYCLOAK_DB_SECURED_VALIDATION}" != "True" ] && \
+		options="${options}&sslfactory=org.postgresql.ssl.NonValidatingFactory"
+
+	[ -n "${options}" ] && options="${options#&}"
+
+	local encpass="$(sed 's;\(["\$]\);\\\1;g' << __EOF__
+${MY_KEYCLOAK_DB_PASSWORD}
+__EOF__
+)"
+
+	MY_KEYCLOAK_DB_CREDS="$(cat << __EOF__
+KEYCLOAK_DB_HOST="${MY_KEYCLOAK_DB_HOST}"
+KEYCLOAK_DB_PORT="${MY_KEYCLOAK_DB_PORT}"
+KEYCLOAK_DB_USER="${MY_KEYCLOAK_DB_USER}"
+KEYCLOAK_DB_PASSWORD="${encpass}"
+KEYCLOAK_DB_DATABASE="${MY_KEYCLOAK_DB_DATABASE}"
+KEYCLOAK_DB_SECURED="${MY_KEYCLOAK_DB_SECURED}"
+KEYCLOAK_DB_SECURED_VALIDATION="${MY_KEYCLOAK_DB_SECURED_VALIDATION}"
+KEYCLOAK_DB_DRIVER="org.postgresql.Driver"
+KEYCLOAK_DB_URL="jdbc:postgresql://\${KEYCLOAK_DB_HOST}:\${KEYCLOAK_DB_PORT}/\${KEYCLOAK_DB_DATABASE}?${options}"
+__EOF__
+)"
+	eval "${MY_KEYCLOAK_DB_CREDS}"
+}
+
 changeEngineDBConf() {
 	local conf="${ENGINE_ETC}/engine.conf.d/10-setup-database.conf"
 	[ -f "${conf}" ] || logdie "Can not find ${conf}"
@@ -1756,11 +2398,34 @@ changeCinderlibDBConf() {
 	printf "%s\n" "${MY_CINDERLIB_DB_CREDS}" > "${conf}"
 }
 
+changeManagedBlockDBConf() {
+	local conf="${ENGINE_ETC}/engine.conf.d/10-setup-managedblock-database.conf"
+	[ -f "${conf}" ] || logdie "Can not find ${conf}"
+
+	local backup="${conf}.$(date +"%Y%m%d%H%M%S")"
+	log "Backing up ${conf} to ${backup}"
+	cp -a "${conf}" "${backup}" || logdie "Failed to backup ${conf}"
+	output "Rewriting ${conf}"
+	printf "%s\n" "${MY_MANAGEDBLOCK_DB_CREDS}" > "${conf}"
+}
+
+changeKeycloakDBConf() {
+	local conf="${ENGINE_ETC}/engine.conf.d/12-setup-keycloak.conf"
+	[ -f "${conf}" ] || logdie "Can not find ${conf}"
+
+	local backup="${conf}.$(date +"%Y%m%d%H%M%S")"
+	log "Backing up ${conf} to ${backup}"
+	cp -a "${conf}" "${backup}" || logdie "Failed to backup ${conf}"
+	output "Rewriting ${conf}"
+	printf "%s\n" "${MY_KEYCLOAK_DB_CREDS}" > "${conf}"
+}
+
 generatePgPass() {
 	local password="${ENGINE_DB_PASSWORD}"
 	local dwh_password="${DWH_DB_PASSWORD}"
 	local cinderlib_password="${CINDERLIB_DB_PASSWORD}"
-	local cinderlib_password="${CINDERLIB_DB_PASSWORD}"
+	local managedblock_password="${MANAGEDBLOCK_DB_PASSWORD}"
+	local keycloak_password="${KEYCLOAK_DB_PASSWORD}"
 	MYPGPASS="${TEMP_FOLDER}/.pgpass"
 
 	touch "${MYPGPASS}" || logdie "Can't touch ${MYPGPASS}"
@@ -1777,7 +2442,9 @@ generatePgPass() {
 	if ! psql -V | grep -q ' 8\.'; then
 		password="$(printf "%s" "${password}" | sed -e 's/\\/\\\\/g' -e 's/:/\\:/g')"
 		dwh_password="$(printf "%s" "${dwh_password}" | sed -e 's/\\/\\\\/g' -e 's/:/\\:/g')"
+		managedblock_password="$(printf "%s" "${managedblock_password}" | sed -e 's/\\/\\\\/g' -e 's/:/\\:/g')"
 		cinderlib_password="$(printf "%s" "${cinderlib_password}" | sed -e 's/\\/\\\\/g' -e 's/:/\\:/g')"
+		keycloak_password="$(printf "%s" "${keycloak_password}" | sed -e 's/\\/\\\\/g' -e 's/:/\\:/g')"
 	fi
 
 	cat > "${MYPGPASS}" << __EOF__
@@ -1788,6 +2455,12 @@ ${DWH_DB_HOST}:${DWH_DB_PORT}:${DWH_DB_DATABASE}:${DWH_DB_USER}:${dwh_password}
 __EOF__
 	[ -n "${CINDERLIB_DB_USER}" ] && cat >> "${MYPGPASS}" << __EOF__
 ${CINDERLIB_DB_HOST}:${CINDERLIB_DB_PORT}:${CINDERLIB_DB_DATABASE}:${CINDERLIB_DB_USER}:${cinderlib_password}
+__EOF__
+	[ -n "${MANAGEDBLOCK_DB_USER}" ] && cat >> "${MYPGPASS}" << __EOF__
+${MANAGEDBLOCK_DB_HOST}:${MANAGEDBLOCK_DB_PORT}:${MANAGEDBLOCK_DB_DATABASE}:${MANAGEDBLOCK_DB_USER}:${managedblock_password}
+__EOF__
+	[ -n "${KEYCLOAK_DB_USER}" ] && cat >> "${MYPGPASS}" << __EOF__
+${KEYCLOAK_DB_HOST}:${KEYCLOAK_DB_PORT}:${KEYCLOAK_DB_DATABASE}:${KEYCLOAK_DB_USER}:${keycloak_password}
 __EOF__
 }
 
@@ -1841,8 +2514,10 @@ dump_config_for_restore() {
 DB_DUMP_FORMAT
 DWH_DB_DUMP_COMPRESSOR
 DWH_DB_DUMP_FORMAT
-CINDERLIB_DB_DUMP_COMPRESSOR
-CINDERLIB_DB_DUMP_FORMAT"
+KEYCLOAK_DB_DUMP_COMPRESSOR
+KEYCLOAK_DB_DUMP_FORMAT
+MANAGEDBLOCK_DB_DUMP_COMPRESSOR
+MANAGEDBLOCK_DB_DUMP_FORMAT"
 	echo "${VARS_TO_SAVE}" | while read -r var; do
 		eval echo "${var}=\${${var}}"
 	done
@@ -1873,6 +2548,9 @@ notify_engine() {
 	[ -n "${SCOPE_ENGINE_DB}" ] && do_notify 'db'
 	[ -n "${SCOPE_DWH_DB}" ] && do_notify 'dwhdb'
 	[ -n "${SCOPE_CINDERLIB_DB}" ] && do_notify 'cinderlib'
+	[ -n "${SCOPE_MANAGEDBLOCK_DB}" ] && do_notify 'managedblock'
+	[ -n "${SCOPE_KEYCLOAK_DB}" ] && do_notify 'keycloak'
+	[ -n "${SCOPE_GRAFANA_DB}" ] && do_notify 'grafanadb'
 
 	unset -f do_notify
 }
@@ -1882,7 +2560,7 @@ doverify() {
 
 	output "- Unpacking file '${FILE}'"
 	log "Opening tarball ${FILE} to ${TEMP_FOLDER}"
-	tar -C "${TEMP_FOLDER}" -pSsxf "${FILE}" || logdie "cannot open ${TEMP_FOLDER}"
+	tar -C "${TEMP_FOLDER}" -pSsxf "${FILE}" 2>> "${LOG}" || logdie "cannot open ${TEMP_FOLDER}"
 	log "Verifying hash"
 	verifyhash "${TEMP_FOLDER}"
 	log "Verifying version"
@@ -1896,6 +2574,9 @@ doverify() {
 	[ -s "${TEMP_FOLDER}/db/${DB_BACKUP_FILE_NAME}" ] || SCOPE_ENGINE_DB=
 	[ -s "${TEMP_FOLDER}/db/${DWHDB_BACKUP_FILE_NAME}" ] || SCOPE_DWH_DB=
 	[ -s "${TEMP_FOLDER}/db/${CINDERLIBDB_BACKUP_FILE_NAME}" ] || SCOPE_CINDERLIB_DB=
+	[ -s "${TEMP_FOLDER}/db/${MANAGEDBLOCKDB_BACKUP_FILE_NAME}" ] || SCOPE_MANAGEDBLOCK_DB=
+	[ -s "${TEMP_FOLDER}/db/${KEYCLOAKDB_BACKUP_FILE_NAME}" ] || SCOPE_KEYCLOAK_DB=
+	[ -s "${TEMP_FOLDER}/db/${GRAFANA_BACKUP_FILE_NAME}" ] || SCOPE_GRAFANA_DB=
 
 	if [ -n "${SCOPE_ENGINE_DB}" -a -n "${ENGINE_DB_USER}" ]; then
 		output "- Engine database '"${ENGINE_DB_DATABASE}"'"
@@ -1922,11 +2603,6 @@ output "Start of engine-backup with mode '${MODE}'"
 output "scope: ${SCOPE}"
 output "archive file: ${FILE}"
 output "log file: ${LOG}"
-
-if ! [ -z "$sclenv" ]; then
-	log "Setting scl env for ${sclenv}"
-	. scl_source enable ${sclenv}
-fi
 
 generatePgPass
 do${MODE}

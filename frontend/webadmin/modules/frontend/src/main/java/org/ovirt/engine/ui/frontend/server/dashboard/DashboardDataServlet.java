@@ -20,13 +20,13 @@ import javax.servlet.http.HttpServletResponse;
 import javax.sql.DataSource;
 
 import org.apache.commons.lang.StringUtils;
-import org.codehaus.jackson.map.ObjectMapper;
 import org.infinispan.Cache;
-import org.infinispan.manager.CacheContainer;
 import org.ovirt.engine.core.utils.EngineLocalConfig;
 import org.ovirt.engine.ui.frontend.server.dashboard.fake.FakeDataGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class DashboardDataServlet extends HttpServlet {
     /**
@@ -38,8 +38,6 @@ public class DashboardDataServlet extends HttpServlet {
 
     private static final String CONTENT_TYPE = "application/json"; //$NON-NLS-1$
     private static final String ENCODING = "UTF-8"; //$NON-NLS-1$
-    private static final String DASHBOARD = "dashboard"; //$NON-NLS-1$
-    private static final String INVENTORY = "inventory"; //$NON-NLS-1$
     private static final String UTILIZATION_KEY = "utilization_key"; //$NON-NLS-1$
     private static final String INVENTORY_KEY = "inventory_key"; //$NON-NLS-1$
     private static final Object UTILIZATION_LOCK = new Object();
@@ -64,10 +62,11 @@ public class DashboardDataServlet extends HttpServlet {
     private boolean dwhAvailable = false;
     private boolean enableBackgroundCacheUpdate = false;
 
-    @Resource(lookup = "java:jboss/infinispan/container/ovirt-engine")
-    private CacheContainer cacheContainer;
+    private String engineGrafanaBaseUrl = null;
 
+    @Resource(lookup = "java:jboss/infinispan/cache/ovirt-engine/dashboard")
     private Cache<String, Dashboard> dashboardCache;
+    @Resource(lookup = "java:jboss/infinispan/cache/ovirt-engine/inventory")
     private Cache<String, Inventory> inventoryCache;
 
     @Resource
@@ -78,9 +77,6 @@ public class DashboardDataServlet extends HttpServlet {
 
     @PostConstruct
     private void initCache() {
-        dashboardCache = cacheContainer.getCache(DASHBOARD);
-        inventoryCache = cacheContainer.getCache(INVENTORY);
-
         dwhAvailable = checkDwhConfigInEngine() && checkDwhDataSource();
 
         EngineLocalConfig config = EngineLocalConfig.getInstance();
@@ -94,6 +90,8 @@ public class DashboardDataServlet extends HttpServlet {
             log.info("Dashboard DB query cache has been disabled."); //$NON-NLS-1$
             return;
         }
+
+        engineGrafanaBaseUrl = lookupEngineGrafanaBaseUrl(config);
 
         /*
          * Update the utilization cache now and every 5 minutes (by default) thereafter, but never run 2 updates simultaneously.
@@ -232,15 +230,15 @@ public class DashboardDataServlet extends HttpServlet {
             String[] preferOptions = preferHeader == null ? new String[0] : preferHeader.trim().split("\\s*,\\s*"); //$NON-NLS-1$
             for (String option : preferOptions) {
                 switch (option) {
-                case PREFER_FAKE_DATA:
-                    preferFake = true;
-                    break;
-                case PREFER_ERROR:
-                    preferError = true;
-                    break;
-                case PREFER_NO_CACHE:
-                    preferNoCache = true;
-                    break;
+                    case PREFER_FAKE_DATA:
+                        preferFake = true;
+                        break;
+                    case PREFER_ERROR:
+                        preferError = true;
+                        break;
+                    case PREFER_NO_CACHE:
+                        preferNoCache = true;
+                        break;
                 }
             }
 
@@ -261,6 +259,9 @@ public class DashboardDataServlet extends HttpServlet {
             } else {
                 dashboard = getDashboardFromCache();
             }
+
+            // Add the Grafana information
+            dashboard.setEngineGrafanaBaseUrl(engineGrafanaBaseUrl);
 
             ObjectMapper mapper = new ObjectMapper();
             mapper.writeValue(response.getOutputStream(), dashboard);
@@ -307,7 +308,7 @@ public class DashboardDataServlet extends HttpServlet {
         } else {
             dashboardCache.put(UTILIZATION_KEY, dashboard, UTILIZATION_CACHE_UPDATE_INTERVAL, TimeUnit.SECONDS);
         }
-        log.debug("Dashboard utilization cache updated in {}ms", endTime-startTime); //$NON-NLS-1$
+        log.debug("Dashboard utilization cache updated in {}ms", endTime - startTime); //$NON-NLS-1$
         return dashboard;
     }
 
@@ -321,7 +322,7 @@ public class DashboardDataServlet extends HttpServlet {
         } else {
             inventoryCache.put(INVENTORY_KEY, inventory, INVENTORY_CACHE_UPDATE_INTERVAL, TimeUnit.SECONDS);
         }
-        log.debug("Dashboard inventoy cache updated in {}ms", endTime-startTime); //$NON-NLS-1$
+        log.debug("Dashboard inventoy cache updated in {}ms", endTime - startTime); //$NON-NLS-1$
         return inventory;
     }
 
@@ -366,6 +367,25 @@ public class DashboardDataServlet extends HttpServlet {
         HourlySummaryHelper.getCpuMemSummary(utilization, dwhDataSource);
         utilization.setStorage(HourlySummaryHelper.getStorageSummary(dwhDataSource));
         return utilization;
+    }
+
+    /**
+     * Return the configured Grafana base URL or null if either Grafana is not configured
+     * or the config key is empty.
+     */
+    private String lookupEngineGrafanaBaseUrl(EngineLocalConfig config) {
+        String grafanaBaseUrlVal;
+
+        try {
+            grafanaBaseUrlVal = config.getEngineGrafanaBaseUrl();
+            if (StringUtils.isBlank(config.getEngineGrafanaFqdn()) || StringUtils.isBlank(grafanaBaseUrlVal)) {
+                grafanaBaseUrlVal = null;
+            }
+        } catch (IllegalArgumentException e) {
+            grafanaBaseUrlVal = null;
+        }
+
+        return grafanaBaseUrlVal;
     }
 
     private static class DashboardError {

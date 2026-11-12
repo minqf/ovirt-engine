@@ -89,7 +89,7 @@ public class RadioGroup<K> extends Composite implements TakesValue<K>, HasConstr
     @Override
     public void setValue(K value, boolean fireEvents) {
         if (value == selectedValue
-                || (selectedValue != null && selectedValue.equals(value))) {
+                || selectedValue != null && selectedValue.equals(value)) {
             return;
         }
 
@@ -147,7 +147,7 @@ public class RadioGroup<K> extends Composite implements TakesValue<K>, HasConstr
                 getRadioButtonWidgetLabel(radioButton).getStyle().setPosition(Position.RELATIVE);
                 getRadioButtonWidgetLabel(radioButton).getStyle().setProperty(MAX_WIDTH, "94%"); //$NON-NLS-1$
                 getRadioButtonWidgetLabel(radioButton).getStyle().setDisplay(Display.INLINE);
-        }
+            }
             if (entry.getKey().equals(selectedValue)) {
                 radioButton.setValue(true);
 

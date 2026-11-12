@@ -31,6 +31,7 @@ import org.ovirt.engine.core.common.asynctasks.EntityInfo;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
 import org.ovirt.engine.core.common.businessentities.StorageDomain;
 import org.ovirt.engine.core.common.businessentities.StorageDomainStatic;
+import org.ovirt.engine.core.common.businessentities.VmBase;
 import org.ovirt.engine.core.common.businessentities.VmDevice;
 import org.ovirt.engine.core.common.businessentities.VmTemplate;
 import org.ovirt.engine.core.common.businessentities.VmTemplateStatus;
@@ -45,6 +46,7 @@ import org.ovirt.engine.core.common.validation.group.ImportEntity;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.Version;
 import org.ovirt.engine.core.dao.ImageDao;
+import org.ovirt.engine.core.dao.VmStaticDao;
 import org.ovirt.engine.core.dao.network.VmNetworkStatisticsDao;
 import org.ovirt.engine.core.utils.transaction.TransactionSupport;
 import org.ovirt.engine.core.vdsbroker.vdsbroker.CloudInitHandler;
@@ -63,6 +65,8 @@ public abstract class ImportVmTemplateCommandBase<T extends ImportVmTemplatePara
     @Inject
     protected ImageDao imageDao;
     @Inject
+    private VmStaticDao vmStaticDao;
+    @Inject
     private ImportUtils importUtils;
     @Inject
     private CloudInitHandler cloudInitHandler;
@@ -72,7 +76,7 @@ public abstract class ImportVmTemplateCommandBase<T extends ImportVmTemplatePara
 
     private Guid sourceTemplateId;
 
-    private Runnable logOnExecuteEndMethod = () -> {};
+    private Runnable logOnExecuteEndMethod = () -> { };
 
     public ImportVmTemplateCommandBase(T parameters, CommandContext commandContext) {
         super(parameters, commandContext);
@@ -168,11 +172,14 @@ public abstract class ImportVmTemplateCommandBase<T extends ImportVmTemplatePara
             initImportClonedTemplate();
         }
 
-        VmTemplate duplicateTemplate = vmTemplateDao.get(getParameters().getVmTemplate().getId());
+        VmBase duplicateTemplateOrVm = vmStaticDao.get(getParameters().getVmTemplate().getId());
+        if (duplicateTemplateOrVm == null) {
+            duplicateTemplateOrVm = vmTemplateDao.get(getParameters().getVmTemplate().getId());
+        }
         // check that the template does not exists in the target domain
-        if (duplicateTemplate != null) {
+        if (duplicateTemplateOrVm != null) {
             return failValidation(EngineMessage.VMT_CANNOT_IMPORT_TEMPLATE_EXISTS,
-                    String.format("$TemplateName %1$s", duplicateTemplate.getName()));
+                    String.format("$TemplateOrVmName %1$s", duplicateTemplateOrVm.getName()));
         }
         if (getVmTemplate().isBaseTemplate() && isVmTemplateWithSameNameExist()) {
             return failValidation(EngineMessage.VM_CANNOT_IMPORT_TEMPLATE_NAME_EXISTS);
@@ -274,7 +281,7 @@ public abstract class ImportVmTemplateCommandBase<T extends ImportVmTemplatePara
     protected boolean validateNoDuplicateDiskImages(Collection<DiskImage> images) {
         if (!getParameters().isImportAsNewEntity() && !getParameters().isImagesExistOnTargetStorageDomain()) {
             DiskImagesValidator diskImagesValidator = new DiskImagesValidator(images);
-            return validate(diskImagesValidator.diskImagesAlreadyExist());
+            return validate(diskImagesValidator.disksNotExistOrShareable());
         }
 
         return true;
@@ -351,6 +358,7 @@ public abstract class ImportVmTemplateCommandBase<T extends ImportVmTemplatePara
         checkTrustedService();
         incrementDbGeneration();
         logOnExecuteEndMethod.run();
+        setActionReturnValue(getVmTemplate());
         setSucceeded(true);
     }
 
@@ -379,13 +387,14 @@ public abstract class ImportVmTemplateCommandBase<T extends ImportVmTemplatePara
         getVmTemplate().setClusterId(getParameters().getClusterId());
 
         // if "run on host" field points to a non existent vds (in the current cluster) -> remove field and continue
-        if(!vmHandler.validateDedicatedVdsExistOnSameCluster(getVmTemplate()).isValid()) {
+        if (!vmHandler.validateDedicatedVdsExistOnSameCluster(getVmTemplate()).isValid()) {
             getVmTemplate().setDedicatedVmForVdsList(Collections.emptyList());
+            getVmTemplate().setCpuPinning(null);
         }
 
         getVmTemplate().setStatus(VmTemplateStatus.Locked);
         getVmTemplate().setQuotaId(getParameters().getQuotaId());
-        vmHandler.autoSelectResumeBehavior(getVmTemplate(), getCluster());
+        vmHandler.autoSelectResumeBehavior(getVmTemplate());
         vmTemplateDao.save(getVmTemplate());
         getCompensationContext().snapshotNewEntity(getVmTemplate());
         addDisksToDb();
@@ -461,16 +470,16 @@ public abstract class ImportVmTemplateCommandBase<T extends ImportVmTemplatePara
     @Override
     public AuditLogType getAuditLogTypeValue() {
         switch (getActionState()) {
-        case EXECUTE:
-            return getSucceeded() ? AuditLogType.IMPORTEXPORT_STARTING_IMPORT_TEMPLATE
-                    : AuditLogType.IMPORTEXPORT_IMPORT_TEMPLATE_FAILED;
+            case EXECUTE:
+                return getSucceeded() ? AuditLogType.IMPORTEXPORT_STARTING_IMPORT_TEMPLATE
+                        : AuditLogType.IMPORTEXPORT_IMPORT_TEMPLATE_FAILED;
 
-        case END_SUCCESS:
-            return getSucceeded() ? AuditLogType.IMPORTEXPORT_IMPORT_TEMPLATE
-                    : AuditLogType.IMPORTEXPORT_IMPORT_TEMPLATE_FAILED;
+            case END_SUCCESS:
+                return getSucceeded() ? AuditLogType.IMPORTEXPORT_IMPORT_TEMPLATE
+                        : AuditLogType.IMPORTEXPORT_IMPORT_TEMPLATE_FAILED;
 
-        default:
-            return AuditLogType.IMPORTEXPORT_IMPORT_TEMPLATE_FAILED;
+            default:
+                return AuditLogType.IMPORTEXPORT_IMPORT_TEMPLATE_FAILED;
         }
     }
 
@@ -494,7 +503,7 @@ public abstract class ImportVmTemplateCommandBase<T extends ImportVmTemplatePara
 
     @Override
     protected List<Class<?>> getValidationGroups() {
-        if(getParameters().isImportAsNewEntity()){
+        if (getParameters().isImportAsNewEntity()) {
             return addValidationGroup(ImportClonedEntity.class);
         }
         return addValidationGroup(ImportEntity.class);
@@ -503,7 +512,7 @@ public abstract class ImportVmTemplateCommandBase<T extends ImportVmTemplatePara
     @Override
     public Map<String, String> getJobMessageProperties() {
         if (jobProperties == null) {
-            jobProperties =  super.getJobMessageProperties();
+            jobProperties = super.getJobMessageProperties();
             jobProperties.put(VdcObjectType.VmTemplate.name().toLowerCase(),
                     (getVmTemplateName() == null) ? "" : getVmTemplateName());
             jobProperties.put(VdcObjectType.Cluster.name().toLowerCase(), getClusterName());
@@ -540,7 +549,7 @@ public abstract class ImportVmTemplateCommandBase<T extends ImportVmTemplatePara
                     disk.getQuotaId(),
                     QuotaConsumptionParameter.QuotaAction.CONSUME,
                     imageToDestinationDomainMap.get(disk.getId()),
-                    (double)disk.getSizeInGigabytes()));
+                    (double) disk.getSizeInGigabytes()));
         }
         return list;
     }

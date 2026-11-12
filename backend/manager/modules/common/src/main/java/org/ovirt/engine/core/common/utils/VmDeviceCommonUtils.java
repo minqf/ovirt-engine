@@ -2,7 +2,6 @@ package org.ovirt.engine.core.common.utils;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -11,25 +10,26 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.ovirt.engine.core.common.businessentities.BootSequence;
+import org.ovirt.engine.core.common.businessentities.DisplayType;
 import org.ovirt.engine.core.common.businessentities.GraphicsDevice;
+import org.ovirt.engine.core.common.businessentities.OriginType;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VmBase;
 import org.ovirt.engine.core.common.businessentities.VmDevice;
 import org.ovirt.engine.core.common.businessentities.VmDeviceGeneralType;
 import org.ovirt.engine.core.common.businessentities.VmDeviceId;
+import org.ovirt.engine.core.common.businessentities.network.VmInterfaceType;
 import org.ovirt.engine.core.common.businessentities.network.VmNetworkInterface;
+import org.ovirt.engine.core.common.businessentities.network.VmNic;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
 import org.ovirt.engine.core.common.businessentities.storage.DiskInterface;
 import org.ovirt.engine.core.common.businessentities.storage.DiskVmElement;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
+import org.ovirt.engine.core.common.osinfo.OsRepository;
 import org.ovirt.engine.core.compat.Guid;
 
 public class VmDeviceCommonUtils {
-
-    static final String NETWORK_CHAR = "N";
-    static final String CDROM_CHAR = "D";
-    static final String DRIVE_CHAR = "C";
 
     /** Expected unit: MiB */
     public static final String SPEC_PARAM_SIZE = "size";
@@ -81,7 +81,7 @@ public class VmDeviceCommonUtils {
                 VmDeviceGeneralType.CONTROLLER,
                 VmDeviceType.VIRTIOSERIAL.getName(),
                 "",
-                new HashMap<String, Object>(),
+                new HashMap<>(),
                 true,
                 true,
                 false,
@@ -106,69 +106,69 @@ public class VmDeviceCommonUtils {
         devices.forEach(device -> device.setBootOrder(0));
 
         switch (bootSequence) {
-        case C:
-            bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
-            break;
-        case CD:
-            bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
-            bootOrder = setCDBootOrder(devices, bootOrder);
-            break;
-        case CDN:
-            bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
-            bootOrder = setCDBootOrder(devices, bootOrder);
-            bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
-            break;
-        case CN:
-            bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
-            bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
-            break;
-        case CND:
-            bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
-            bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
-            bootOrder = setCDBootOrder(devices, bootOrder);
-            break;
-        case D:
-            bootOrder = setCDBootOrder(devices, bootOrder);
-            break;
-        case DC:
-            bootOrder = setCDBootOrder(devices, bootOrder);
-            bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
-            break;
-        case DCN:
-            bootOrder = setCDBootOrder(devices, bootOrder);
-            bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
-            bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
-            break;
-        case DN:
-            bootOrder = setCDBootOrder(devices, bootOrder);
-            bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
-            break;
-        case DNC:
-            bootOrder = setCDBootOrder(devices, bootOrder);
-            bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
-            bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
-            break;
-        case N:
-            bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
-            break;
-        case NC:
-            bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
-            bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
-            break;
-        case NCD:
-            bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
-            bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
-            bootOrder = setCDBootOrder(devices, bootOrder);
-            break;
-        case ND:
-            bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
-            bootOrder = setCDBootOrder(devices, bootOrder);
-            break;
-        case NDC:
-            bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
-            bootOrder = setCDBootOrder(devices, bootOrder);
-            bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
-            break;
+            case C:
+                bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
+                break;
+            case CD:
+                bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
+                bootOrder = setCDBootOrder(devices, bootOrder);
+                break;
+            case CDN:
+                bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
+                bootOrder = setCDBootOrder(devices, bootOrder);
+                bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
+                break;
+            case CN:
+                bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
+                bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
+                break;
+            case CND:
+                bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
+                bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
+                bootOrder = setCDBootOrder(devices, bootOrder);
+                break;
+            case D:
+                bootOrder = setCDBootOrder(devices, bootOrder);
+                break;
+            case DC:
+                bootOrder = setCDBootOrder(devices, bootOrder);
+                bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
+                break;
+            case DCN:
+                bootOrder = setCDBootOrder(devices, bootOrder);
+                bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
+                bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
+                break;
+            case DN:
+                bootOrder = setCDBootOrder(devices, bootOrder);
+                bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
+                break;
+            case DNC:
+                bootOrder = setCDBootOrder(devices, bootOrder);
+                bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
+                bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
+                break;
+            case N:
+                bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
+                break;
+            case NC:
+                bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
+                bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
+                break;
+            case NCD:
+                bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
+                bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
+                bootOrder = setCDBootOrder(devices, bootOrder);
+                break;
+            case ND:
+                bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
+                bootOrder = setCDBootOrder(devices, bootOrder);
+                break;
+            case NDC:
+                bootOrder = setNetworkBootOrder(devices, bootOrder, interfaces);
+                bootOrder = setCDBootOrder(devices, bootOrder);
+                bootOrder = setDiskBootOrder(devices, bootOrder, deviceIdToDiskVmElement);
+                break;
         }
     }
 
@@ -204,7 +204,7 @@ public class VmDeviceCommonUtils {
             deviceIdToIfaceName.put(iface.getId(), iface.getName());
         }
 
-        Collections.sort(pluggedInterfaces, Comparator.comparing(d -> deviceIdToIfaceName.get(d.getId().getDeviceId())));
+        pluggedInterfaces.sort(Comparator.comparing(d -> deviceIdToIfaceName.get(d.getId().getDeviceId())));
 
         return pluggedInterfaces;
     }
@@ -231,21 +231,32 @@ public class VmDeviceCommonUtils {
             Map<VmDeviceId, DiskVmElement> deviceIdTodiskVmElement) {
         LinkedList<VmDevice> diskDevices = new LinkedList<>();
         for (VmDevice device : devices) {
-            if (isDisk(device)) {
-                Guid id = device.getDeviceId();
-                if (id != null && !id.equals(Guid.Empty)) {
-                    if (device.getSnapshotId() == null) {
-                        diskDevices.addFirst(device);
-                    } else {
-                        diskDevices.addLast(device);
-                    }
-                }
+            if (!isDisk(device)) {
+                continue;
             }
+            Guid id = device.getDeviceId();
+            if (id == null || id.equals(Guid.Empty)) {
+                continue;
+            }
+            DiskVmElement dve = deviceIdTodiskVmElement.get(device.getId());
+            if (dve == null) {
+                continue;
+            }
+            if (device.getSnapshotId() == null) {
+                diskDevices.addFirst(device);
+            } else {
+                diskDevices.addLast(device);
+            }
+        }
+
+        if (diskDevices.size() == 1) {
+            diskDevices.get(0).setBootOrder(++bootOrder);
+            return bootOrder;
         }
 
         for (VmDevice device : diskDevices) {
             DiskVmElement dve = deviceIdTodiskVmElement.get(device.getId());
-            if (dve != null && dve.isBoot()) {
+            if (dve.isBoot()) {
                 device.setBootOrder(++bootOrder);
             }
         }
@@ -255,7 +266,7 @@ public class VmDeviceCommonUtils {
 
     public static Map<VmDeviceId, DiskVmElement> extractDiskVmElements(VM vm) {
         Map<VmDeviceId, DiskVmElement> result = new HashMap<>();
-        for(Disk disk : vm.getDiskMap().values()) {
+        for (Disk disk : vm.getDiskMap().values()) {
             DiskVmElement element = disk.getDiskVmElementForVm(vm.getId());
             if (element != null) {
                 result.put(element.getId(), element);
@@ -267,7 +278,7 @@ public class VmDeviceCommonUtils {
     public static boolean isInWhiteList(VmDeviceGeneralType type, String device) {
         String expr = getDeviceTypeSearchExpr(type, device);
         String whiteList = Config.getValue(ConfigValues.ManagedDevicesWhiteList);
-        return whiteList.indexOf(expr) >= 0;
+        return whiteList.contains(expr);
     }
 
     private static String getDeviceTypeSearchExpr(VmDeviceGeneralType type, String device) {
@@ -278,37 +289,6 @@ public class VmDeviceCommonUtils {
         sb.append(device);
         sb.append(" ");
         return sb.toString();
-    }
-
-    /**
-     * is special device - device which is managed, but contains the general properties
-     */
-    public static boolean isSpecialDevice(String device, VmDeviceGeneralType type) {
-        if (VmDeviceType.USB.getName().equals(device)) {
-            return true;
-        }
-
-        switch(type) {
-        case SOUND:
-            return true;
-        case CONSOLE:
-            return VmDeviceType.CONSOLE.getName().equals(device);
-        case SMARTCARD:
-            return VmDeviceType.SMARTCARD.getName().equals(device);
-        case REDIR:
-            return VmDeviceType.SPICEVMC.getName().equals(device);
-        case BALLOON:
-            return VmDeviceType.MEMBALLOON.getName().equals(device);
-        case WATCHDOG:
-            return VmDeviceType.WATCHDOG.getName().equals(device);
-        case RNG:
-            return VmDeviceType.VIRTIO.getName().equals(device);
-        case CONTROLLER:
-            return VmDeviceType.VIRTIOSERIAL.getName().equals(device)
-                    || VmDeviceType.VIRTIOSCSI.getName().equals(device);
-        default:
-            return false;
-        }
     }
 
     /**
@@ -438,7 +418,7 @@ public class VmDeviceCommonUtils {
         vmBase.getManagedDeviceMap().put(vmDevice.getDeviceId(), vmDevice);
     }
 
-    public static void addGraphicsDevice(VmBase vmBase, VmDeviceType vmDeviceType)  {
+    public static void addGraphicsDevice(VmBase vmBase, VmDeviceType vmDeviceType) {
         GraphicsDevice graphicsDevice = new GraphicsDevice(vmDeviceType);
         graphicsDevice.setId(new VmDeviceId(Guid.newGuid(), vmBase.getId()));
         vmBase.getManagedDeviceMap().put(graphicsDevice.getDeviceId(), graphicsDevice);
@@ -464,12 +444,12 @@ public class VmDeviceCommonUtils {
      */
     public static int getCdDeviceIndex(String cdInterface) {
         switch (cdInterface) {
-        case "scsi":
-        case "ide":
-        case "sata":
-            return 2;
-        default:
-            return -1;
+            case "scsi":
+            case "ide":
+            case "sata":
+                return 2;
+            default:
+                return -1;
         }
     }
 
@@ -481,13 +461,13 @@ public class VmDeviceCommonUtils {
      */
     public static int getCdPayloadDeviceIndex(String cdInterface) {
         switch (cdInterface) {
-        case "scsi":
-        case "sata":
-            return 1;
-        case "ide":
-            return 3;
-        default:
-            return -1;
+            case "scsi":
+            case "sata":
+                return 1;
+            case "ide":
+                return 3;
+            default:
+                return -1;
         }
     }
 
@@ -529,4 +509,33 @@ public class VmDeviceCommonUtils {
         return getSpecParamsIntValue(memoryDevice, SPEC_PARAM_SIZE).isPresent()
                 && getSpecParamsIntValue(memoryDevice, SPEC_PARAM_NODE).isPresent();
     }
+
+    public static boolean isSingleQxlPci(VmBase vmBase) {
+        OsRepository osRepository = SimpleDependencyInjector.getInstance().get(OsRepository.class);
+        return osRepository.isLinux(vmBase.getOsId()) && vmBase.getDefaultDisplayType() == DisplayType.qxl
+                && vmBase.getOrigin() != OriginType.KUBEVIRT && !vmBase.isHostedEngine();
+    }
+
+
+    public static VmDevice createFailoverVmDevice(Guid failoverId, Guid vmId) {
+        VmDevice failoverDevice = new VmDevice();
+        failoverDevice.setDevice("bridge");
+        failoverDevice.setId(new VmDeviceId(failoverId, vmId));
+        Map<String, String> customProperties = new HashMap<>();
+        customProperties.put("failover", "failover");
+        failoverDevice.setCustomProperties(customProperties);
+        failoverDevice.setManaged(true);
+        return failoverDevice;
+    }
+
+    public static VmNic createFailoverVmNic(Guid failoverId, Guid vmId, String macAddress) {
+        VmNic failoverNic = new VmNic();
+        failoverNic.setVmId(vmId);
+        failoverNic.setLinked(true);
+        failoverNic.setVnicProfileId(failoverId);
+        failoverNic.setType(VmInterfaceType.pv.getValue());
+        failoverNic.setMacAddress(macAddress);
+        return failoverNic;
+    }
+
 }

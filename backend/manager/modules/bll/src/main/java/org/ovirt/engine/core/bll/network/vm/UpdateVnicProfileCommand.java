@@ -1,19 +1,26 @@
 package org.ovirt.engine.core.bll.network.vm;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 
 import org.ovirt.engine.core.bll.RenamedEntityInfoProvider;
+import org.ovirt.engine.core.bll.VmSlaPolicyUtils;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.validator.VnicProfileValidator;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.VnicProfileParameters;
+import org.ovirt.engine.core.common.businessentities.network.VmNic;
 import org.ovirt.engine.core.common.businessentities.network.VnicProfile;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.validation.group.UpdateEntity;
+import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogable;
+import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogableImpl;
+import org.ovirt.engine.core.dao.network.VmNicDao;
 import org.ovirt.engine.core.dao.network.VnicProfileDao;
 
 public class UpdateVnicProfileCommand<T extends VnicProfileParameters>
@@ -21,6 +28,12 @@ public class UpdateVnicProfileCommand<T extends VnicProfileParameters>
 
     @Inject
     private VnicProfileDao vnicProfileDao;
+    @Inject
+    private VmNicDao vmNicDao;
+    @Inject
+    private AuditLogDirector auditLogDirector;
+    @Inject
+    private VmSlaPolicyUtils vmSlaPolicyUtils;
 
     private VnicProfile oldVnicProfile;
 
@@ -41,14 +54,54 @@ public class UpdateVnicProfileCommand<T extends VnicProfileParameters>
                 && validator.validateCustomProperties(getReturnValue().getValidationMessages())
                 && validate(validator.passthroughNotChangedIfUsedByVms())
                 && validate(validator.passthroughProfileContainsSupportedProperties())
-                && validate(validator.validNetworkFilterId());
+                && validate(validator.passthroughProfileNoPortIsolation())
+                && validate(validator.validNetworkFilterId())
+                && validate(validator.validFailoverId())
+                && validate(validator.validateProfileNotUpdatedIfFailover())
+                && validate(validator.failoverNotChangedIfUsedByVms());
     }
 
     @Override
     protected void executeCommand() {
         getOldVnicProfile();
+        markVnicsOutOfSync();
         vnicProfileDao.update(getVnicProfile());
+
+        // Refresh running VMs if Network QoS was added, changed, or removed
+        if (networkQosChanged()) {
+            vmSlaPolicyUtils.refreshRunningVmsWithVnicProfile(getVnicProfile().getId());
+        }
+
         setSucceeded(true);
+    }
+
+    private boolean networkQosChanged() {
+        return !Objects.equals(getOldVnicProfile().getNetworkQosId(), getVnicProfile().getNetworkQosId());
+    }
+
+    private void markVnicsOutOfSync() {
+        if (isNonLiveUpdate()) {
+            var vnics = vmNicDao.getActiveForVnicProfile(getVnicProfile().getId());
+            vnics.forEach(vnic -> vnic.setSynced(false));
+            vmNicDao.updateAllInBatch(vnics);
+            logVnicsOutOfSync(vnics);
+        }
+    }
+
+    private boolean isNonLiveUpdate() {
+        var prev = getOldVnicProfile();
+        var curr = getVnicProfile();
+        return !Objects.equals(prev.getNetworkId(), curr.getNetworkId()) ||
+            !Objects.equals(prev.getCustomProperties(), curr.getCustomProperties()) ||
+            !Objects.equals(prev.getNetworkFilterId(), curr.getNetworkFilterId()) ||
+            !Objects.equals(prev.getFailoverVnicProfileId(), curr.getFailoverVnicProfileId());
+    }
+
+    private void logVnicsOutOfSync(List<VmNic> vnics) {
+        var logable = new AuditLogableImpl();
+        logable.addCustomValue("ProfileName", getVnicProfileName());
+        logable.addCustomValue("VnicNames", vnics.stream().map(VmNic::getName).collect(Collectors.joining(",")));
+        auditLogDirector.log(logable, AuditLogType.VNICS_OUT_OF_SYNC_ON_PROFILE_UPDATE);
     }
 
     @Override

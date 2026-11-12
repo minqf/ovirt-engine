@@ -207,6 +207,14 @@ public class ISCSIStorageHelper extends StorageHelperBase {
         return null;
     }
 
+    public List<StorageServerConnections> findConnectionsByAddressPortAndIqn(StorageServerConnections connection) {
+        return storageServerConnectionDao.getStorageConnectionsByConnectionPortAndIqn(
+                        connection.getConnection(),
+                        connection.getPort(),
+                        connection.getIqn()
+                );
+    }
+
     private void fillConnectionDetailsIfNeeded(StorageServerConnections connection) {
         // in case that the connection id is null (in case it wasn't loaded from the db before) - we can attempt to load
         // it from the db by its details.
@@ -304,9 +312,22 @@ public class ISCSIStorageHelper extends StorageHelperBase {
 
     @Override
     public boolean syncDomainInfo(StorageDomain storageDomain, Guid vdsId) {
+        return syncDomainInfo(storageDomain, vdsId, false);
+    }
+
+    /**
+     * Synchronize LUN details comprising the storage domain with the DB.
+     *
+     * @param persistNewConnections when {@code true}, iSCSI paths reported by vdsm that have no
+     *         matching {@code storage_server_connections} row are persisted (created); when
+     *         {@code false} they are skipped, preserving the behavior of the activation/periodic
+     *         sync callers (the default).
+     */
+    public boolean syncDomainInfo(StorageDomain storageDomain, Guid vdsId, boolean persistNewConnections) {
         // Synchronize LUN details comprising the storage domain with the DB
         SyncLunsInfoForBlockStorageDomainParameters parameters = new SyncLunsInfoForBlockStorageDomainParameters(
                 storageDomain.getId(), vdsId);
+        parameters.setPersistNewConnections(persistNewConnections);
         return backend.runInternalAction(ActionType.SyncLunsInfoForBlockStorageDomain, parameters).getSucceeded();
     }
 }

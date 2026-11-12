@@ -1,8 +1,10 @@
 package org.ovirt.engine.core.dao;
 
+import java.util.Date;
 import java.util.List;
 
 import org.ovirt.engine.core.common.businessentities.VmBackup;
+import org.ovirt.engine.core.common.businessentities.VmBackupPhase;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.compat.Guid;
 
@@ -23,8 +25,9 @@ public interface VmBackupDao extends GenericDao<VmBackup, Guid> {
      *
      * @param backupId the VM backup id
      * @param diskId the disk id to add
+     * @param diskSnapshotId the id of the snapshot in case it is called in hybrid backup
      */
-    void addDiskToVmBackup(Guid backupId, Guid diskId);
+    void addDiskToVmBackup(Guid backupId, Guid diskId, Guid diskSnapshotId);
 
     /**
      * Adds the specified backup url to the VM backup.
@@ -52,10 +55,32 @@ public interface VmBackupDao extends GenericDao<VmBackup, Guid> {
     List<DiskImage> getDisksByBackupId(Guid backupId);
 
     /**
-     * Remove all disks from VM backup
+     * Get the snapshot associated with the VM backup for a given disk.
+     * Used by hybrid backup.
      *
      * @param backupId the VM backup id
+     * @param diskId the relevant disk id
+     * @return The disk snapshot id created for this disk
      */
-    void removeAllDisksFromBackup(Guid backupId);
+    Guid getDiskSnapshotIdForBackup(Guid backupId, Guid diskId);
 
+
+    /**
+     * Deletes completed backups.
+     * Successful backups have {@link VmBackupPhase#SUCCEEDED} status.
+     * Failed backups have {@link VmBackupPhase#FAILED} status.
+     *
+     * @param succeededBackups all successful backups having older end time than this date will be deleted.
+     * @param failedBackups all failed backups having older end time than this date will be deleted.
+     */
+    void deleteCompletedBackups(Date succeededBackups, Date failedBackups);
+
+    /**
+     * Marks the backup as stopped
+     *
+     * @param backupId the VM backup ID
+     */
+    void setBackupStopped(Guid backupId);
+
+    List<VmBackup> getUnmonitoredBackups();
 }

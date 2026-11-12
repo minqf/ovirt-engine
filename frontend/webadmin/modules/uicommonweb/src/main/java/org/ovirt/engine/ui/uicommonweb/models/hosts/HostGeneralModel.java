@@ -257,6 +257,20 @@ public class HostGeneralModel extends EntityModel<VDS> {
 
     }
 
+    private RpmVersion nmstateVersion;
+
+    public RpmVersion getNmstateVersion() {
+        return nmstateVersion;
+    }
+
+    public void setNmstateVersion(RpmVersion nmstateVersion) {
+        if (!Objects.equals(this.nmstateVersion, nmstateVersion)) {
+            this.nmstateVersion = nmstateVersion;
+            onPropertyChanged(new PropertyChangedEventArgs("NmstateVersion")); //$NON-NLS-1$
+        }
+
+    }
+
     private String iScsiInitiatorName;
 
     public String getIScsiInitiatorName() {
@@ -890,6 +904,19 @@ public class HostGeneralModel extends EntityModel<VDS> {
         this.kernelFeatures = kernelFeatures;
     }
 
+    private boolean ovnConfigured;
+
+    public boolean isOvnConfigured() {
+        return ovnConfigured;
+    }
+
+    public void setOvnConfigured(boolean value) {
+        if (ovnConfigured != value) {
+            ovnConfigured = value;
+            onPropertyChanged(new PropertyChangedEventArgs("ovnConfigured")); //$NON-NLS-1$
+        }
+    }
+
     static {
         requestEditEventDefinition = new EventDefinition("RequestEditEvent", HostGeneralModel.class); //$NON-NLS-1$
         requestGOToEventsTabEventDefinition = new EventDefinition("RequestGOToEventsTabEvent", HostGeneralModel.class); //$NON-NLS-1$
@@ -981,6 +1008,7 @@ public class HostGeneralModel extends EntityModel<VDS> {
         setGlusterVersion(vds.getGlusterVersion());
         setLibrbdVersion(vds.getLibrbdVersion());
         setOvsVersion(vds.getOvsVersion());
+        setNmstateVersion(vds.getNmstateVersion());
         setIScsiInitiatorName(vds.getIScsiInitiatorName());
 
         setHostName(vds.getHostName());
@@ -998,7 +1026,8 @@ public class HostGeneralModel extends EntityModel<VDS> {
                     vds.getHugePages().stream().map(
                                     page -> messages.hugePages(
                                             String.valueOf(page.getSizeKB()),
-                                            String.valueOf(page.getAmount() != null ? page.getAmount() : constants.notAvailableLabel()))
+                                            String.valueOf(page.getFree() != null ? page.getFree() : constants.notAvailableLabel()),
+                                            String.valueOf(page.getTotal() != null ? page.getTotal() : constants.notAvailableLabel()))
                             ).collect(Collectors.joining(", "))); //$NON-NLS-1$
         } else {
             setHugePages(constants.notAvailableLabel());
@@ -1050,7 +1079,7 @@ public class HostGeneralModel extends EntityModel<VDS> {
 
         setKernelFeatures(formatKernelFeatures(vds.getKernelFeatures()));
         setvncEncryptionEnabled(vds.isVncEncryptionEnabled());
-        setFipsEnabled(vds.isFipsEnabled());
+        setOvnConfigured(vds.isOvnConfigured());
     }
 
     private String formatKernelFeatures(Map<String, Object> kernelFeatures) {
@@ -1063,8 +1092,8 @@ public class HostGeneralModel extends EntityModel<VDS> {
                 // only string and int values are shown, -1 int values are hidden - considered "N/A"
                 .filter(pair ->
                         pair.getValue() instanceof String
-                                || (pair.getValue() instanceof Integer && !Objects.equals(vdsmNotAvailable,
-                                pair.getValue())))
+                                || pair.getValue() instanceof Integer && !Objects.equals(vdsmNotAvailable,
+                                pair.getValue()))
                 .map(pair -> pair.getKey() + ": " + pair.getValue()) //$NON-NLS-1$
                 .collect(Collectors.joining(", ")); //$NON-NLS-1$
         if (concatenatedPairs.isEmpty()) {
@@ -1221,19 +1250,6 @@ public class HostGeneralModel extends EntityModel<VDS> {
         if (vncEncryptionEnabled != value) {
             vncEncryptionEnabled = value;
             onPropertyChanged(new PropertyChangedEventArgs("vncEncryptionEnabled")); //$NON-NLS-1$
-        }
-    }
-
-    private boolean fipsEnabled;
-
-    public boolean isFipsEnabled() {
-        return fipsEnabled;
-    }
-
-    public void setFipsEnabled(boolean value) {
-        if (fipsEnabled != value) {
-            fipsEnabled = value;
-            onPropertyChanged(new PropertyChangedEventArgs("fipsEnabled")); //$NON-NLS-1$
         }
     }
 

@@ -5,9 +5,9 @@ CREATE TYPE Getsystem_statistics_rs AS (val INT);
 
 CREATE OR REPLACE FUNCTION Getsystem_statistics (
     v_entity VARCHAR(10), -- /*VM,HOST,USER,SD*/
-    v_status VARCHAR(20)
+    v_states VARCHAR(20)
     ) -- comma-separated list of status values
-RETURNS Getsystem_statistics_rs STABLE AS $PROCEDURE$
+RETURNS Getsystem_statistics_rs STABLE AS $FUNCTION$
 DECLARE v_i Getsystem_statistics_rs;
 
 v_sql VARCHAR(4000);
@@ -36,16 +36,16 @@ BEGIN
         RAISE 'Unknown entity type "%"', v_entity;
     END IF;
 
-    IF v_status != '' THEN
+    IF v_states != '' THEN
         IF v_sys_entity != 'USER'
             AND v_sys_entity != 'TSD' THEN
-            v_sql := coalesce(v_sql, '') || ' where status in (' || coalesce(v_status, '') || ')';
+            v_sql := coalesce(v_sql, '') || ' where status in (' || coalesce(v_states, '') || ')';
         END IF;
     END IF;
     EXECUTE v_sql
     INTO v_i;
 
-RETURN v_i;END;$PROCEDURE$
+RETURN v_i;END;$FUNCTION$
 LANGUAGE plpgsql;
 
 

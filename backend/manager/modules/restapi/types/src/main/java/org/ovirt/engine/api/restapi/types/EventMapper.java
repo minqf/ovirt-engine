@@ -32,7 +32,7 @@ public class EventMapper {
                 .getLogTime(), null));
         model.setDescription(entity.getMessage());
 
-        boolean idValid = entity.getUserId()!=null && !entity.getUserId().equals(Guid.Empty);
+        boolean idValid = entity.getUserId() != null && !entity.getUserId().equals(Guid.Empty);
         boolean nameValid = !StringUtils.isEmpty(entity.getUserName());
 
         if (idValid || nameValid) {
@@ -46,7 +46,7 @@ public class EventMapper {
             model.setUser(user);
         }
 
-        idValid = entity.getVmId()!=null && !entity.getVmId().equals(Guid.Empty);
+        idValid = entity.getVmId() != null && !entity.getVmId().equals(Guid.Empty);
         nameValid = !StringUtils.isEmpty(entity.getVmName());
 
         if (idValid || nameValid) {
@@ -60,7 +60,7 @@ public class EventMapper {
             model.setVm(vm);
         }
 
-        idValid = entity.getStorageDomainId()!=null && !entity.getStorageDomainId().equals(Guid.Empty);
+        idValid = entity.getStorageDomainId() != null && !entity.getStorageDomainId().equals(Guid.Empty);
         nameValid = !StringUtils.isEmpty(entity.getStorageDomainName());
 
         if (idValid || nameValid) {
@@ -74,7 +74,7 @@ public class EventMapper {
             model.setStorageDomain(sd);
         }
 
-        idValid = entity.getVdsId()!=null && !entity.getVdsId().equals(Guid.Empty);
+        idValid = entity.getVdsId() != null && !entity.getVdsId().equals(Guid.Empty);
         nameValid = !StringUtils.isEmpty(entity.getVdsName());
 
         if (idValid || nameValid) {
@@ -102,7 +102,7 @@ public class EventMapper {
             model.setTemplate(template);
         }
 
-        idValid = entity.getClusterId()!=null && !entity.getClusterId().equals(Guid.Empty);
+        idValid = entity.getClusterId() != null && !entity.getClusterId().equals(Guid.Empty);
         nameValid = !StringUtils.isEmpty(entity.getClusterName());
 
         if (idValid || nameValid) {
@@ -116,7 +116,7 @@ public class EventMapper {
             model.setCluster(cluster);
         }
 
-        idValid = entity.getStoragePoolId()!=null && !entity.getStoragePoolId().equals(Guid.Empty);
+        idValid = entity.getStoragePoolId() != null && !entity.getStoragePoolId().equals(Guid.Empty);
         nameValid = !StringUtils.isEmpty(entity.getStoragePoolName());
 
         if (idValid || nameValid) {
@@ -218,32 +218,32 @@ public class EventMapper {
     public static LogSeverity map(AuditLogSeverity entityStatus,
             LogSeverity template) {
         switch (entityStatus) {
-        case NORMAL:
-            return LogSeverity.NORMAL;
-        case WARNING:
-            return LogSeverity.WARNING;
-        case ERROR:
-            return LogSeverity.ERROR;
-        case ALERT:
-            return LogSeverity.ALERT;
-        default:
-            return null;
+            case NORMAL:
+                return LogSeverity.NORMAL;
+            case WARNING:
+                return LogSeverity.WARNING;
+            case ERROR:
+                return LogSeverity.ERROR;
+            case ALERT:
+                return LogSeverity.ALERT;
+            default:
+                return null;
         }
     }
 
     @Mapping(from = LogSeverity.class, to = AuditLogSeverity.class)
     public static AuditLogSeverity map(LogSeverity template, AuditLogSeverity entityStatus) {
         switch (template) {
-        case ALERT:
-            return AuditLogSeverity.ALERT;
-        case ERROR:
-            return AuditLogSeverity.ERROR;
-        case NORMAL:
-            return AuditLogSeverity.NORMAL;
-        case WARNING:
-            return AuditLogSeverity.WARNING;
-        default:
-            return null;
+            case ALERT:
+                return AuditLogSeverity.ALERT;
+            case ERROR:
+                return AuditLogSeverity.ERROR;
+            case NORMAL:
+                return AuditLogSeverity.NORMAL;
+            case WARNING:
+                return AuditLogSeverity.WARNING;
+            default:
+                return null;
         }
     }
 }

@@ -50,4 +50,19 @@ public enum VDSStatus implements Identifiable {
     public boolean isEligibleForOnDemandCheckUpdates() {
         return this == Up || this == NonOperational || this == Maintenance;
     }
+
+    public boolean isEligibleForClusterCpuConfigurationChange() {
+        return this == Up || this == PreparingForMaintenance;
+    }
+
+    public boolean isEligibleForHostMonitoring() {
+        return this != Installing &&
+                this != InstallFailed &&
+                this != Reboot &&
+                this != Maintenance &&
+                this != PendingApproval &&
+                this != InstallingOS &&
+                this != Down &&
+                this != Kdumping;
+    }
 }

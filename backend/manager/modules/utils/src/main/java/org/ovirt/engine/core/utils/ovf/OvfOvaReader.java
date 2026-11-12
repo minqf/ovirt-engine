@@ -13,6 +13,7 @@ import org.ovirt.engine.core.common.businessentities.storage.CinderDisk;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.DiskStorageType;
 import org.ovirt.engine.core.common.businessentities.storage.FullEntityOvfData;
+import org.ovirt.engine.core.common.businessentities.storage.VolumeType;
 import org.ovirt.engine.core.common.osinfo.OsRepository;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.utils.ovf.xml.XmlAttribute;
@@ -71,80 +72,85 @@ public abstract class OvfOvaReader extends OvfReader {
 
     protected void readOsSection(XmlNode section) {
         XmlAttribute ovirtOsId = section.attributes.get("ovirt:id");
-        int osId = ovirtOsId != null ?
-                Integer.parseInt(ovirtOsId.getValue())
-                : mapOsId(section.attributes.get("ovf:id").getValue());
+        int osId;
+        if (ovirtOsId != null) {
+            int parsedInt = Integer.parseInt(ovirtOsId.getValue());
+            // map AlmaLinux 8+ that was dropped to Other Linux (kernel 4.x)
+            osId = parsedInt == 1502 ? 33 : parsedInt;
+        } else {
+            osId = mapOsId(section.attributes.get("ovf:id").getValue());
+        }
         vm.setOsId(osId);
         setClusterArch(osRepository.getArchitectureFromOS(osId));
     }
 
     protected int mapOsId(String ovfOsId) {
         switch (ovfOsId) {
-        case "67": // Windows XP
-        case "71": // Windows XP 63-Bit
-        case "72": // Windows XP Embedded
-            return 1; // Windows XP
-        case "69":
-            return 3; // Windows 2003
-        case "70":
-            return 10; // Windows 2003x64
-        case "76":
-            return 4; // Windows 2008
-        case "77":
-            return 16; // Windows 2008x64
-        case "103":
-            return 17; // Windows 2008R2x64
-        case "105":
-            return 11; // Windows 7
-        case "114":
-            return 20; // Windows 8
-        case "115":
-            return 21; // Windows 8x64
-        case "113":
-            return 23; // Windows 2012x64
-        case "116":
-            return 25; // Windows 2012R2x64
-        case "120":
-            return 26; // Windows 10
-        case "121":
-            return 27; // Windows 10x64
-        case "117":
-            return 29; // Windows 2016x64
-        case "122":
-            return 31; // Windows 2019x64
-        case "125":
-            return 35; // RedHat CoreOS
-        case "42":
-            return 1500; // FreeBSD
-        case "78":
-            return 1501; // FreeBSDx64
-        case "36": // Linux
-        case "79": // RedHat Enterprise Linux
-        case "80": // RedHat Enterprise Linux x64
-        case "82": // SUSE
-        case "83": // SUSEx64
-        case "84": // SLES
-        case "85": // SLESx64
-        case "89": // Mandriva
-        case "90": // Mandrivax64
-        case "91": // TurboLinux
-        case "92": // TurboLinux x64
-        case "93": // Ubuntu
-        case "94": // Ubuntu x64
-        case "95": // Debian
-        case "96": // Debian x64
-        case "97": // Linux 2.4.x
-        case "98": // Linux 2.4.x x64
-        case "99": // Linux 2.6.x
-        case "100": // Linux 2.6.x x64
-        case "101": // Linux x64
-        case "106": // CentOS
-        case "107": // CentOSx64
-        case "108": // Oracle Linux
-        case "109": // Oracle Linux x64
-            return 5; // Other Linux
-        default:
-            return 0; // Other
+            case "67": // Windows XP
+            case "71": // Windows XP 63-Bit
+            case "72": // Windows XP Embedded
+                return 1; // Windows XP
+            case "69":
+                return 3; // Windows 2003
+            case "70":
+                return 10; // Windows 2003x64
+            case "76":
+                return 4; // Windows 2008
+            case "77":
+                return 16; // Windows 2008x64
+            case "103":
+                return 17; // Windows 2008R2x64
+            case "105":
+                return 11; // Windows 7
+            case "114":
+                return 20; // Windows 8
+            case "115":
+                return 21; // Windows 8x64
+            case "113":
+                return 23; // Windows 2012x64
+            case "116":
+                return 25; // Windows 2012R2x64
+            case "120":
+                return 26; // Windows 10
+            case "121":
+                return 27; // Windows 10x64
+            case "117":
+                return 29; // Windows 2016x64
+            case "122":
+                return 31; // Windows 2019x64
+            case "125":
+                return 35; // RedHat CoreOS
+            case "42":
+                return 1500; // FreeBSD
+            case "78":
+                return 1501; // FreeBSDx64
+            case "36": // Linux
+            case "79": // RedHat Enterprise Linux
+            case "80": // RedHat Enterprise Linux x64
+            case "82": // SUSE
+            case "83": // SUSEx64
+            case "84": // SLES
+            case "85": // SLESx64
+            case "89": // Mandriva
+            case "90": // Mandrivax64
+            case "91": // TurboLinux
+            case "92": // TurboLinux x64
+            case "93": // Ubuntu
+            case "94": // Ubuntu x64
+            case "95": // Debian
+            case "96": // Debian x64
+            case "97": // Linux 2.4.x
+            case "98": // Linux 2.4.x x64
+            case "99": // Linux 2.6.x
+            case "100": // Linux 2.6.x x64
+            case "101": // Linux x64
+            case "106": // CentOS
+            case "107": // CentOSx64
+            case "108": // Oracle Linux
+            case "109": // Oracle Linux x64
+                return 5; // Other Linux
+            default:
+                return 0; // Other
         }
     }
 
@@ -292,5 +298,10 @@ public abstract class OvfOvaReader extends OvfReader {
         super.updateSingleNic(node, iface, nicIdx);
         XmlNode macNode = selectSingleNode(node, "rasd:MACAddress", _xmlNS);
         iface.setMacAddress(macNode != null ? macNode.innerText : null);
+    }
+
+    @Override
+    protected VolumeType getDefaultVolumeType() {
+        return VolumeType.Sparse;
     }
 }

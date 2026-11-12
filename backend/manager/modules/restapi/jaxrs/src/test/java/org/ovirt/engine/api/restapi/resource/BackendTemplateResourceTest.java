@@ -30,10 +30,10 @@ import org.ovirt.engine.core.common.action.MoveOrCopyParameters;
 import org.ovirt.engine.core.common.action.UpdateVmTemplateParameters;
 import org.ovirt.engine.core.common.action.VmTemplateManagementParameters;
 import org.ovirt.engine.core.common.businessentities.AsyncTaskStatus;
-import org.ovirt.engine.core.common.businessentities.AsyncTaskStatusEnum;
 import org.ovirt.engine.core.common.businessentities.GraphicsDevice;
 import org.ovirt.engine.core.common.businessentities.VmIcon;
 import org.ovirt.engine.core.common.businessentities.VmTemplate;
+import org.ovirt.engine.core.common.job.JobExecutionStatus;
 import org.ovirt.engine.core.common.queries.GetVmTemplateParameters;
 import org.ovirt.engine.core.common.queries.IdQueryParameters;
 import org.ovirt.engine.core.common.queries.NameQueryParameters;
@@ -66,7 +66,6 @@ public class BackendTemplateResourceTest
         setUriInfo(setUpBasicUriExpectations());
         setUpGetGraphicsExpectations(1);
         setUpGetEntityExpectations(1);
-        setUpGetBallooningExpectations();
 
         verifyModel(resource.get(), 0);
     }
@@ -98,23 +97,23 @@ public class BackendTemplateResourceTest
     public void testGetConsoleAware(boolean allContent) {
         setUriInfo(setUpBasicUriExpectations());
         setUpGetEntityExpectations(1);
-        setUpGetBallooningExpectations();
 
         if (allContent) {
             List<String> populates = new ArrayList<>();
             populates.add("true");
-            when(httpHeaders.getRequestHeader(BackendResource.POPULATE)).thenReturn(populates);
+            when(httpHeaders.getRequestHeader(BackendResource.ALL_CONTENT_HEADER)).thenReturn(populates);
             setUpGetConsoleExpectations(0);
             setUpGetVirtioScsiExpectations(0);
             setUpGetSoundcardExpectations(0);
             setUpGetRngDeviceExpectations(0);
+            setUpGetTpmExpectations(0);
         }
         setUpGetGraphicsExpectations(1);
 
         Template response = resource.get();
         verifyModel(response, 0);
 
-        List<String> populateHeader = httpHeaders.getRequestHeader(BackendResource.POPULATE);
+        List<String> populateHeader = httpHeaders.getRequestHeader(BackendResource.ALL_CONTENT_HEADER);
         boolean populated = populateHeader != null ? populateHeader.contains("true") : false;
         assertTrue(populated ? response.isSetConsole() : !response.isSetConsole());
     }
@@ -184,6 +183,7 @@ public class BackendTemplateResourceTest
         setUpGetVirtioScsiExpectations(0);
         setUpGetSoundcardExpectations(0);
         setUpGetRngDeviceExpectations(0);
+        setUpGetTpmExpectations(0);
     }
 
     protected void setUpGetGraphicsExpectations(int times) {
@@ -196,12 +196,14 @@ public class BackendTemplateResourceTest
         }
     }
 
-    protected void setUpGetBallooningExpectations() {
-        setUpGetEntityExpectations(QueryType.IsBalloonEnabled,
-                IdQueryParameters.class,
-                new String[] { "Id" },
-                new Object[] { GUIDS[0] },
-                true);
+    private void setUpGetTpmExpectations(int ... idxs) {
+        for (int i = 0; i < idxs.length; i++) {
+            setUpGetEntityExpectations(QueryType.GetTpmDevices,
+                    IdQueryParameters.class,
+                    new String[] { "Id" },
+                    new Object[] { GUIDS[idxs[i]] },
+                    new ArrayList<>());
+        }
     }
 
     @Test
@@ -209,7 +211,6 @@ public class BackendTemplateResourceTest
         setUpGetGraphicsExpectations(0);
         setUpGetGraphicsExpectations(1);
         setUpUpdateExpectations();
-        setUpGetBallooningExpectations();
 
         setUriInfo(setUpActionExpectations(ActionType.UpdateVmTemplate,
                 UpdateVmTemplateParameters.class,
@@ -225,7 +226,6 @@ public class BackendTemplateResourceTest
     public void testRemove() {
         setUpGetEntityExpectations(1);
         setUpGetGraphicsExpectations(1);
-        setUpGetBallooningExpectations();
         setUriInfo(setUpActionExpectations(ActionType.RemoveVmTemplate,
                 VmTemplateManagementParameters.class,
                 new String[] { "VmTemplateId" },
@@ -258,7 +258,6 @@ public class BackendTemplateResourceTest
     protected void doTestBadRemove(boolean valid, boolean success, String detail) {
         setUpGetEntityExpectations(1);
         setUpGetGraphicsExpectations(1);
-        setUpGetBallooningExpectations();
         setUriInfo(setUpActionExpectations(ActionType.RemoveVmTemplate,
                 VmTemplateManagementParameters.class,
                 new String[] { "VmTemplateId" },
@@ -303,7 +302,8 @@ public class BackendTemplateResourceTest
         setUriInfo(setUpActionExpectations(ActionType.ExportVmTemplate,
                 MoveOrCopyParameters.class,
                 new String[]{"ContainerId", "StorageDomainId", "ForceOverride"},
-                new Object[]{GUIDS[0], GUIDS[2], exclusive}));
+                new Object[]{GUIDS[0], GUIDS[2], exclusive},
+                JobExecutionStatus.FINISHED));
 
         Action action = new Action();
         action.setStorageDomain(storageDomain);
@@ -314,24 +314,28 @@ public class BackendTemplateResourceTest
     }
 
     @Test
-    public void testExportAsyncPending() {
-        doTestExportAsync(AsyncTaskStatusEnum.init, CreationStatus.PENDING);
-    }
-
-    @Test
     public void testExportAsyncInProgress() {
-        doTestExportAsync(AsyncTaskStatusEnum.running, CreationStatus.IN_PROGRESS);
-    }
+        setUriInfo(setUpActionExpectations(ActionType.ExportVmTemplate,
+                MoveOrCopyParameters.class,
+                new String[] { "ContainerId", "StorageDomainId", "ForceOverride" },
+                new Object[] { GUIDS[0], GUIDS[2], false },
+                JobExecutionStatus.STARTED));
 
-    @Test
-    public void testExportAsyncFinished() {
-        doTestExportAsync(AsyncTaskStatusEnum.finished, CreationStatus.COMPLETE);
+        Action action = new Action();
+        StorageDomain storageDomain = new StorageDomain();
+        storageDomain.setId(GUIDS[2].toString());
+        action.setStorageDomain(storageDomain);
+
+        Response response = resource.export(action);
+        verifyActionResponse(response, "templates/" + GUIDS[0], true, null);
+        action = (Action) response.getEntity();
+        assertTrue(action.isSetStatus());
+        assertEquals(CreationStatus.IN_PROGRESS.value(), action.getStatus());
     }
 
     @Test
     public void testUpdateUploadIcon() {
         setUpGetGraphicsExpectations(1);
-        setUpGetBallooningExpectations();
         setUpUpdateExpectations();
 
         setUriInfo(setUpActionExpectations(ActionType.UpdateVmTemplate,
@@ -350,7 +354,6 @@ public class BackendTemplateResourceTest
     public void testUpdateUseExistingIcons() {
         setUpGetGraphicsExpectations(1);
         setUpUpdateExpectations();
-        setUpGetBallooningExpectations();
 
         setUriInfo(setUpActionExpectations(ActionType.UpdateVmTemplate,
                 UpdateVmTemplateParameters.class,
@@ -375,36 +378,18 @@ public class BackendTemplateResourceTest
                 assertThrows(WebApplicationException.class, () -> verifyModel(resource.update(model), 0)), BAD_REQUEST);
     }
 
-    private void doTestExportAsync(AsyncTaskStatusEnum asyncStatus, CreationStatus actionStatus) {
-        setUriInfo(setUpActionExpectations(ActionType.ExportVmTemplate,
-                                           MoveOrCopyParameters.class,
-                                           new String[] { "ContainerId", "StorageDomainId", "ForceOverride" },
-                                           new Object[] { GUIDS[0], GUIDS[2], false },
-                                           asList(GUIDS[1]),
-                                           asList(new AsyncTaskStatus(asyncStatus))));
-
-        Action action = new Action();
-        StorageDomain storageDomain = new StorageDomain();
-        storageDomain.setId(GUIDS[2].toString());
-        action.setStorageDomain(storageDomain);
-
-        Response response = resource.export(action);
-        verifyActionResponse(response, "templates/" + GUIDS[0], true, null);
-        action = (Action)response.getEntity();
-        assertTrue(action.isSetStatus());
-        assertEquals(actionStatus.value(), action.getStatus());
-    }
-
     @Override
     protected VmTemplate getEntity(int index) {
         return setUpEntityExpectations(mock(VmTemplate.class), index);
     }
 
     protected UriInfo setUpActionExpectations(ActionType task,
-                                              Class<? extends ActionParametersBase> clz,
-                                              String[] names,
-                                              Object[] values) {
-        return setUpActionExpectations(task, clz, names, values, true, true, null, null, true);
+            Class<? extends ActionParametersBase> clz,
+            String[] names,
+            Object[] values,
+            JobExecutionStatus jobExecutionStatus) {
+        String uri = "templates/" + GUIDS[0] + "/action";
+        return setUpActionExpectations(task, clz, names, values, true, true, null, null, null, Guid.newGuid(), jobExecutionStatus, uri, true);
     }
 
     protected UriInfo setUpActionExpectations(ActionType task,

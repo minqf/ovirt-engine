@@ -1,6 +1,5 @@
 package org.ovirt.engine.core.bll;
 
-import java.util.List;
 import java.util.Set;
 
 import javax.inject.Inject;
@@ -11,16 +10,13 @@ import org.ovirt.engine.core.bll.profiles.CpuProfileHelper;
 import org.ovirt.engine.core.common.FeatureSupported;
 import org.ovirt.engine.core.common.action.VmManagementParametersBase;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
-import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.InstanceType;
 import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VM;
-import org.ovirt.engine.core.common.businessentities.VmDevice;
 import org.ovirt.engine.core.common.businessentities.VmStatic;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.errors.EngineMessage;
-import org.ovirt.engine.core.common.utils.BiosTypeUtils;
 import org.ovirt.engine.core.common.utils.CompatibilityVersionUtils;
 import org.ovirt.engine.core.common.utils.customprop.VmPropertiesUtils;
 import org.ovirt.engine.core.compat.Guid;
@@ -48,7 +44,6 @@ public abstract class VmManagementCommandBase<T extends VmManagementParametersBa
 
     private InstanceType instanceType;
     private Version effectiveCompatibilityVersion;
-    private BiosType effectiveBiosType;
 
     protected VmManagementCommandBase(Guid commandId) {
         super(commandId);
@@ -66,17 +61,11 @@ public abstract class VmManagementCommandBase<T extends VmManagementParametersBa
     protected void init() {
         super.init();
         initEffectiveCompatibilityVersion();
-        initEffectiveBiosType();
     }
 
     protected void initEffectiveCompatibilityVersion() {
         setEffectiveCompatibilityVersion(
                 CompatibilityVersionUtils.getEffective(getParameters().getVmStaticData(), this::getCluster));
-    }
-
-    protected void initEffectiveBiosType() {
-        setEffectiveBiosType(
-                BiosTypeUtils.getEffective(getParameters().getVmStaticData(), this::getCluster));
     }
 
     protected Guid getInstanceTypeId() {
@@ -99,14 +88,6 @@ public abstract class VmManagementCommandBase<T extends VmManagementParametersBa
 
     protected void setEffectiveCompatibilityVersion(Version effectiveCompatibilityVersion) {
         this.effectiveCompatibilityVersion = effectiveCompatibilityVersion;
-    }
-
-    public BiosType getEffectiveBiosType() {
-        return effectiveBiosType;
-    }
-
-    public void setEffectiveBiosType(BiosType effectiveBiosType) {
-        this.effectiveBiosType = effectiveBiosType;
     }
 
     protected VDS getVds(Guid id) {
@@ -132,19 +113,6 @@ public abstract class VmManagementCommandBase<T extends VmManagementParametersBa
         return validate(cpuProfileHelper.setAndValidateCpuProfile(
                 getParameters().getVm().getStaticData(),
                 getUserIdIfExternal().orElse(null)));
-    }
-
-    protected boolean validateCPUHotplug(VmStatic vmStaticData) {
-        if (getVm().isRunningOrPaused()) {
-            // Can't set more CPUs than available on the host where VM is running.
-            // Potential overcommit (interference with other running VMs) will be resolved by scheduler.
-            // In alignment with the CPUPolicyUnit, VM's hyperthreading is not considered.
-            if (getVds() != null && vmStaticData.getNumOfCpus(false) > getVds().getCpuThreads()) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     protected boolean validateMemoryAlignment(VmStatic vmStaticData) {
@@ -173,14 +141,7 @@ public abstract class VmManagementCommandBase<T extends VmManagementParametersBa
             vmStatic.setMigrationDowntime(instanceType.getMigrationDowntime());
             vmStatic.setPriority(instanceType.getPriority());
             vmStatic.setTunnelMigration(instanceType.getTunnelMigration());
-
-            List<VmDevice> vmDevices = getVmDeviceUtils().getMemoryBalloons(instanceType.getId());
             vmStatic.setMinAllocatedMem(instanceType.getMinAllocatedMem());
-            if (vmDevices.isEmpty()) {
-                getParameters().setBalloonEnabled(false);
-            } else if (osRepository.isBalloonEnabled(getParameters().getVmStaticData().getOsId(), getEffectiveCompatibilityVersion())) {
-                getParameters().setBalloonEnabled(true);
-            }
 
             vmStatic.setMigrationPolicyId(instanceType.getMigrationPolicyId());
 

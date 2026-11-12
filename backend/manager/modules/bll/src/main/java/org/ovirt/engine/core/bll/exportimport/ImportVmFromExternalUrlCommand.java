@@ -21,6 +21,7 @@ import org.ovirt.engine.core.common.action.ImportVmFromOvaParameters;
 import org.ovirt.engine.core.common.businessentities.OriginType;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
+import org.ovirt.engine.core.common.businessentities.storage.DiskBackup;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.StorageType;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
@@ -142,13 +143,20 @@ public class ImportVmFromExternalUrlCommand<P extends ImportVmFromExternalUrlPar
 
             for (Map.Entry<Guid, Disk> entry : vm.getDiskMap().entrySet()) {
                 DiskImage disk = (DiskImage) entry.getValue();
-                disk.setVolumeType(getParameters().getVolumeType());
+
+                if (getParameters().getVolumeType() == null) {
+                    disk.setVolumeType(getAutoDetectedVolumeType(disk));
+                } else {
+                    disk.setVolumeType(getParameters().getVolumeType());
+                }
+
                 // in kvm we just copy the image, in other modes such as vmware or xen we use
                 // virt-v2v which converts the image format as well
                 if (vm.getOrigin() != OriginType.KVM) {
                     disk.setVolumeFormat(getDiskVolumeFormat(
                             disk.getVolumeType(),
-                            getStorageDomain().getStorageType()));
+                            getStorageDomain().getStorageType(),
+                            disk.getBackup()));
                 }
 
                 if (getParameters().getQuotaId() != null) {
@@ -158,6 +166,8 @@ public class ImportVmFromExternalUrlCommand<P extends ImportVmFromExternalUrlPar
 
             return prm;
         }
+
+        protected abstract VolumeType getAutoDetectedVolumeType(DiskImage disk);
 
         protected abstract VM loadExternalVm();
 
@@ -183,6 +193,11 @@ public class ImportVmFromExternalUrlCommand<P extends ImportVmFromExternalUrlPar
             }
 
             return true;
+        }
+
+        @Override
+        protected VolumeType getAutoDetectedVolumeType(DiskImage disk) {
+            return VolumeType.Sparse;
         }
 
         @Override
@@ -234,18 +249,23 @@ public class ImportVmFromExternalUrlCommand<P extends ImportVmFromExternalUrlPar
             ovaPath = getParameters().getUrl().replace("ova://", "");
         }
 
-         @Override
-         public boolean validate() {
-             if (!super.validate()) {
-                 return false;
-             }
+        @Override
+        public boolean validate() {
+            if (!super.validate()) {
+                return false;
+            }
 
-             if (getParameters().getProxyHostId() == null) {
-                 return failValidation(EngineMessage.ACTION_TYPE_FAILED_PROXY_HOST_MUST_BE_SPECIFIED);
-             }
+            if (getParameters().getProxyHostId() == null) {
+                return failValidation(EngineMessage.ACTION_TYPE_FAILED_PROXY_HOST_MUST_BE_SPECIFIED);
+            }
 
-             return true;
-         }
+            return true;
+        }
+
+        @Override
+        protected VolumeType getAutoDetectedVolumeType(DiskImage disk) {
+            return disk.getVolumeType();
+        }
 
         @Override
         protected ActionType getImportActionType() {
@@ -271,19 +291,22 @@ public class ImportVmFromExternalUrlCommand<P extends ImportVmFromExternalUrlPar
     }
 
     // TODO: remove code duplication with frontend AsyncDataProvider
-    private static VolumeFormat getDiskVolumeFormat(VolumeType volumeType, StorageType storageType) {
+    private static VolumeFormat getDiskVolumeFormat(VolumeType volumeType, StorageType storageType, DiskBackup backup) {
+        if (backup == DiskBackup.Incremental) {
+            return VolumeFormat.COW;
+        }
         if (storageType.isFileDomain()) {
             return VolumeFormat.RAW;
         } else if (storageType.isBlockDomain()) {
             switch (volumeType) {
-            case Sparse:
-                return VolumeFormat.COW;
+                case Sparse:
+                    return VolumeFormat.COW;
 
-            case Preallocated:
-                return VolumeFormat.RAW;
+                case Preallocated:
+                    return VolumeFormat.RAW;
 
-            default:
-                return VolumeFormat.Unassigned;
+                default:
+                    return VolumeFormat.Unassigned;
             }
         } else {
             return VolumeFormat.Unassigned;

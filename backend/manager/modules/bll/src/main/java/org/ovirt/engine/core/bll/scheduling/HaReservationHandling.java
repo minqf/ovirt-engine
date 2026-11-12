@@ -14,6 +14,7 @@ import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VDSStatus;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.utils.Pair;
+import org.ovirt.engine.core.common.utils.VmCpuCountHelper;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.VdsDao;
 import org.ovirt.engine.core.dao.VmDao;
@@ -90,7 +91,7 @@ public class HaReservationHandling {
 
         for (VM vm : vmList) {
             int curVmMemSize = 0;
-            if(vm.getUsageMemPercent() != null) {
+            if (vm.getUsageMemPercent() != null) {
                 curVmMemSize = (int) Math.round(vm.getMemSizeMb() * (vm.getUsageMemPercent() / 100.0));
             }
 
@@ -101,7 +102,7 @@ public class HaReservationHandling {
             int curVmCpuPercent = 0;
             if (vm.getUsageCpuPercent() != null) {
                 curVmCpuPercent =
-                        vm.getUsageCpuPercent() * vm.getNumOfCpus()
+                        vm.getUsageCpuPercent() * VmCpuCountHelper.getDynamicNumOfCpu(vm)
                                 / SlaValidator.getEffectiveCpuCores(host, cluster.getCountThreadsAsCores());
             }
             log.debug("VM '{}'. CPU usage: {}%, RAM required: {}MB", vm.getName(), curVmCpuPercent, curVmMemSize);

@@ -4,8 +4,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-import org.codehaus.jackson.annotate.JsonIgnore;
+import org.ovirt.engine.core.common.businessentities.TransientField;
 import org.ovirt.engine.core.common.businessentities.VmEntityType;
+import org.ovirt.engine.core.compat.Guid;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 /**
  * The disk is contains data from the {@link BaseDisk} and the storage specific details for the disk, which are
@@ -29,6 +32,9 @@ public abstract class Disk extends BaseDisk {
     private List<String> templateVersionNames;
     private boolean plugged;
     private String logicalName;
+
+    @TransientField
+    private Guid parentDiskId;
 
     /**
      * Image Transfer information is only for display purposes
@@ -172,5 +178,15 @@ public abstract class Disk extends BaseDisk {
     @JsonIgnore
     public boolean isOvfStore() {
         return getContentType() == DiskContentType.OVF_STORE;
+    }
+
+    @JsonIgnore
+    public Guid getParentDiskId() {
+        return parentDiskId;
+    }
+
+    @JsonIgnore
+    public void setParentDiskId(Guid parentDiskId) {
+        this.parentDiskId = parentDiskId;
     }
 }

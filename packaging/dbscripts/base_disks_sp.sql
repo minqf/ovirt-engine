@@ -7,16 +7,17 @@ CREATE OR REPLACE FUNCTION InsertBaseDisk (
     v_disk_id UUID,
     v_wipe_after_delete BOOLEAN,
     v_propagate_errors VARCHAR(32),
-    v_disk_alias VARCHAR(50),
+    v_disk_alias VARCHAR(255),
     v_disk_description VARCHAR(500),
     v_shareable BOOLEAN,
-    v_sgio INT,
+    v_sgio SMALLINT,
     v_disk_storage_type SMALLINT,
     v_cinder_volume_type VARCHAR(255),
     v_disk_content_type SMALLINT,
-    v_backup VARCHAR(32)
+    v_backup VARCHAR(32),
+    v_backup_mode VARCHAR(32)
     )
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     INSERT INTO base_disks (
         disk_id,
@@ -29,7 +30,8 @@ BEGIN
         disk_storage_type,
         cinder_volume_type,
         disk_content_type,
-        backup
+        backup,
+        backup_mode
         )
     VALUES (
         v_disk_id,
@@ -42,25 +44,27 @@ BEGIN
         v_disk_storage_type,
         v_cinder_volume_type,
         v_disk_content_type,
-        v_backup
+        v_backup,
+        v_backup_mode
         );
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION UpdateBaseDisk (
     v_disk_id UUID,
     v_wipe_after_delete BOOLEAN,
     v_propagate_errors VARCHAR(32),
-    v_disk_alias VARCHAR(50),
+    v_disk_alias VARCHAR(255),
     v_disk_description VARCHAR(500),
     v_shareable BOOLEAN,
-    v_sgio INT,
+    v_sgio SMALLINT,
     v_disk_storage_type SMALLINT,
     v_cinder_volume_type VARCHAR(255),
     v_disk_content_type SMALLINT,
-    v_backup VARCHAR(32)
+    v_backup VARCHAR(32),
+    v_backup_mode VARCHAR(32)
     )
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     UPDATE base_disks
     SET wipe_after_delete = v_wipe_after_delete,
@@ -72,13 +76,14 @@ BEGIN
         disk_storage_type = v_disk_storage_type,
         cinder_volume_type = v_cinder_volume_type,
         disk_content_type = v_disk_content_type,
-        backup = v_backup
+        backup = v_backup,
+        backup_mode = v_backup_mode
     WHERE disk_id = v_disk_id;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION DeleteBaseDisk (v_disk_id UUID)
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 DECLARE v_val UUID;
 
 BEGIN
@@ -88,40 +93,40 @@ BEGIN
 
     -- Delete the disk's permissions
     PERFORM DeletePermissionsByEntityId(v_disk_id);
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetAllFromBaseDisks ()
-RETURNS SETOF base_disks STABLE AS $PROCEDURE$
+RETURNS SETOF base_disks STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
     SELECT *
     FROM base_disks;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetBaseDiskByBaseDiskId (v_disk_id UUID)
-RETURNS SETOF base_disks STABLE AS $PROCEDURE$
+RETURNS SETOF base_disks STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
     SELECT *
     FROM base_disks
     WHERE disk_id = v_disk_id;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 
 Create or replace FUNCTION GetBaseDisksByAlias(v_disk_alias varchar(255))
 RETURNS SETOF base_disks STABLE
-AS $procedure$
+AS $FUNCTION$
 BEGIN
     RETURN QUERY
     SELECT *
     FROM   base_disks
     WHERE  disk_alias = v_disk_alias;
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 

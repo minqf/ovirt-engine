@@ -103,15 +103,15 @@ public class GlusterHookMapper {
             sb.append(GlusterHookConflictFlags.MISSING_HOOK.toString());
         }
         if (hook.isContentConflict()) {
-            sb.append(sb.length() > 0 ? ",":"").append(GlusterHookConflictFlags.CONTENT_CONFLICT.toString());
+            sb.append(sb.length() > 0 ? "," : "").append(GlusterHookConflictFlags.CONTENT_CONFLICT.toString());
         }
         if (hook.isStatusConflict()) {
-            sb.append(sb.length() > 0 ? ",":"").append(GlusterHookConflictFlags.STATUS_CONFLICT.toString());
+            sb.append(sb.length() > 0 ? "," : "").append(GlusterHookConflictFlags.STATUS_CONFLICT.toString());
         }
         return sb.toString();
     }
 
-    @Mapping (from=org.ovirt.engine.core.common.businessentities.gluster.GlusterServerHook.class, to=org.ovirt.engine.api.model.GlusterServerHook.class)
+    @Mapping (from = org.ovirt.engine.core.common.businessentities.gluster.GlusterServerHook.class, to = org.ovirt.engine.api.model.GlusterServerHook.class)
     public static org.ovirt.engine.api.model.GlusterServerHook map(GlusterServerHook serverHookEntity) {
         org.ovirt.engine.api.model.GlusterServerHook serverHookModel = new org.ovirt.engine.api.model.GlusterServerHook();
         if (serverHookEntity.getServerId() != null) {
@@ -125,12 +125,12 @@ public class GlusterHookMapper {
     public static HookContentType map(org.ovirt.engine.core.common.businessentities.gluster.GlusterHookContentType hookContentType,
              HookContentType template) {
         switch (hookContentType) {
-        case BINARY:
-            return HookContentType.BINARY;
-        case TEXT:
-            return HookContentType.TEXT;
-        default:
-            return null;
+            case BINARY:
+                return HookContentType.BINARY;
+            case TEXT:
+                return HookContentType.TEXT;
+            default:
+                return null;
         }
     }
 
@@ -138,25 +138,25 @@ public class GlusterHookMapper {
     public static HookStage map(org.ovirt.engine.core.common.businessentities.gluster.GlusterHookStage hookStage,
             HookStage template) {
         switch (hookStage) {
-        case POST:
-            return HookStage.POST;
-        case PRE:
-            return HookStage.PRE;
-        default:
-            return null;
+            case POST:
+                return HookStage.POST;
+            case PRE:
+                return HookStage.PRE;
+            default:
+                return null;
         }
     }
 
     private static GlusterHookStatus mapHookStatus(org.ovirt.engine.core.common.businessentities.gluster.GlusterHookStatus status) {
         switch (status) {
-        case DISABLED:
-            return GlusterHookStatus.DISABLED;
-        case ENABLED:
-            return GlusterHookStatus.ENABLED;
-        case MISSING:
-            return GlusterHookStatus.MISSING;
-        default:
-            return null;
+            case DISABLED:
+                return GlusterHookStatus.DISABLED;
+            case ENABLED:
+                return GlusterHookStatus.ENABLED;
+            case MISSING:
+                return GlusterHookStatus.MISSING;
+            default:
+                return null;
         }
     }
 }

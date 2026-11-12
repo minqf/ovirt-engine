@@ -23,14 +23,13 @@ public class TransferImageCommandCallback implements CommandCallback {
 
     @Override
     public void onSucceeded(Guid cmdId, List<Guid> childCmdIds) {
-        getCommand(cmdId).onSucceeded();
         getCommand(cmdId).endAction();
         commandCoordinatorUtil.removeAllCommandsInHierarchy(cmdId);
     }
 
     @Override
     public void onFailed(Guid cmdId, List<Guid> childCmdIds) {
-        getCommand(cmdId).onFailed();
+        getCommand(cmdId).getParameters().setTaskGroupSuccess(false);
         getCommand(cmdId).endAction();
         commandCoordinatorUtil.removeAllCommandsInHierarchy(cmdId);
     }
@@ -39,4 +38,8 @@ public class TransferImageCommandCallback implements CommandCallback {
         return commandCoordinatorUtil.retrieveCommand(cmdId);
     }
 
+    @Override
+    public boolean pollOnExecutionFailed() {
+        return true;
+    }
 }

@@ -9,59 +9,29 @@ CREATE OR REPLACE FUNCTION fn_db_add_column (
     v_column VARCHAR(128),
     v_column_def TEXT
     )
-RETURNS void AS $PROCEDURE$
+RETURNS void AS $FUNCTION$
 DECLARE v_sql TEXT;
 
 BEGIN
-    IF (
-            NOT EXISTS (
-                SELECT 1
-                FROM information_schema.columns
-                WHERE table_schema = 'public'
-                    AND table_name ilike v_table
-                    AND column_name ilike v_column
-                )
-            ) THEN
-    BEGIN
-        v_sql := 'ALTER TABLE ' || v_table || ' ADD COLUMN ' || v_column || ' ' || v_column_def;
-
+        v_sql := 'ALTER TABLE ' || v_table || ' ADD COLUMN IF NOT EXISTS ' || v_column || ' ' || v_column_def;
         EXECUTE v_sql;
-    END;
-END
 
-IF ;END;$PROCEDURE$
-    LANGUAGE plpgsql;
+END;$FUNCTION$
+LANGUAGE plpgsql;
 
 -- delete a column from a table and all its dependencied
 CREATE OR REPLACE FUNCTION fn_db_drop_column (
     v_table VARCHAR(128),
     v_column VARCHAR(128)
     )
-RETURNS void AS $PROCEDURE$
+RETURNS void AS $FUNCTION$
 DECLARE v_sql TEXT;
 
 BEGIN
-    IF (
-            EXISTS (
-                SELECT 1
-                FROM information_schema.columns
-                WHERE table_schema = 'public'
-                    AND table_name ilike v_table
-                    AND column_name ilike v_column
-                )
-            ) THEN
-    BEGIN
-        v_sql := 'ALTER TABLE ' || v_table || ' DROP COLUMN ' || v_column;
-
+        v_sql := 'ALTER TABLE ' || v_table || ' DROP COLUMN IF EXISTS ' || v_column;
         EXECUTE v_sql;
-    END;
-    ELSE
-        RAISE EXCEPTION 'Table % or Column % does not exist.',
-            v_table,
-            v_column;
-    END IF;
 
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- Changes a column data type (if value conversion is supported)
@@ -71,31 +41,60 @@ CREATE OR REPLACE FUNCTION fn_db_change_column_type (
     v_type VARCHAR(128),
     v_new_type VARCHAR(128)
     )
-RETURNS void AS $PROCEDURE$
+RETURNS void AS $FUNCTION$
 DECLARE v_sql TEXT;
 
 BEGIN
-    IF (
-            EXISTS (
-                SELECT 1
-                FROM information_schema.columns
-                WHERE table_schema = 'public'
-                    AND table_name ilike v_table
-                    AND column_name ilike v_column
-                    AND (
-                        udt_name ilike v_type
-                        OR data_type ilike v_type
-                        )
-                )
-            ) THEN
-        BEGIN
-            v_sql := 'ALTER TABLE ' || v_table || ' ALTER COLUMN ' || v_column || ' TYPE ' || v_new_type;
-            EXECUTE v_sql;
-        END;
+    v_sql := 'ALTER TABLE ' || v_table || ' ALTER COLUMN ' || v_column || ' TYPE ' || v_new_type;
+    EXECUTE v_sql;
+
+END;$FUNCTION$
+LANGUAGE plpgsql;
+
+-- Changes a column to allow/disallow NULL values
+CREATE OR REPLACE FUNCTION fn_db_change_column_null (
+    v_table VARCHAR(128),
+    v_column VARCHAR(128),
+    v_allow_null BOOLEAN,
+    v_type varchar
+    )
+RETURNS void AS $FUNCTION$
+DECLARE v_sql TEXT;
+
+BEGIN
+    IF (v_allow_null) THEN
+        v_sql := 'ALTER TABLE ' || v_table || ' ALTER COLUMN ' || v_column || ' DROP NOT NULL';
+        EXECUTE v_sql;
+    ELSE
+        -- Get the column type
+        IF v_type =  'bool' THEN
+            v_sql := ' = false';
+        ELSIF v_type = 'char' THEN
+            v_sql := ' = '''' ';
+        ELSIF v_type = 'varchar' THEN
+            v_sql := ' = '''' ';
+        ELSIF v_type = 'text' THEN
+            v_sql :=  ' = '''' ';
+        ELSIF v_type = 'int' THEN
+            v_sql :=  ' = 0  ';
+        ELSIF v_type = 'float' THEN
+            v_sql :=  ' = 0.0 ';
+        ELSIF v_type = 'numeric' THEN
+            v_sql := ' = 0 ';
+        ELSIF v_type = 'uuid' THEN
+            v_sql := ' = ''00000000-0000-0000-0000-000000000000'' ';
+        ELSE
+            RAISE EXCEPTION  'fn_db_change_column_null(%,%,%,%) unrecognized type', v_table, v_column, v_allow_null, v_type;
+        END IF;
+        -- Insure that there are no NULL values in the table column before setting it to NOT NULL
+        v_sql := 'update ' || v_table || ' set ' || v_column || v_sql || ' where '  || v_column || ' IS NULL';
+        EXECUTE v_sql;
+        v_sql := 'ALTER TABLE ' || v_table || ' ALTER COLUMN ' || v_column || ' SET NOT NULL';
+        EXECUTE v_sql;
 
     END IF;
 
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- rename a column for a given table
@@ -104,60 +103,27 @@ CREATE OR REPLACE FUNCTION fn_db_rename_column (
     v_column VARCHAR(128),
     v_new_name VARCHAR(128)
     )
-RETURNS void AS $PROCEDURE$
+RETURNS void AS $FUNCTION$
 DECLARE v_sql TEXT;
 
 BEGIN
-    IF (
-            EXISTS (
-                SELECT 1
-                FROM information_schema.columns
-                WHERE table_schema = 'public'
-                    AND table_name ilike v_table
-                    AND column_name ilike v_column
-                )
-            ) THEN
-    BEGIN
-        v_sql := 'ALTER TABLE ' || v_table || ' RENAME COLUMN ' || v_column || ' TO ' || v_new_name;
-
-        EXECUTE v_sql;
-    END;
-    ELSE
-        RAISE EXCEPTION 'Table % or Column % does not exist.',
-            v_table,
-            v_column;
-END
-
-IF ;END;$PROCEDURE$
-    LANGUAGE plpgsql;
+    v_sql := 'ALTER TABLE ' || v_table || ' RENAME COLUMN ' || v_column || ' TO ' || v_new_name;
+    EXECUTE v_sql;
+END;$FUNCTION$
+LANGUAGE plpgsql;
 
 -- rename a table
 CREATE OR REPLACE FUNCTION fn_db_rename_table (
     v_table VARCHAR(128),
     v_new_name VARCHAR(128)
     )
-RETURNS void AS $PROCEDURE$
+RETURNS void AS $FUNCTION$
 DECLARE v_sql TEXT;
 
 BEGIN
-    IF (
-            EXISTS (
-                SELECT 1
-                FROM information_schema.columns
-                WHERE table_schema = 'public'
-                    AND table_name ilike v_table
-                )
-            ) THEN
-    BEGIN
         v_sql := 'ALTER TABLE ' || v_table || ' RENAME TO ' || v_new_name;
-
         EXECUTE v_sql;
-    END;
-    ELSE
-        RAISE EXCEPTION 'Table % does not exist.',
-            v_table;
-END IF;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- Adds a value to vdc_options (if not exists)
@@ -166,7 +132,7 @@ CREATE OR REPLACE FUNCTION fn_db_add_config_value (
     v_option_value TEXT,
     v_version VARCHAR(40)
     )
-RETURNS void AS $PROCEDURE$
+RETURNS void AS $FUNCTION$
 BEGIN
     IF (
             NOT EXISTS (
@@ -201,12 +167,12 @@ BEGIN
             END;
     END IF;
 
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- Deletes a key from vdc_options if exists, for all its versions
 CREATE OR REPLACE FUNCTION fn_db_delete_config_value_all_versions (v_option_name VARCHAR(100))
-RETURNS void AS $PROCEDURE$
+RETURNS void AS $FUNCTION$
 BEGIN
     IF (
             EXISTS (
@@ -222,15 +188,15 @@ BEGIN
         END;
     END IF;
 
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- Deletes a key from vdc_options (if exists)
 CREATE OR REPLACE FUNCTION fn_db_delete_config_value (
     v_option_name VARCHAR(100),
-    v_version TEXT
+    v_version VARCHAR(40)
     )
-RETURNS void AS $PROCEDURE$
+RETURNS void AS $FUNCTION$
 BEGIN
     IF (
             EXISTS (
@@ -254,12 +220,12 @@ BEGIN
         END;
     END IF;
 
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- Deletes a key from vdc_options by version/versions(comma separated)
 CREATE OR REPLACE FUNCTION fn_db_delete_config_for_version (v_version TEXT)
-RETURNS void AS $PROCEDURE$
+RETURNS void AS $FUNCTION$
 BEGIN
     DELETE
     FROM vdc_options
@@ -267,7 +233,7 @@ BEGIN
             SELECT ID
             FROM fnSplitter(v_version)
             );
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- Updates a value in vdc_options (if exists)
@@ -276,7 +242,7 @@ CREATE OR REPLACE FUNCTION fn_db_update_config_value (
     v_option_value TEXT,
     v_version VARCHAR(40)
     )
-RETURNS void AS $PROCEDURE$
+RETURNS void AS $FUNCTION$
 BEGIN
     IF (
             EXISTS (
@@ -295,7 +261,7 @@ BEGIN
         END;
     END IF;
 
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- Updates a value in vdc_options (if exists) if default value wasn't changed
@@ -306,7 +272,7 @@ CREATE OR REPLACE FUNCTION fn_db_update_default_config_value (
     v_version VARCHAR(40),
     v_ignore_default_value_case boolean
     )
-RETURNS void AS $PROCEDURE$
+RETURNS void AS $FUNCTION$
 BEGIN
     IF (
             EXISTS (
@@ -338,7 +304,7 @@ BEGIN
             AND version = v_version;
     END;
     END IF;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
     --renames an existing config key name, custome option_value modifications are preserved
@@ -348,7 +314,7 @@ LANGUAGE plpgsql;
         v_new_option_name VARCHAR(100),
         v_version VARCHAR(40)
         )
-    RETURNS void AS $PROCEDURE$
+    RETURNS void AS $FUNCTION$
 
     DECLARE v_current_option_value TEXT;
 
@@ -373,7 +339,7 @@ LANGUAGE plpgsql;
                     AND version = v_version;
         END IF;
 
-    END;$PROCEDURE$
+    END;$FUNCTION$
     LANGUAGE plpgsql;
 
     CREATE
@@ -382,7 +348,7 @@ LANGUAGE plpgsql;
         v_constraint VARCHAR(128),
         v_constraint_sql TEXT
         )
-    RETURNS void AS $PROCEDURE$
+    RETURNS void AS $FUNCTION$
 
     BEGIN
         IF NOT EXISTS (
@@ -393,7 +359,7 @@ LANGUAGE plpgsql;
             EXECUTE 'ALTER TABLE ' || v_table || ' ADD CONSTRAINT ' || v_constraint || ' ' || v_constraint_sql;
         END IF;
 
-    END;$PROCEDURE$
+    END;$FUNCTION$
     LANGUAGE plpgsql;
 
     CREATE
@@ -401,18 +367,12 @@ LANGUAGE plpgsql;
         v_table VARCHAR(128),
         v_constraint VARCHAR(128)
         )
-    RETURNS void AS $PROCEDURE$
+    RETURNS void AS $FUNCTION$
 
     BEGIN
-        IF EXISTS (
-                SELECT 1
-                FROM pg_constraint
-                WHERE conname ilike v_constraint
-                ) THEN
-            EXECUTE 'ALTER TABLE ' || v_table || ' DROP CONSTRAINT ' || v_constraint || ' CASCADE';
-        END IF;
+            EXECUTE 'ALTER TABLE ' || v_table || ' DROP CONSTRAINT IF EXISTS ' || v_constraint || ' CASCADE';
 
-    END;$PROCEDURE$
+    END;$FUNCTION$
     LANGUAGE plpgsql;
 
     --------------------------------------------------
@@ -420,19 +380,19 @@ LANGUAGE plpgsql;
     --------------------------------------------------
     CREATE
         OR replace FUNCTION CheckDBConnection ()
-    RETURNS SETOF INT IMMUTABLE AS $PROCEDURE$
+    RETURNS SETOF INT IMMUTABLE AS $FUNCTION$
 
     BEGIN
         RETURN QUERY
 
         SELECT 1;
-    END;$PROCEDURE$
+    END;$FUNCTION$
 
     LANGUAGE plpgsql;
 
     CREATE
         OR replace FUNCTION generate_drop_all_functions_syntax ()
-    RETURNS SETOF TEXT STABLE AS $PROCEDURE$
+    RETURNS SETOF TEXT STABLE AS $FUNCTION$
 
     BEGIN
         RETURN QUERY
@@ -450,13 +410,13 @@ LANGUAGE plpgsql;
                  probin NOT IN  (SELECT '$libdir/' || extname from pg_extension)
             )
         ORDER BY proname;
-    END;$PROCEDURE$
+    END;$FUNCTION$
 
     LANGUAGE plpgsql;
 
     CREATE
         OR replace FUNCTION generate_drop_all_views_syntax ()
-    RETURNS SETOF TEXT STABLE AS $PROCEDURE$
+    RETURNS SETOF TEXT STABLE AS $FUNCTION$
 
     BEGIN
         RETURN QUERY
@@ -466,13 +426,13 @@ LANGUAGE plpgsql;
         WHERE table_schema = 'public'
         AND table_name NOT ILIKE 'pg_%'
         ORDER BY table_name;
-    END;$PROCEDURE$
+    END;$FUNCTION$
 
     LANGUAGE plpgsql;
 
     CREATE
         OR replace FUNCTION generate_drop_all_tables_syntax ()
-    RETURNS SETOF TEXT STABLE AS $PROCEDURE$
+    RETURNS SETOF TEXT STABLE AS $FUNCTION$
 
     BEGIN
         RETURN QUERY
@@ -482,13 +442,13 @@ LANGUAGE plpgsql;
         WHERE table_schema = 'public'
             AND table_type = 'BASE TABLE'
         ORDER BY table_name;
-    END;$PROCEDURE$
+    END;$FUNCTION$
 
     LANGUAGE plpgsql;
 
     CREATE
         OR replace FUNCTION generate_drop_all_seq_syntax ()
-    RETURNS SETOF TEXT STABLE AS $PROCEDURE$
+    RETURNS SETOF TEXT STABLE AS $FUNCTION$
 
     BEGIN
         RETURN QUERY
@@ -497,13 +457,13 @@ LANGUAGE plpgsql;
         FROM information_schema.sequences
         WHERE sequence_schema = 'public'
         ORDER BY sequence_name;
-    END;$PROCEDURE$
+    END;$FUNCTION$
 
     LANGUAGE plpgsql;
 
     CREATE
         OR replace FUNCTION generate_drop_all_user_types_syntax ()
-    RETURNS SETOF TEXT STABLE AS $PROCEDURE$
+    RETURNS SETOF TEXT STABLE AS $FUNCTION$
 
     BEGIN
         RETURN QUERY
@@ -517,7 +477,7 @@ LANGUAGE plpgsql;
             AND c.relkind = 'c'::"char"
             AND n.nspname = 'public'
         ORDER BY c.relname::information_schema.sql_identifier;
-    END;$PROCEDURE$
+    END;$FUNCTION$
 
     LANGUAGE plpgsql;
 
@@ -526,7 +486,7 @@ LANGUAGE plpgsql;
         v_table VARCHAR(64),
         v_column VARCHAR(64)
         )
-    RETURNS INT STABLE AS $PROCEDURE$
+    RETURNS INT STABLE AS $FUNCTION$
 
     DECLARE retvalue INT;
 
@@ -543,7 +503,7 @@ LANGUAGE plpgsql;
                 );
 
         RETURN retvalue;
-    END;$PROCEDURE$
+    END;$FUNCTION$
 
     LANGUAGE plpgsql;
 
@@ -551,7 +511,7 @@ LANGUAGE plpgsql;
         OR REPLACE FUNCTION attach_user_to_role (
         v_user_name VARCHAR(255),
         v_domain VARCHAR(255),
-        v_namespace VARCHAR(255),
+        v_namespace VARCHAR(2048),
         v_domain_entry_id TEXT,
         v_role_name VARCHAR(255)
         )
@@ -658,7 +618,7 @@ LANGUAGE plpgsql;
         v_role_id UUID,
         v_action_group_id INT
         )
-    RETURNS VOID AS $PROCEDURE$
+    RETURNS VOID AS $FUNCTION$
 
     BEGIN
         INSERT INTO roles_groups (
@@ -675,7 +635,7 @@ LANGUAGE plpgsql;
                 );
 
         RETURN;
-    END;$PROCEDURE$
+    END;$FUNCTION$
 
     LANGUAGE plpgsql;
 
@@ -915,7 +875,7 @@ CREATE OR REPLACE FUNCTION fn_db_add_column_to_object_white_list (
     v_object_name VARCHAR(128),
     v_column_name VARCHAR(128)
     )
-RETURNS void AS $PROCEDURE$
+RETURNS void AS $FUNCTION$
 BEGIN
     IF (
             NOT EXISTS (
@@ -946,13 +906,13 @@ BEGIN
 
     END;
     END IF;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
     -- Checks if a table given by its name exists in DB
     CREATE
         OR REPLACE FUNCTION fn_db_is_table_exists (v_table VARCHAR(64))
-    RETURNS boolean STABLE AS $PROCEDURE$
+    RETURNS boolean STABLE AS $FUNCTION$
 
     DECLARE retvalue boolean;
 
@@ -965,7 +925,7 @@ LANGUAGE plpgsql;
                 );
 
         RETURN retvalue;
-    END;$PROCEDURE$
+    END;$FUNCTION$
 
     LANGUAGE plpgsql;
 
@@ -980,7 +940,7 @@ LANGUAGE plpgsql;
         v_where_predicate TEXT,
         v_unique boolean
         )
-    RETURNS void AS $PROCEDURE$
+    RETURNS void AS $FUNCTION$
 
     DECLARE v_sql TEXT;
             unique_modifier varchar(6);
@@ -997,27 +957,27 @@ LANGUAGE plpgsql;
         END IF;
 
     EXECUTE v_sql;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 
 CREATE OR replace FUNCTION fn_db_drop_index (
         v_index_name VARCHAR(128)
         )
-    RETURNS void AS $PROCEDURE$
+    RETURNS void AS $FUNCTION$
 
     DECLARE v_sql TEXT;
 
     BEGIN
         v_sql := 'DROP INDEX ' || ' IF EXISTS ' || v_index_name || ';' ;
         EXECUTE v_sql;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 
 -- Unlocks a specific disk
 CREATE OR REPLACE FUNCTION fn_db_unlock_disk (v_id UUID)
-RETURNS void AS $PROCEDURE$
+RETURNS void AS $FUNCTION$
 DECLARE OK INT;
 
 LOCKED INT;
@@ -1031,12 +991,12 @@ BEGIN
     SET imagestatus = OK
     WHERE imagestatus = LOCKED
         AND image_group_id = v_id;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- Unlocks a specific snapshot
 CREATE OR REPLACE FUNCTION fn_db_unlock_snapshot (v_id UUID)
-RETURNS void AS $PROCEDURE$
+RETURNS void AS $FUNCTION$
 DECLARE OK VARCHAR;
 
 LOCKED VARCHAR;
@@ -1050,7 +1010,7 @@ BEGIN
     SET status = OK
     WHERE status = LOCKED
         AND snapshot_id = v_id;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- Unlocks all VM/Template disks
@@ -1059,7 +1019,7 @@ CREATE OR REPLACE FUNCTION fn_db_unlock_entity (
     v_name VARCHAR(255),
     v_recursive boolean
     )
-RETURNS void AS $PROCEDURE$
+RETURNS void AS $FUNCTION$
 DECLARE DOWN INT;
 
 OK INT;
@@ -1133,12 +1093,12 @@ IF (v_recursive) THEN
         AND vm_id = v_id;
 END IF;
 
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- Unlocks all locked entities
 CREATE OR REPLACE FUNCTION fn_db_unlock_all ()
-RETURNS void AS $PROCEDURE$
+RETURNS void AS $FUNCTION$
 DECLARE DOWN INT;
 
 OK INT;
@@ -1187,7 +1147,7 @@ BEGIN
     UPDATE snapshots
     SET status = SNAPSHOT_OK
     WHERE status ilike SNAPSHOT_LOCKED;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 /* Displays DC id , DC name, SPM Host id , SPM Host name and number of async tasks awaiting.
@@ -1216,7 +1176,7 @@ CREATE TYPE async_tasks_info_rs AS (
         );
 
 CREATE OR REPLACE FUNCTION fn_db_get_async_tasks ()
-RETURNS SETOF async_tasks_info_rs STABLE AS $PROCEDURE$
+RETURNS SETOF async_tasks_info_rs STABLE AS $FUNCTION$
 DECLARE v_record async_tasks_info_rs;
 
 -- selects storage_pool_id uuid found in async_tasks
@@ -1265,7 +1225,7 @@ CLOSE v_tasks_cursor;
 
 -- return full set of generated records
 RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- Remove a value from a CSV string in vdc_options
@@ -1274,7 +1234,7 @@ CREATE OR REPLACE FUNCTION fn_db_remove_csv_config_value (
     v_value VARCHAR(4000),
     v_version VARCHAR(40)
     )
-RETURNS void AS $PROCEDURE$
+RETURNS void AS $FUNCTION$
 DECLARE v VARCHAR [];
 
 e VARCHAR;
@@ -1309,7 +1269,7 @@ LOOP;
     SET option_value = v_result
     WHERE option_name = v_option_name
         AND version = v_version;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- sets the v_val value for v_option_name in vdc_options for all versions before and up to v_version including v_version
@@ -1318,7 +1278,7 @@ CREATE OR REPLACE FUNCTION fn_db_remove_uuid_from_csv (
     v_csv_text TEXT,
     v_uuid uuid
     )
-RETURNS TEXT STABLE AS $PROCEDURE$
+RETURNS TEXT STABLE AS $FUNCTION$
 DECLARE v uuid [];
 
 e uuid;
@@ -1348,7 +1308,18 @@ BEGIN
     IF (v_result = '') THEN v_result := NULL;
     END IF;
     RETURN v_result;
-END;$PROCEDURE$
+END;$FUNCTION$
+LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_db_get_versions()
+RETURNS VARCHAR []  AS $FUNCTION$
+
+BEGIN
+
+RETURN
+ARRAY ['4.2', '4.3', '4.4', '4.5', '4.6', '4.7', '4.8'];
+
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- please note that versions must be insync with  org.ovirt.engine.core.compat.Version
@@ -1357,37 +1328,64 @@ CREATE OR REPLACE FUNCTION fn_db_add_config_value_for_versions_up_to (
     v_val VARCHAR(4000),
     v_version VARCHAR(40)
     )
-RETURNS void AS $PROCEDURE$
+RETURNS void AS $FUNCTION$
 DECLARE i INT;
 
-arr VARCHAR [] := array ['4.2', '4.3', '4.4'];
+arr VARCHAR [] := fn_db_get_versions();
 
 BEGIN
     FOR i IN array_lower(arr, 1)..array_upper(arr, 1) LOOP PERFORM fn_db_add_config_value(v_option_name, v_val, arr [i]);
         EXIT WHEN arr [i] = v_version;
     END LOOP;
 
-END;$PROCEDURE$
+END;$FUNCTION$
+LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_db_update_config_value_for_versions_from_up_to (
+    v_option_name VARCHAR(100),
+    v_val VARCHAR(4000),
+    v_from_version VARCHAR(40),
+    v_to_version VARCHAR(40)
+    )
+RETURNS void AS $FUNCTION$
+DECLARE i INT;
+
+arr VARCHAR [] := fn_db_get_versions();
+
+BEGIN
+    found := false;
+    FOR i IN array_lower(arr, 1)..array_upper(arr, 1) LOOP
+	IF  arr [i] != v_from_version THEN
+	    IF NOT found THEN
+	        CONTINUE;
+	    END IF;
+        END IF;
+	found := true;
+	PERFORM fn_db_update_config_value(v_option_name, v_val, arr [i]);
+        EXIT WHEN arr [i] = v_to_version;
+    END LOOP;
+
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION fn_db_varchar_to_jsonb(v_text VARCHAR, v_default_value JSONB)
-RETURNS JSONB IMMUTABLE AS $PROCEDURE$
+RETURNS JSONB IMMUTABLE AS $FUNCTION$
 BEGIN
     RETURN v_text::jsonb;
     EXCEPTION
         WHEN SQLSTATE '22P02' THEN -- '22P02' stands for 'invalid_text_representation', 'invalid input syntax for type json' in this case
             RETURN v_default_value;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- If value in v_table.v_column is jsonb compatible it's left untouched, otherwise it's replaced by v_default_value
--- Helper function for VARCHAR -> JSONB column type migration
+-- Helper function for VARCHAR|TEXT -> JSONB column type migration
 CREATE OR REPLACE FUNCTION fn_db_update_column_to_jsonb_compatible_values(
     v_table VARCHAR,
     v_column VARCHAR,
     v_default_value JSONB
     )
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 DECLARE
     default_value_string VARCHAR;
 BEGIN
@@ -1398,7 +1396,7 @@ BEGIN
             WHERE table_schema = 'public'
                 AND table_name = v_table
                 AND column_name = v_column
-                AND data_type = 'character varying'
+                AND (data_type = 'character varying' OR data_type = 'text')
         )
     ) THEN
         BEGIN
@@ -1409,7 +1407,7 @@ BEGIN
             EXECUTE 'UPDATE ' || v_table || ' SET ' || v_column || ' = (SELECT fn_db_varchar_to_jsonb(' || v_column || ', ' || default_value_string || '))';
         END;
     END IF;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- Turns all given table columns to default to NULL an adjust existing values
@@ -1418,7 +1416,7 @@ CREATE OR REPLACE FUNCTION fn_db_change_table_string_columns_to_empty_string (
     v_table VARCHAR(128),
     v_column VARCHAR[]
     )
-RETURNS void AS $PROCEDURE$
+RETURNS void AS $FUNCTION$
 DECLARE
     v_sql TEXT;
     v_num integer := array_length(v_column, 1);
@@ -1447,5 +1445,5 @@ BEGIN
         END IF;
     v_index = v_index + 1;
     END LOOP;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;

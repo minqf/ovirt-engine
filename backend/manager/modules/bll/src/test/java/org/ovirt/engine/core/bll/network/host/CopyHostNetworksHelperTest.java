@@ -457,7 +457,7 @@ class CopyHostNetworksHelperTest {
                 printShape(ifaceName);
                 String networkName = toNetworkName(networkId);
                 printShape(networkName);
-                printout.append("    " + prefix() + ifaceName + " -> " + prefix() +  networkName);
+                printout.append("    " + prefix() + ifaceName + " -> " + prefix() + networkName);
             }
             printIfaceAttachment = true;
         }
@@ -465,7 +465,7 @@ class CopyHostNetworksHelperTest {
         void printVlanToNetwork(Integer vlanId, Guid networkId) {
             String networkName = toNetworkName(networkId);
             printShape(networkName);
-            printout.append("    " + prefix() + toVlanName(vlanId) + " -> " + prefix() +  networkName);
+            printout.append("    " + prefix() + toVlanName(vlanId) + " -> " + prefix() + networkName);
             printIfaceAttachment = false;
         }
 
@@ -476,7 +476,7 @@ class CopyHostNetworksHelperTest {
         }
 
         void printBondAttachment(String bondName, List<String> slaveNames) {
-            slaveNames.forEach( slaveName -> {
+            slaveNames.forEach(slaveName -> {
                 printShape(slaveName);
                 printout.append("    " + prefix() + slaveName + " -> " + prefix() + bondName);
             });
@@ -518,33 +518,33 @@ class CopyHostNetworksHelperTest {
 
         void printDigraphSuffix() {
             switch (node) {
-            case SOURCE:
-                printout.append("  }");
-                break;
-            case DEST:
-                printout.append("  }\n"
-                        + "}");
-                break;
+                case SOURCE:
+                    printout.append("  }");
+                    break;
+                case DEST:
+                    printout.append("  }\n"
+                            + "}");
+                    break;
             }
         }
 
         void printDigraphPrefix() {
-            switch(node){
-            case SOURCE:
-                printout.append("digraph ScenarioResult {\n"
-                        + "\n"
-                        + "  subgraph cluster_source {\n"
-                        + "    label = \"source layout\";\n"
-                        + "    color=blue;\n"
-                        + "    node [style=filled];");
-                break;
-            case DEST:
-                printout.append("\n"
-                        + "  subgraph cluster_dest {\n"
-                        + "    label = \"destination layout\";\n"
-                        + "    color=blue\n"
-                        + "    node [style=filled];");
-                break;
+            switch (node) {
+                case SOURCE:
+                    printout.append("digraph ScenarioResult {\n"
+                            + "\n"
+                            + "  subgraph cluster_source {\n"
+                            + "    label = \"source layout\";\n"
+                            + "    color=blue;\n"
+                            + "    node [style=filled];");
+                    break;
+                case DEST:
+                    printout.append("\n"
+                            + "  subgraph cluster_dest {\n"
+                            + "    label = \"destination layout\";\n"
+                            + "    color=blue\n"
+                            + "    node [style=filled];");
+                    break;
             }
         }
 

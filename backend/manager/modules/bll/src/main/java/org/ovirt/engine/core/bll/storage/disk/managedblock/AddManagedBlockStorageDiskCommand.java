@@ -10,7 +10,6 @@ import java.util.Map;
 
 import javax.inject.Inject;
 
-import org.ovirt.engine.core.bll.CommandBase;
 import org.ovirt.engine.core.bll.InternalCommandAttribute;
 import org.ovirt.engine.core.bll.NonTransactiveCommandAttribute;
 import org.ovirt.engine.core.bll.context.CommandContext;
@@ -29,27 +28,28 @@ import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeType;
 import org.ovirt.engine.core.common.utils.Pair;
 import org.ovirt.engine.core.common.utils.SizeConverter;
-import org.ovirt.engine.core.common.utils.cinderlib.CinderlibCommandParameters;
-import org.ovirt.engine.core.common.utils.cinderlib.CinderlibExecutor;
-import org.ovirt.engine.core.common.utils.cinderlib.CinderlibExecutor.CinderlibCommand;
-import org.ovirt.engine.core.common.utils.cinderlib.CinderlibReturnValue;
+import org.ovirt.engine.core.common.utils.managedblock.ManagedBlockCommandParameters;
+import org.ovirt.engine.core.common.utils.managedblock.ManagedBlockExecutor;
+import org.ovirt.engine.core.common.utils.managedblock.ManagedBlockExecutor.ManagedBlockCommand;
+import org.ovirt.engine.core.common.utils.managedblock.ManagedBlockReturnValue;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.BaseDiskDao;
-import org.ovirt.engine.core.dao.CinderStorageDao;
 import org.ovirt.engine.core.dao.DiskVmElementDao;
 import org.ovirt.engine.core.dao.ImageDao;
+import org.ovirt.engine.core.dao.ManagedBlockStorageDao;
 import org.ovirt.engine.core.utils.JsonHelper;
 import org.ovirt.engine.core.utils.transaction.TransactionSupport;
 
 @NonTransactiveCommandAttribute
 @InternalCommandAttribute
-public class AddManagedBlockStorageDiskCommand<T extends AddManagedBlockStorageDiskParameters> extends CommandBase<T> {
+public class AddManagedBlockStorageDiskCommand<T extends AddManagedBlockStorageDiskParameters>
+        extends ManagedBlockStorageDiskCommandBase<T> {
 
     @Inject
-    private CinderStorageDao cinderStorageDao;
+    private ManagedBlockStorageDao managedBlockStorageDao;
 
     @Inject
-    private CinderlibExecutor cinderlibExecutor;
+    private ManagedBlockExecutor managedBlockExecutor;
 
     @Inject
     private BaseDiskDao baseDiskDao;
@@ -76,24 +76,26 @@ public class AddManagedBlockStorageDiskCommand<T extends AddManagedBlockStorageD
 
     @Override
     protected void executeCommand() {
-        ManagedBlockStorage managedBlockStorage = cinderStorageDao.get(getParameters().getStorageDomainId());
+        ManagedBlockStorage managedBlockStorage = managedBlockStorageDao.get(getParameters().getStorageDomainId());
         Guid volumeId = getParameters().getDiskInfo().getId();
         List<String> extraParams = new ArrayList<>();
         extraParams.add(volumeId.toString());
-        Number sizeInGiB = SizeConverter.convert(getParameters().getDiskInfo().getSize(),
+
+        // Rounding and converting to GiB is required since the original managed block storage backend (cinderlib) works with GiB multiples and not bytes
+        extraParams.add(Long.toString(SizeConverter.convert(getDiskSize(getParameters().getDiskInfo().getSize()),
                 SizeConverter.SizeUnit.BYTES,
-                SizeConverter.SizeUnit.GiB);
-        extraParams.add(Long.toString(sizeInGiB.longValue()));
-        CinderlibReturnValue returnValue;
+                SizeConverter.SizeUnit.GiB).longValue()));
+
+        ManagedBlockReturnValue returnValue;
 
         try {
-            CinderlibCommandParameters params =
-                    new CinderlibCommandParameters(JsonHelper.mapToJson(
+            ManagedBlockCommandParameters params =
+                    new ManagedBlockCommandParameters(JsonHelper.mapToJson(
                                 managedBlockStorage.getAllDriverOptions(),
                             false),
                                 extraParams,
                                 getCorrelationId());
-            returnValue = cinderlibExecutor.runCommand(CinderlibCommand.CREATE_VOLUME, params);
+            returnValue = managedBlockExecutor.runCommand(ManagedBlockCommand.CREATE_VOLUME, params);
         } catch (Exception e) {
             log.error("Failed executing volume creation", e);
             return;
@@ -105,6 +107,7 @@ public class AddManagedBlockStorageDiskCommand<T extends AddManagedBlockStorageD
 
         saveDisk(volumeId);
         getReturnValue().setActionReturnValue(volumeId);
+        refreshAffectedDomain(getParameters().getStorageDomainId());
         setSucceeded(true);
         persistCommandIfNeeded();
     }
@@ -114,11 +117,16 @@ public class AddManagedBlockStorageDiskCommand<T extends AddManagedBlockStorageD
         disk.setImageId(volumeId);
         disk.setId(volumeId);
         TransactionSupport.executeInNewTransaction(() -> {
-            baseDiskDao.save(disk);
-            imageDao.save(disk.getImage());
-            managedBlockStorageDiskUtil.saveDisk(disk);
+            if (!disk.isTemplate()) {
+                // In case of a template disk, the disk already exists in the DB, so no need to save it again,
+                // only add a storage domain mapping (executed in CopyImageGroupCommand).
+                baseDiskDao.save(disk);
+                imageDao.save(disk.getImage());
+                managedBlockStorageDiskUtil.saveDisk(disk);
+                managedBlockStorageDiskUtil.lockImage(disk.getImageId());
+            }
 
-            if (getParameters().getVmId() != null) {
+            if (!Guid.isNullOrEmpty(getParameters().getVmId())) {
                 // Set correct device id
                 DiskVmElement diskVmElement = getParameters().getDiskVmElement();
                 diskVmElement.getId().setDeviceId(volumeId);
@@ -146,7 +154,7 @@ public class AddManagedBlockStorageDiskCommand<T extends AddManagedBlockStorageD
     private ManagedBlockStorageDisk createDisk() {
         ManagedBlockStorageDisk disk = new ManagedBlockStorageDisk();
         disk.setDiskAlias(getParameters().getDiskInfo().getDiskAlias());
-        disk.setSize(getParameters().getDiskInfo().getSize());
+        disk.setSize(getDiskSize(getParameters().getDiskInfo().getSize()));
         disk.setDiskDescription(getParameters().getDiskInfo().getDiskDescription());
         disk.setShareable(getParameters().getDiskInfo().isShareable());
         disk.setStorageIds(new ArrayList<>(Arrays.asList(getParameters().getStorageDomainId())));
@@ -156,10 +164,25 @@ public class AddManagedBlockStorageDiskCommand<T extends AddManagedBlockStorageD
         disk.setCreationDate(new Date());
         disk.setLastModified(new Date());
         disk.setActive(true);
+        disk.setVmEntityType(getParameters().getDiskInfo().getVmEntityType());
         disk.setVmSnapshotId(getParameters().getVmSnapshotId());
-        disk.setDiskVmElements(Collections.singletonList(getParameters().getDiskVmElement()));
+        disk.setDiskVmElements(getParameters().getDiskVmElement() == null ? new ArrayList<>()
+                : Collections.singletonList(getParameters().getDiskVmElement()));
 
         return disk;
+    }
+
+    /***
+     * Round a size in bytes to the next GiB multiple.
+     * For example, 2.4 GiB will be rounded to 3 GiB.
+     *
+     * @param size Disk size in bytes
+     * @return The next GiB multiple in bytes
+     */
+    private long getDiskSize(long size) {
+        long correctedSize = (long) Math.ceil((double) size / (double) SizeConverter.BYTES_IN_GB);
+        return SizeConverter.convert(correctedSize, SizeConverter.SizeUnit.GiB, SizeConverter.SizeUnit.BYTES)
+                .longValue();
     }
 
     @Override
@@ -189,6 +212,12 @@ public class AddManagedBlockStorageDiskCommand<T extends AddManagedBlockStorageD
 
     @Override
     protected void endSuccessfully() {
-        setSucceeded(true);
+        managedBlockStorageDiskUtil.unlockImage(getParameters().getDiskInfo().getId());
+        super.endSuccessfully();
+    }
+
+    @Override
+    protected void endWithFailure() {
+        endSuccessfully();
     }
 }

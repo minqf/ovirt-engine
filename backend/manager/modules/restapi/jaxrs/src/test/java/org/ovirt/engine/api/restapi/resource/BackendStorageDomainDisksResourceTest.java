@@ -61,14 +61,16 @@ public class BackendStorageDomainDisksResourceTest extends AbstractBackendCollec
         entity.setVolumeType(VolumeType.Sparse);
         entity.setShareable(false);
         entity.setPropagateErrors(PropagateErrors.On);
-        return setUpStatisticalEntityExpectations(entity);    }
+        return setUpStatisticalEntityExpectations(entity); }
 
     static org.ovirt.engine.core.common.businessentities.storage.Disk setUpStatisticalEntityExpectations(DiskImage entity) {
-        entity.setReadRate(1);
-        entity.setWriteRate(2);
-        entity.setReadLatency(3.0);
-        entity.setWriteLatency(4.0);
-        entity.setFlushLatency(5.0);
+        entity.setReadRate(1L);
+        entity.setReadOps(2L);
+        entity.setWriteRate(3L);
+        entity.setWriteOps(4L);
+        entity.setReadLatency(5.0);
+        entity.setWriteLatency(6.0);
+        entity.setFlushLatency(7.0);
         return entity;
     }
 
@@ -99,8 +101,8 @@ public class BackendStorageDomainDisksResourceTest extends AbstractBackendCollec
         Response response = collection.add(model);
         assertEquals(201, response.getStatus());
         assertTrue(response.getEntity() instanceof Disk);
-        verifyModel((Disk)response.getEntity(), 0);
-        assertNull(((Disk)response.getEntity()).getCreationStatus());
+        verifyModel((Disk) response.getEntity(), 0);
+        assertNull(((Disk) response.getEntity()).getCreationStatus());
     }
 
     @Test
@@ -139,8 +141,8 @@ public class BackendStorageDomainDisksResourceTest extends AbstractBackendCollec
         Response response = collection.add(model);
         assertEquals(201, response.getStatus());
         assertTrue(response.getEntity() instanceof Disk);
-        verifyModel((Disk)response.getEntity(), 0);
-        assertNull(((Disk)response.getEntity()).getCreationStatus());
+        verifyModel((Disk) response.getEntity(), 0);
+        assertNull(((Disk) response.getEntity()).getCreationStatus());
     }
 
     @Test
@@ -172,8 +174,8 @@ public class BackendStorageDomainDisksResourceTest extends AbstractBackendCollec
         Response response = collection.add(model);
         assertEquals(201, response.getStatus());
         assertTrue(response.getEntity() instanceof Disk);
-        verifyModel((Disk)response.getEntity(), 0);
-        assertNull(((Disk)response.getEntity()).getCreationStatus());
+        verifyModel((Disk) response.getEntity(), 0);
+        assertNull(((Disk) response.getEntity()).getCreationStatus());
     }
 
     @Override

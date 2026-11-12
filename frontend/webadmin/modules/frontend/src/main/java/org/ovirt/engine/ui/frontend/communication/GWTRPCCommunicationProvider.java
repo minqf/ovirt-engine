@@ -121,16 +121,16 @@ public class GWTRPCCommunicationProvider implements CommunicationProvider {
             public void serviceFound(GenericApiGWTServiceAsync service) {
                 service.runPublicQuery((QueryType) operation.getOperation(),
                         (QueryParametersBase) operation.getParameter(), new AsyncCallback<QueryReturnValue>() {
-                    @Override
-                    public void onFailure(final Throwable exception) {
-                        operation.getCallback().onFailure(operation, exception);
-                    }
+                            @Override
+                            public void onFailure(final Throwable exception) {
+                                operation.getCallback().onFailure(operation, exception);
+                            }
 
-                    @Override
-                    public void onSuccess(final QueryReturnValue result) {
-                        operation.getCallback().onSuccess(operation, result);
-                    }
-                });
+                            @Override
+                            public void onSuccess(final QueryReturnValue result) {
+                                operation.getCallback().onSuccess(operation, result);
+                            }
+                        });
             }
 
             @Override
@@ -150,18 +150,18 @@ public class GWTRPCCommunicationProvider implements CommunicationProvider {
             public void serviceFound(GenericApiGWTServiceAsync service) {
                 service.runQuery((QueryType) operation.getOperation(),
                         (QueryParametersBase) operation.getParameter(), new AsyncCallback<QueryReturnValue>() {
-                    @Override
-                    public void onFailure(final Throwable exception) {
-                        //Clear out the token, and let the retry mechanism try again.
-                        xsrfRequestBuilder.setXsrfToken(null);
-                        operation.getCallback().onFailure(operation, exception);
-                    }
+                            @Override
+                            public void onFailure(final Throwable exception) {
+                                //Clear out the token, and let the retry mechanism try again.
+                                xsrfRequestBuilder.setXsrfToken(null);
+                                operation.getCallback().onFailure(operation, exception);
+                            }
 
-                    @Override
-                    public void onSuccess(final QueryReturnValue result) {
-                        operation.getCallback().onSuccess(operation, result);
-                    }
-                });
+                            @Override
+                            public void onSuccess(final QueryReturnValue result) {
+                                operation.getCallback().onSuccess(operation, result);
+                            }
+                        });
             }
 
             @Override
@@ -181,18 +181,18 @@ public class GWTRPCCommunicationProvider implements CommunicationProvider {
             public void serviceFound(GenericApiGWTServiceAsync service) {
                 service.runAction((ActionType) operation.getOperation(),
                         (ActionParametersBase) operation.getParameter(), new AsyncCallback<ActionReturnValue>() {
-                    @Override
-                    public void onFailure(final Throwable exception) {
-                        //Clear out the token, and let the retry mechanism try again.
-                        xsrfRequestBuilder.setXsrfToken(null);
-                        operation.getCallback().onFailure(operation, exception);
-                    }
+                            @Override
+                            public void onFailure(final Throwable exception) {
+                                //Clear out the token, and let the retry mechanism try again.
+                                xsrfRequestBuilder.setXsrfToken(null);
+                                operation.getCallback().onFailure(operation, exception);
+                            }
 
-                    @Override
-                    public void onSuccess(final ActionReturnValue result) {
-                        operation.getCallback().onSuccess(operation, result);
-                    }
-                });
+                            @Override
+                            public void onSuccess(final ActionReturnValue result) {
+                                operation.getCallback().onSuccess(operation, result);
+                            }
+                        });
             }
 
             @Override
@@ -238,8 +238,8 @@ public class GWTRPCCommunicationProvider implements CommunicationProvider {
      * @param queriesList The list of queries.
      */
     private void transmitMultipleQueries(final List<VdcOperation<?, ?>> queriesList) {
-        if (queriesList.size() > 1 || (queriesList.size() == 1
-                && queriesList.get(0).getCallback() instanceof VdcOperationCallbackList)) {
+        if (queriesList.size() > 1 || queriesList.size() == 1
+                && queriesList.get(0).getCallback() instanceof VdcOperationCallbackList) {
             final List<QueryType> queryTypes = new ArrayList<>();
             final List<QueryParametersBase> parameters = new ArrayList<>();
 
@@ -259,31 +259,31 @@ public class GWTRPCCommunicationProvider implements CommunicationProvider {
                     service.runMultipleQueries((ArrayList<QueryType>) queryTypes,
                             (ArrayList<QueryParametersBase>) parameters,
                             new AsyncCallback<ArrayList<QueryReturnValue>>() {
-                        @Override
-                        public void onFailure(final Throwable exception) {
-                            //Clear out the token, and let the retry mechanism try again.
-                            xsrfRequestBuilder.setXsrfToken(null);
-                            handleMultipleQueriesFailure(queriesList, exception);
-                        }
-
-                        @Override
-                        public void onSuccess(final ArrayList<QueryReturnValue> result) {
-                            Map<VdcOperationCallback<?, ?>, List<VdcOperation<?, ?>>> callbackMap =
-                                    getCallbackMap(queriesList);
-                            for (Map.Entry<VdcOperationCallback<?, ?>,
-                                    List<VdcOperation<?, ?>>> callbackEntry: callbackMap.entrySet()) {
-                                List<QueryReturnValue> queryResult = (List<QueryReturnValue>) getOperationResult(
-                                        callbackEntry.getValue(), queriesList, result);
-                                if (callbackEntry.getKey() instanceof VdcOperationCallbackList) {
-                                    ((VdcOperationCallbackList) callbackEntry.getKey())
-                                        .onSuccess(callbackEntry.getValue(), queryResult);
-                                } else {
-                                    ((VdcOperationCallback) callbackEntry.getKey())
-                                        .onSuccess(callbackEntry.getValue().get(0), queryResult.get(0));
+                                @Override
+                                public void onFailure(final Throwable exception) {
+                                    //Clear out the token, and let the retry mechanism try again.
+                                    xsrfRequestBuilder.setXsrfToken(null);
+                                handleMultipleQueriesFailure(queriesList, exception);
                                 }
-                            }
-                        }
-                    });
+
+                                @Override
+                                public void onSuccess(final ArrayList<QueryReturnValue> result) {
+                                    Map<VdcOperationCallback<?, ?>, List<VdcOperation<?, ?>>> callbackMap =
+                                        getCallbackMap(queriesList);
+                                    for (Map.Entry<VdcOperationCallback<?, ?>,
+                                        List<VdcOperation<?, ?>>> callbackEntry: callbackMap.entrySet()) {
+                                        List<QueryReturnValue> queryResult = (List<QueryReturnValue>) getOperationResult(
+                                            callbackEntry.getValue(), queriesList, result);
+                                        if (callbackEntry.getKey() instanceof VdcOperationCallbackList) {
+                                            ((VdcOperationCallbackList) callbackEntry.getKey())
+                                                .onSuccess(callbackEntry.getValue(), queryResult);
+                                        } else {
+                                            ((VdcOperationCallback) callbackEntry.getKey())
+                                                .onSuccess(callbackEntry.getValue().get(0), queryResult.get(0));
+                                        }
+                                    }
+                                }
+                            });
 
                 }
 
@@ -335,8 +335,8 @@ public class GWTRPCCommunicationProvider implements CommunicationProvider {
                 parameters.add((ActionParametersBase) operation.getParameter());
             }
 
-            if (parameters.size() > 1 || (allActionOperations.size() == 1
-                    && allActionOperations.get(0).getCallback() instanceof VdcOperationCallbackList)) {
+            if (parameters.size() > 1 || allActionOperations.size() == 1
+                    && allActionOperations.get(0).getCallback() instanceof VdcOperationCallbackList) {
                 List<VdcOperation<?, ?>> waitForResultList = getWaitForResultList(actionEntry.getValue());
                 if (!waitForResultList.isEmpty()) {
                     runMultipleActions(actionEntry.getKey(), waitForResultList, parameters, allActionOperations,
@@ -373,31 +373,31 @@ public class GWTRPCCommunicationProvider implements CommunicationProvider {
                 service.runMultipleActions(actionType, (ArrayList<ActionParametersBase>) parameters,
                         runOnlyIfAllValidationPass, waitForResults, new AsyncCallback<List<ActionReturnValue>>() {
 
-                    @Override
-                    public void onFailure(final Throwable exception) {
-                        //Clear out the token, and let the retry mechanism try again.
-                        xsrfRequestBuilder.setXsrfToken(null);
-                        handleRunMultipleActionFailure(operations, exception);
-                    }
-
-                    @Override
-                    public void onSuccess(final List<ActionReturnValue> result) {
-                        Map<VdcOperationCallback<?, ?>, List<VdcOperation<?, ?>>> callbackMap =
-                                getCallbackMap(operations);
-                        for (Map.Entry<VdcOperationCallback<?, ?>,
-                                List<VdcOperation<?, ?>>> callbackEntry: callbackMap.entrySet()) {
-                            List<ActionReturnValue> actionResult = (List<ActionReturnValue>)
-                                    getOperationResult(callbackEntry.getValue(), allActionOperations, result);
-                            if (callbackEntry.getKey() instanceof VdcOperationCallbackList) {
-                                ((VdcOperationCallbackList) callbackEntry.getKey())
-                                    .onSuccess(callbackEntry.getValue(), actionResult);
-                            } else {
-                                ((VdcOperationCallback) callbackEntry.getKey())
-                                    .onSuccess(callbackEntry.getValue().get(0), actionResult.get(0));
+                            @Override
+                            public void onFailure(final Throwable exception) {
+                                //Clear out the token, and let the retry mechanism try again.
+                                xsrfRequestBuilder.setXsrfToken(null);
+                                handleRunMultipleActionFailure(operations, exception);
                             }
-                        }
-                    }
-                });
+
+                            @Override
+                            public void onSuccess(final List<ActionReturnValue> result) {
+                                Map<VdcOperationCallback<?, ?>, List<VdcOperation<?, ?>>> callbackMap =
+                                    getCallbackMap(operations);
+                                for (Map.Entry<VdcOperationCallback<?, ?>,
+                                    List<VdcOperation<?, ?>>> callbackEntry: callbackMap.entrySet()) {
+                                        List<ActionReturnValue> actionResult = (List<ActionReturnValue>)
+                                            getOperationResult(callbackEntry.getValue(), allActionOperations, result);
+                                        if (callbackEntry.getKey() instanceof VdcOperationCallbackList) {
+                                            ((VdcOperationCallbackList) callbackEntry.getKey())
+                                                .onSuccess(callbackEntry.getValue(), actionResult);
+                                        } else {
+                                            ((VdcOperationCallback) callbackEntry.getKey())
+                                                .onSuccess(callbackEntry.getValue().get(0), actionResult.get(0));
+                                        }
+                                    }
+                            }
+                        });
             }
 
             @Override

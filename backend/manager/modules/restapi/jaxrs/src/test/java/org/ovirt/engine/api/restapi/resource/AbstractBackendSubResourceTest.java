@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.math.MathContext;
 import java.util.List;
 
@@ -29,7 +30,7 @@ public abstract class AbstractBackendSubResourceTest<R extends BaseResource, Q /
     protected static final String IMMUTABLE_ID_DETAIL_SERVER_LOCALE = "Versuchte Anderung der unveranderlichen Eigenschaft: id";
     protected static int CONFLICT = 409;
     protected static long Kb = 1024L;
-    protected static long Mb = 1024*Kb;
+    protected static long Mb = 1024 * Kb;
 
     protected S resource;
 
@@ -58,7 +59,7 @@ public abstract class AbstractBackendSubResourceTest<R extends BaseResource, Q /
                 if (method.isAnnotationPresent(Path.class) && isSubCollectionLocator(method)) {
                     Object rawSubResource = method.invoke(resource);
                     if (rawSubResource instanceof AbstractBackendResource) {
-                        AbstractBackendResource<R, Q> subResource = (AbstractBackendResource<R, Q>)rawSubResource;
+                        AbstractBackendResource<R, Q> subResource = (AbstractBackendResource<R, Q>) rawSubResource;
                         assertNotNull(subResource.getBackend());
                         assertNotNull(subResource.getMappingLocator());
                     }
@@ -82,7 +83,7 @@ public abstract class AbstractBackendSubResourceTest<R extends BaseResource, Q /
         assertEquals(async ? 202 : 200, r.getStatus(), "unexpected status");
         Object entity = r.getEntity();
         assertTrue(entity instanceof Action, "expect Action response entity");
-        Action action = (Action)entity;
+        Action action = (Action) entity;
         if (async) {
             assertTrue(action.isAsync());
             assertNotNull(action.getHref());
@@ -142,5 +143,9 @@ public abstract class AbstractBackendSubResourceTest<R extends BaseResource, Q /
 
     protected BigDecimal asDec(double d) {
         return new BigDecimal(d, new MathContext(2));
+    }
+
+    protected BigDecimal asDec(BigInteger bigInteger) {
+        return new BigDecimal(bigInteger);
     }
 }

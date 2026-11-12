@@ -13,11 +13,12 @@ import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.snapshots.CreateSnapshotCommand;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.AddImageFromScratchParameters;
+import org.ovirt.engine.core.common.businessentities.storage.DiskContentType;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.DiskStorageType;
 import org.ovirt.engine.core.common.businessentities.storage.ImageStatus;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeType;
-import org.ovirt.engine.core.common.vdscommands.CreateImageVDSCommandParameters;
+import org.ovirt.engine.core.common.vdscommands.CreateVolumeVDSCommandParameters;
 import org.ovirt.engine.core.common.vdscommands.VDSCommandType;
 import org.ovirt.engine.core.common.vdscommands.VDSReturnValue;
 import org.ovirt.engine.core.compat.Guid;
@@ -30,6 +31,9 @@ public class AddImageFromScratchCommand<T extends AddImageFromScratchParameters>
 
     @Inject
     private DiskImageDynamicDao diskImageDynamicDao;
+
+    @Inject
+    private ImagesHandler imagesHandler;
 
     public AddImageFromScratchCommand(T parameters, CommandContext commandContext) {
         super(parameters, commandContext);
@@ -74,6 +78,10 @@ public class AddImageFromScratchCommand<T extends AddImageFromScratchParameters>
         newDiskImage.setContentType(getParameters().getDiskInfo().getContentType());
         newDiskImage.setBackup(getParameters().getDiskInfo().getBackup());
 
+        // We can assume this command is used only when adding the first image, setting the first sequence
+        // number to 1.
+        newDiskImage.getImage().setSequenceNumber(1);
+
         TransactionSupport.executeInNewTransaction(() -> {
             if (!getParameters().isShouldRemainIllegalOnFailedExecution()) {
                 addDiskImageToDb(newDiskImage, getCompensationContext(), Boolean.TRUE);
@@ -87,18 +95,18 @@ public class AddImageFromScratchCommand<T extends AddImageFromScratchParameters>
         if (getParameters().isShouldRemainIllegalOnFailedExecution()) {
             getReturnValue().setActionReturnValue(newDiskImage);
         }
-        processImageInIrs();
+        processImageInIrs(newDiskImage.getImage().getSequenceNumber());
         getReturnValue().setActionReturnValue(newDiskImage);
         setSucceeded(true);
     }
 
-    protected boolean processImageInIrs() {
+    protected boolean processImageInIrs(int sequenceNumber) {
         if (getParameters().getDiskInfo().getDiskStorageType() == DiskStorageType.KUBERNETES) {
             return true;
         }
         Guid taskId = persistAsyncTaskPlaceHolder(getParameters().getParentCommand());
-        VDSReturnValue vdsReturnValue = runVdsCommand(VDSCommandType.CreateImage,
-                getCreateImageVDSCommandParameters());
+        VDSReturnValue vdsReturnValue = runVdsCommand(VDSCommandType.CreateVolume,
+                getCreateVolumeVDSCommandParameters(sequenceNumber));
         if (vdsReturnValue.getSucceeded()) {
             getParameters().setVdsmTaskIds(new ArrayList<>());
             getParameters().getVdsmTaskIds().add(
@@ -127,17 +135,29 @@ public class AddImageFromScratchCommand<T extends AddImageFromScratchParameters>
         return initialSize;
     }
 
-    private CreateImageVDSCommandParameters getCreateImageVDSCommandParameters() {
-        CreateImageVDSCommandParameters parameters =
-                new CreateImageVDSCommandParameters(getParameters().getStoragePoolId(),
-                        getParameters()
-                                .getStorageDomainId(), getImageGroupId(), getParameters().getDiskInfo().getSize(),
-                        getParameters().getDiskInfo().getVolumeType(), getParameters().getDiskInfo()
-                        .getVolumeFormat(), getDestinationImageId(),
-                        getJsonDiskDescription(getParameters().getDiskInfo()), getStoragePool().getCompatibilityVersion(),
-                        getParameters().getDiskInfo().getContentType());
+    private CreateVolumeVDSCommandParameters getCreateVolumeVDSCommandParameters(int sequenceNumber) {
+        CreateVolumeVDSCommandParameters parameters =
+                new CreateVolumeVDSCommandParameters(
+                        getParameters().getStoragePoolId(),
+                        getParameters().getStorageDomainId(),
+                        getImageGroupId(),
+                        Guid.Empty,
+                        getParameters().getDiskInfo().getSize(),
+                        getParameters().getDiskInfo().getVolumeType(),
+                        getParameters().getDiskInfo().getVolumeFormat(),
+                        Guid.Empty,
+                        getDestinationImageId(),
+                        imagesHandler.getJsonDiskDescription(getParameters().getDiskInfo()),
+                        getStoragePool().getCompatibilityVersion(),
+                        getParameters().getDiskInfo().getContentType(),
+                        sequenceNumber
+                );
 
-        parameters.setImageInitialSizeInBytes(Optional.ofNullable(getInitialSize()).orElse(0L));
+        // The initial size of a backup scratch disk shouldn't be overridden.
+        parameters.setImageInitialSizeInBytes(
+                getParameters().getDiskInfo().getContentType().equals(DiskContentType.BACKUP_SCRATCH)
+                        ? getParameters().getDiskInfo().getInitialSizeInBytes()
+                        : Optional.ofNullable(getInitialSize()).orElse(0L));
         return parameters;
     }
 

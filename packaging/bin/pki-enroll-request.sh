@@ -19,8 +19,10 @@ sign() {
 		local extsection="v3_ca"
 		[ -n "${ovirt_san}" ] && extsection="v3_ca_san"
 		[ -n "${ovirt_ku}" -o -n "${ovirt_eku}" ] && extsection="custom"
-		EXTRA_COMMAND="-extfile cert.conf -extensions ${extsection}"
+		[ -e "${CERT_CONF}" ] || die "${CERT_CONF} is missing, Cannot sign certificate"
+		EXTRA_COMMAND="-extfile ${CERT_CONF} -extensions ${extsection}"
 	fi
+	umask "$(/bin/sh -l -c umask)"
 	OVIRT_KU="${ovirt_ku}" OVIRT_EKU="${ovirt_eku}" OVIRT_SAN="${ovirt_san}" \
 		openssl ca \
 		-batch \
@@ -71,7 +73,7 @@ trap cleanup 0
 NAME=""
 SUBJECT=""
 TIMEOUT="20"
-DAYS="1800"
+DAYS="1827"
 OVIRT_KU=""
 OVIRT_EKU=""
 CA_FILE=ca
@@ -124,41 +126,10 @@ while [ -n "$1" ]; do
 done
 
 [ -n "${NAME}" ] || die "Please specify name"
+common_set_conf_vars
 
-# cannot use TMPDIR as we want the
-# same file at any environment
-# path must be local as remote filesystems
-# do not [always] support flock.
-LOCK="/tmp/ovirt-engine-pki.v2.lock"
-LOCK_REF="${PKIDIR}/private"
-
-lock_is_ok() {
-	[ -e "${LOCK}" ] || return 1
-	[ "$(stat --printf "%F-%u-%g-%a\n" "${LOCK}" "${LOCK_REF}" 2>&1 | uniq | wc -l)" = 1 ] || return 1
-	return 0
-}
-
-retries=5
-while ! lock_is_ok; do
-	retries="$(($retries - 1))"
-	[ "${retries}" -eq 0 ] && die "Cannot establish lock '${LOCK}'"
-
-	#
-	# Random sleep so multiple instances
-	# will wakeup at different times.
-	#
-	sleep "$(($$ % 5))"
-
-	if ! lock_is_ok; then
-		rm -fr "${LOCK}"
-		[ -e "${LOCK}" -o -L "${LOCK}" ] && die "Cannot remove '${LOCK}' please remove manually"
-
-		if mkdir -m 700 "${LOCK}"; then
-			chown -R --reference="${LOCK_REF}" "${LOCK}" || die "Cannot set ownership of lock '${LOCK}'"
-			chmod -R --reference="${LOCK_REF}" "${LOCK}" || die "Cannot set permissions of lock '${LOCK}'"
-		fi
-	fi
-done
+LOCK="${PKIDIR}/${CA_FILE}".pem
+LC_ALL=C df -l "${LOCK}" 2> /dev/null | grep -q "File" || die "${LOCK} is not on a local filesystem"
 
 # Wait for lock on fd 9
 (

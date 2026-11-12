@@ -54,7 +54,7 @@ public class SpmStopVDSCommand<P extends SpmStopVDSCommandParameters> extends Vd
             Map<String, Pair<String, String>> exsluciveLock = Collections.singletonMap(getParameters().getVdsId().toString(), new Pair<>(LockingGroup.VDS_EXECUTION.toString(), EngineMessage.ACTION_TYPE_FAILED_OBJECT_LOCKED.toString()));
             lock = new EngineLock(exsluciveLock, null);
         }
-        return  lock;
+        return lock;
     }
 
     @Override
@@ -170,18 +170,18 @@ public class SpmStopVDSCommand<P extends SpmStopVDSCommandParameters> extends Vd
     protected void proceedProxyReturnValue() {
         EngineError returnStatus = getReturnValueFromStatus(getReturnStatus());
         switch (returnStatus) {
-        case StoragePoolUnknown:
-        case SpmStatusError:
-            // ignore this, the parser can handle the empty result.
-            break;
-        case TaskInProgress:
-            getVDSReturnValue().setVdsError(new VDSError(returnStatus, getReturnStatus().message));
-            getVDSReturnValue().setSucceeded(false);
-            break;
-        default:
-            super.proceedProxyReturnValue();
-            initializeVdsError(returnStatus);
-            break;
+            case StoragePoolUnknown:
+            case SpmStatusError:
+                // ignore this, the parser can handle the empty result.
+                break;
+            case TaskInProgress:
+                getVDSReturnValue().setVdsError(new VDSError(returnStatus, getReturnStatus().message));
+                getVDSReturnValue().setSucceeded(false);
+                break;
+            default:
+                super.proceedProxyReturnValue();
+                initializeVdsError(returnStatus);
+                break;
         }
     }
 }

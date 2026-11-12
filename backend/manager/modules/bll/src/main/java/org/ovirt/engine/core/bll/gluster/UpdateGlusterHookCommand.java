@@ -151,17 +151,16 @@ public class UpdateGlusterHookCommand extends GlusterHookCommandBase<GlusterHook
         for (final Guid serverId : serverIdsToUpdate) {
             taskList.add(() -> {
                 VDSReturnValue returnValue;
-                    returnValue =
-                           runVdsCommand(
-                                   VDSCommandType.UpdateGlusterHook,
-                                   new GlusterHookVDSParameters(serverId,
-                                           entity.getGlusterCommand(),
-                                           entity.getStage(),
-                                           entity.getName(),
-                                           hookContent,
-                                           hookChecksum));
-                 return new Pair<>(serverId, returnValue);
-
+                returnValue =
+                    runVdsCommand(
+                                VDSCommandType.UpdateGlusterHook,
+                                new GlusterHookVDSParameters(serverId,
+                                entity.getGlusterCommand(),
+                                entity.getStage(),
+                                entity.getName(),
+                                hookContent,
+                                hookChecksum));
+                return new Pair<>(serverId, returnValue);
             });
         }
 
@@ -171,9 +170,9 @@ public class UpdateGlusterHookCommand extends GlusterHookCommandBase<GlusterHook
             for (Pair<Guid, VDSReturnValue> pairResult : pairResults) {
 
                 VDSReturnValue retValue = pairResult.getSecond();
-                if (!retValue.getSucceeded() ) {
+                if (!retValue.getSucceeded()) {
                     errors.add(retValue.getVdsError().getMessage());
-                 }
+                }
             }
         } else {
             setSucceeded(false);
@@ -181,7 +180,7 @@ public class UpdateGlusterHookCommand extends GlusterHookCommandBase<GlusterHook
 
         if (errors.size() > 0) {
             setSucceeded(false);
-            errorType =  AuditLogType.GLUSTER_HOOK_UPDATE_FAILED;
+            errorType = AuditLogType.GLUSTER_HOOK_UPDATE_FAILED;
             handleVdsErrors(getAuditLogTypeValue(), errors);
             addCustomValue(GlusterConstants.FAILURE_MESSAGE , StringUtils.join(errors, System.lineSeparator()));
         }
@@ -207,7 +206,7 @@ public class UpdateGlusterHookCommand extends GlusterHookCommandBase<GlusterHook
         if (jobProperties == null) {
             jobProperties = super.getJobMessageProperties();
             if (getGlusterHook() != null) {
-                 jobProperties.put(GlusterConstants.HOOK_NAME, getGlusterHook().getName());
+                jobProperties.put(GlusterConstants.HOOK_NAME, getGlusterHook().getName());
             }
         }
 

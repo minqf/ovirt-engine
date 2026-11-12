@@ -114,7 +114,7 @@ public class CreateBrickModel extends Model {
     }
 
     private String getSizeString(Pair<SizeUnit, Double> size) {
-        return formatSize(size.getSecond()) + " " + size.getFirst().toString();//$NON-NLS-1$
+        return formatSize(size.getSecond()) + " " + size.getFirst().toString(); //$NON-NLS-1$
     }
 
     public ListModel<StorageDevice> getStorageDevices() {
@@ -164,7 +164,8 @@ public class CreateBrickModel extends Model {
     public boolean validate() {
 
         getLvName().validateEntity(new IValidation[] { new NotEmptyValidation(), new LengthValidation(50),
-                new AsciiNameValidation() });
+            new AsciiNameValidation()
+        });
 
         if (!getLvName().getIsValid()) {
             return false;
@@ -178,7 +179,7 @@ public class CreateBrickModel extends Model {
         IntegerValidation noOfPhysicalDiscsValidation = new IntegerValidation();
         noOfPhysicalDiscsValidation.setMinimum(1);
         getNoOfPhysicalDisksInRaidVolume().validateEntity(new IValidation[] { new NotEmptyValidation(),
-                noOfPhysicalDiscsValidation });
+            noOfPhysicalDiscsValidation });
         if (!getNoOfPhysicalDisksInRaidVolume().getIsValid()) {
             return false;
         }
@@ -186,7 +187,7 @@ public class CreateBrickModel extends Model {
         IntegerValidation stripSizeValidation = new IntegerValidation();
         stripSizeValidation.setMinimum(1);
         getStripeSize().validateEntity(new IValidation[] { new NotEmptyValidation(),
-                stripSizeValidation });
+            stripSizeValidation });
         if (!getStripeSize().getIsValid()) {
             return false;
         }
@@ -196,7 +197,7 @@ public class CreateBrickModel extends Model {
     }
 
     public String formatSize(double size) {
-        return NumberFormat.getFormat("#.##").format(size);//$NON-NLS-1$
+        return NumberFormat.getFormat("#.##").format(size); //$NON-NLS-1$
     }
 
     public EntityModel<Integer> getStripeSize() {

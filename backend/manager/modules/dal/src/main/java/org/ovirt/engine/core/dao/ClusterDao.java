@@ -169,12 +169,21 @@ public interface ClusterDao extends GenericDao<Cluster, Guid>, SearchDao<Cluster
     /**
      * Sets the cluster's upgrade running flag to true.
      * @param clusterId The id of the cluster
+     * @param correlationId The correlation id for the events of the upgrade
      * @return flag indicating if updated succeeded
      */
-    boolean setUpgradeRunning(Guid clusterId);
+    boolean setUpgradeRunning(Guid clusterId, String correlationId);
 
     /**
-     * Clears the cluster's upgrade running flag.
+     * Sets the cluster's upgrade percent complete if the upgrade is running.
+     * @param clusterId The id of the cluster
+     * @param upgradePercentComplete Progress of the upgrade as percent complete
+     * @return flag indicating if updated succeeded
+     */
+    boolean setUpgradePercentComplete(Guid clusterId, int upgradePercentComplete);
+
+    /**
+     * Clears the cluster's upgrade running flag and reset progress to 0.
      * @param clusterId The id of the cluster
      * @return flag indicating if updated succeeded
      */
@@ -221,4 +230,13 @@ public interface ClusterDao extends GenericDao<Cluster, Guid>, SearchDao<Cluster
      * @return all Cluster records using the given defaultNetworkProviderId.
      */
     List<Cluster> getAllClustersByDefaultNetworkProviderId(Guid defaultNetworkProviderId);
+
+    /**
+     * Retrieves the cluster id dedicated to vds name or vds address
+     *
+     * @param hostName the hostname
+     * @param hostAddress ip address for the host
+     * @return clusterId cluster id
+     */
+    Guid getClusterIdForHostByNameOrAddress(String hostName, String hostAddress);
 }

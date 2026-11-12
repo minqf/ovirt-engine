@@ -102,7 +102,7 @@ public class VdsCommandsHelper {
 
             executedHosts.add(params.getVdsId());
 
-            if (!performFailover || (returnValue != null && !returnValue.isCanTryOnDifferentVds())) {
+            if (!performFailover || returnValue != null && !returnValue.isCanTryOnDifferentVds()) {
                 break;
             }
 
@@ -154,7 +154,8 @@ public class VdsCommandsHelper {
         List<Guid> hostsForExecution = vdsDao
                 .getAllForStoragePoolAndStatus(poolId, VDSStatus.Up).stream()
                 .filter(predicate)
-                .map(x -> x.getId()).collect(Collectors.toList());
+                .map(VDS::getId)
+                .collect(Collectors.toList());
         if (hostsForExecution.isEmpty()) {
             return null;
         }

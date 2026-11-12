@@ -46,7 +46,7 @@ public class BackendHostsResourceTest
     protected static final String[] ADDRESSES = { "10.11.12.13", "13.12.11.10", "10.01.10.01" };
     protected static final VDSStatus[] VDS_STATUS = { VDSStatus.Up, VDSStatus.Down, VDSStatus.Up };
     protected static final HostStatus[] HOST_STATUS = { HostStatus.UP, HostStatus.DOWN,
-            HostStatus.UP };
+        HostStatus.UP };
     protected static final String ROOT_PASSWORD = "s3CR3t";
 
     public BackendHostsResourceTest() {
@@ -229,7 +229,6 @@ public class BackendHostsResourceTest
         when(statistics.getUsageMemPercent()).thenReturn(20);
         when(statistics.getSwapFree()).thenReturn(25L);
         when(statistics.getSwapTotal()).thenReturn(30L);
-        when(statistics.getMemAvailable()).thenReturn(35L);
         when(statistics.getMemShared()).thenReturn(38L);
         when(statistics.getKsmCpuPercent()).thenReturn(40);
         when(statistics.getCpuUser()).thenReturn(45.0);

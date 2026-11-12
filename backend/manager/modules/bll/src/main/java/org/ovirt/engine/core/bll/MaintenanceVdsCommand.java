@@ -17,6 +17,7 @@ import org.ovirt.engine.core.bll.scheduling.SchedulingManager;
 import org.ovirt.engine.core.bll.tasks.interfaces.CommandCallback;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.VdcObjectType;
+import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.MaintenanceVdsParameters;
 import org.ovirt.engine.core.common.action.MigrateMultipleVmsParameters;
@@ -32,9 +33,15 @@ import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.job.Step;
 import org.ovirt.engine.core.common.job.StepEnum;
+import org.ovirt.engine.core.common.utils.ansible.AnsibleCommandConfig;
+import org.ovirt.engine.core.common.utils.ansible.AnsibleConstants;
+import org.ovirt.engine.core.common.utils.ansible.AnsibleExecutor;
+import org.ovirt.engine.core.common.utils.ansible.AnsibleReturnCode;
+import org.ovirt.engine.core.common.utils.ansible.AnsibleReturnValue;
 import org.ovirt.engine.core.common.vdscommands.SetHaMaintenanceModeVDSCommandParameters;
 import org.ovirt.engine.core.common.vdscommands.VDSCommandType;
 import org.ovirt.engine.core.compat.Guid;
+import org.ovirt.engine.core.compat.Version;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.MessageBundler;
 import org.ovirt.engine.core.dao.VdsDao;
 import org.ovirt.engine.core.dao.VmDao;
@@ -52,6 +59,10 @@ public class MaintenanceVdsCommand<T extends MaintenanceVdsParameters> extends V
     private VdsDao vdsDao;
     @Inject
     private VmDao vmDao;
+    @Inject
+    private VmHandler vmHandler;
+    @Inject
+    private AnsibleExecutor ansibleExecutor;
 
     public MaintenanceVdsCommand(T parameters, CommandContext commandContext) {
         super(parameters, commandContext);
@@ -79,7 +90,12 @@ public class MaintenanceVdsCommand<T extends MaintenanceVdsParameters> extends V
                 }
             }
 
-            setSucceeded(migrateAllVms(getExecutionContext()));
+            ActionReturnValue returnValue = migrateAllVms(getExecutionContext());
+            setSucceeded(returnValue.getSucceeded());
+            if (!returnValue.getSucceeded() && !returnValue.isValid()) {
+                getReturnValue().setValid(false);
+                getReturnValue().getValidationMessages().addAll(returnValue.getValidationMessages());
+            }
 
             // if non responsive move directly to maintenance
             if (getVds().getStatus() == VDSStatus.NonResponsive
@@ -110,16 +126,17 @@ public class MaintenanceVdsCommand<T extends MaintenanceVdsParameters> extends V
     /**
      * Note: you must call {@link #orderListOfRunningVmsOnVds(Guid)} before calling this method
      */
-    protected boolean migrateAllVms(ExecutionContext parentContext) {
+    protected ActionReturnValue migrateAllVms(ExecutionContext parentContext) {
         return migrateAllVms(parentContext, false);
     }
 
     /**
      * Note: you must call {@link #orderListOfRunningVmsOnVds(Guid)} before calling this method
      */
-    protected boolean migrateAllVms(ExecutionContext parentContext, boolean HAOnly) {
-
-        boolean succeeded = true;
+    protected ActionReturnValue migrateAllVms(ExecutionContext parentContext, boolean HAOnly) {
+        if (shouldSetMigrationClientCerts()) {
+            runAnsibleMigrationCerts();
+        }
 
         List<VM> vmsToMigrate = new ArrayList<>();
         for (VM vm : vms) {
@@ -129,17 +146,19 @@ public class MaintenanceVdsCommand<T extends MaintenanceVdsParameters> extends V
             }
         }
 
-        if (!migrateVms(vmsToMigrate, parentContext)) {
-            succeeded = false;
+        ActionReturnValue returnValue = migrateVms(vmsToMigrate, parentContext);
+        if (!returnValue.getSucceeded()) {
             // There is no way to find out which VMs failed to migrate, so the error message is general.
             log.error("Failed to migrate one or more VMs.");
         }
-        return succeeded;
+        return returnValue;
     }
 
-    private boolean migrateVms(List<VM> vms, ExecutionContext parentContext) {
+    private ActionReturnValue migrateVms(List<VM> vms, ExecutionContext parentContext) {
         if (vms.isEmpty()) {
-            return true;
+            ActionReturnValue returnValue = new ActionReturnValue();
+            returnValue.setSucceeded(true);
+            return returnValue;
         }
 
         boolean forceMigration = !getParameters().isInternal();
@@ -163,8 +182,7 @@ public class MaintenanceVdsCommand<T extends MaintenanceVdsParameters> extends V
         parameters.setReason(MessageBundler.getMessage(AuditLogType.MIGRATION_REASON_HOST_IN_MAINTENANCE));
         return runInternalAction(ActionType.MigrateMultipleVms,
                 parameters,
-                createMigrateVmsContext(parentContext))
-                .getSucceeded();
+                createMigrateVmsContext(parentContext));
     }
 
     protected CommandContext createMigrateVmsContext(ExecutionContext parentContext) {
@@ -199,19 +217,39 @@ public class MaintenanceVdsCommand<T extends MaintenanceVdsParameters> extends V
         for (VM vm : vms) {
             if (vm.isHostedEngine()) {
                 // Check if there are available Hosted Engine hosts for that VM
-                if (!HostedEngineHelper.haveHostsAvailableforHE(
+                if (!HostedEngineHelper.haveHostsAvailableForHE(
                         vdsDao.getAllForClusterWithStatus(vds.getClusterId(), VDSStatus.Up),
                         Collections.singletonList(vdsId))) {
                     return failValidation(EngineMessage.VDS_CANNOT_MAINTENANCE_NO_ALTERNATE_HOST_FOR_HOSTED_ENGINE);
                 }
             }
-            if ((getParameters().isInternal() && vm.getMigrationSupport() == MigrationSupport.IMPLICITLY_NON_MIGRATABLE) ||
+            if (getParameters().isInternal() && vm.getMigrationSupport() == MigrationSupport.IMPLICITLY_NON_MIGRATABLE ||
                     vm.getMigrationSupport() == MigrationSupport.PINNED_TO_HOST) {
                 nonMigratableVms.add(vm.getName());
                 return failValidation(EngineMessage.VDS_CANNOT_MAINTENANCE_IT_INCLUDES_NON_MIGRATABLE_VM);
             }
         }
         return true;
+    }
+
+    private void runAnsibleMigrationCerts() {
+        AnsibleCommandConfig commandConfig = new AnsibleCommandConfig()
+                .host(getVds())
+                // /var/log/ovirt-engine/host-deploy/ovirt-host-mgmt-ansible-migration-certs-{hostname}-{correlationid}-{timestamp}.log
+                .logFileDirectory(AnsibleConstants.HOST_DEPLOY_LOG_DIRECTORY)
+                .logFilePrefix("ovirt-host-mgmt-ansible-migration-certs")
+                .logFileName(getVds().getHostName())
+                .playbook(AnsibleConstants.HOST_MIGRATION_CERTS)
+                .playAction(String.format("Setting certs to allow migrations for host %1$s", getVds().getName()));
+
+        AnsibleReturnValue ansibleReturnValue = ansibleExecutor.runCommand(commandConfig);
+        if (ansibleReturnValue.getAnsibleReturnCode() != AnsibleReturnCode.OK) {
+            String warning = String.format("Failed to set the migration certificates on host '%1$s'.", getVds().getHostName());
+            log.warn(warning);
+            setVdsName(getVds().getName());
+            addCustomValue("LogFile", ansibleReturnValue.getLogFile().toString());
+            auditLogDirector.log(this, AuditLogType.VDS_ANSIBLE_HOST_MIGRATION_CERTS_FAILED);
+        }
     }
 
     @Override
@@ -251,10 +289,10 @@ public class MaintenanceVdsCommand<T extends MaintenanceVdsParameters> extends V
                 return AuditLogType.VDS_MAINTENANCE_FAILED;
             }
         } else {
-            if (isSucceededWithReasonGiven()){
+            if (isSucceededWithReasonGiven()) {
                 addCustomValue("Reason", getVds().getMaintenanceReason());
                 return AuditLogType.USER_VDS_MAINTENANCE;
-            } else if(isSucceededWithoutReasonGiven()) {
+            } else if (isSucceededWithoutReasonGiven()) {
                 return AuditLogType.USER_VDS_MAINTENANCE_WITHOUT_REASON;
             } else if (getSucceeded()) {
                 return AuditLogType.USER_VDS_MAINTENANCE_MANUAL_HA;
@@ -290,11 +328,20 @@ public class MaintenanceVdsCommand<T extends MaintenanceVdsParameters> extends V
         return getSucceeded() && !haMaintenanceFailed;
     }
 
-    private boolean isSucceededWithReasonGiven(){
+    private boolean isSucceededWithReasonGiven() {
         return isSucceededWithHA() && StringUtils.isNotEmpty(getVds().getMaintenanceReason());
     }
 
-    private boolean isSucceededWithoutReasonGiven(){
+    private boolean isSucceededWithoutReasonGiven() {
         return isSucceededWithHA() && !haMaintenanceFailed && StringUtils.isEmpty(getVds().getMaintenanceReason());
+    }
+
+    private boolean shouldSetMigrationClientCerts() {
+        return getCluster().getCompatibilityVersion().less(Version.v4_6)
+                && vms.stream().anyMatch(this::getMigrateEncrypted);
+    }
+
+    private boolean getMigrateEncrypted(VM vm) {
+        return Boolean.TRUE.equals(vmHandler.getMigrateEncrypted(vm, getCluster()));
     }
 }

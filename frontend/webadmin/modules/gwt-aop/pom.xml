@@ -4,30 +4,28 @@
   <parent>
     <groupId>org.ovirt.engine.ui</groupId>
     <artifactId>webadmin-modules</artifactId>
-    <version>4.4.0-SNAPSHOT</version>
+    <version>4.5.8-SNAPSHOT</version>
   </parent>
   <artifactId>gwt-aop</artifactId>
   <packaging>jar</packaging>
   <name>AOP tweaks for GWT compiler</name>
   <dependencies>
     <dependency>
-      <groupId>com.google.gwt</groupId>
+      <groupId>org.gwtproject</groupId>
       <artifactId>gwt-user</artifactId>
     </dependency>
     <dependency>
-      <groupId>com.google.gwt</groupId>
+      <groupId>org.gwtproject</groupId>
       <artifactId>gwt-dev</artifactId>
     </dependency>
     <dependency>
       <groupId>org.aspectj</groupId>
       <artifactId>aspectjrt</artifactId>
-      <version>${aspectj.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.aspectj</groupId>
       <artifactId>aspectjweaver</artifactId>
-      <version>${aspectj.version}</version>
       <scope>provided</scope>
     </dependency>
   </dependencies>

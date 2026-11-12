@@ -54,6 +54,8 @@ public enum HelpTag {
 
     assign_tags_vms("assign_tags_vms", HelpTagType.WEBADMIN, "VMs Tab > Assign Tags"), //$NON-NLS-1$ //$NON-NLS-2$
 
+    assign_tags_template("assign_tags_template", HelpTagType.WEBADMIN, "Templates Tab > Assign Tags"), //$NON-NLS-1$ //$NON-NLS-2$
+
     assign_users_and_groups_to_quota("assign_users_and_groups_to_quota", HelpTagType.WEBADMIN, "Quota Tab > Users Sub-Tab > Assign Users/Groups to Quota"), //$NON-NLS-1$ //$NON-NLS-2$
 
     update_ovfs("update_ovfs", HelpTagType.WEBADMIN, "Storage Tab > Update OVFs"), //$NON-NLS-1$ //$NON-NLS-2$
@@ -87,6 +89,8 @@ public enum HelpTag {
     clone_vm_from_snapshot("clone_vm_from_snapshot", HelpTagType.WEBADMIN, "VMs Tab > Snapshots Sub-Tab > Clone VM From Snapshot"), //$NON-NLS-1$ //$NON-NLS-2$
 
     clone_template_from_snapshot("clone_template_from_snapshot", HelpTagType.WEBADMIN, "VMs Tab > Snapshots Sub-Tab > Clone Template From Snapshot"), //$NON-NLS-1$ //$NON-NLS-2$
+
+    clone_snapshot_with_memory("clone_snapshot_with_memory", HelpTagType.WEBADMIN, "VMs Tab > Snapshots Sub-Tab > Clone VM/Template From Snapshot With Memory"), //$NON-NLS-1$ //$NON-NLS-2$
 
     clusters("clusters", HelpTagType.UNKNOWN), //$NON-NLS-1$
 
@@ -127,8 +131,6 @@ public enum HelpTag {
     detach_virtual_machine("detach_virtual_machine", HelpTagType.WEBADMIN, "Pools Tab > Virtual Machine Sub-Tab > Detach Virtual Machine(s)"), //$NON-NLS-1$ //$NON-NLS-2$
 
     directory_groups("directory_groups", HelpTagType.UNKNOWN), //$NON-NLS-1$
-
-    disable_cpu_thread_support("disable_cpu_thread_support", HelpTagType.WEBADMIN, "'Edit Cluster' dialog context: confirmation dialog for disabling the CPU Thread feature (related to CPU pinning):"), //$NON-NLS-1$ //$NON-NLS-2$
 
     cluster_edit_warnings("cluster_edit_warnings", HelpTagType.WEBADMIN, "'Edit Cluster' dialog context: confirmation dialog for edits that may result in non-operational hosts."), //$NON-NLS-1$ //$NON-NLS-2$
 
@@ -628,6 +630,10 @@ public enum HelpTag {
 
     reboot_virtual_machine("reboot_virtual_machine", HelpTagType.WEBADMIN, "VMs main tab -> Reboot confirmation dialog"), //$NON-NLS-1$ //$NON-NLS-2$
 
+    reset_virtual_machine("reset_virtual_machine", HelpTagType.WEBADMIN, "VMs main tab -> Reset confirmation dialog"), //$NON-NLS-1$ //$NON-NLS-2$
+
+    suspend_virtual_machine("suspend_virtual_machine", HelpTagType.WEBADMIN, "VMs main tab -> Suspend confirmation dialog"), //$NON-NLS-1$ //$NON-NLS-2$
+
     remove_disk_snapshot("remove_disk_snapshot", HelpTagType.WEBADMIN, "Storage Tab > Snapshots Sub-Tab > Remove Disk Snapshot(s)"), //$NON-NLS-1$ //$NON-NLS-2$
 
     storage_qos("storage_qos", HelpTagType.UNKNOWN), //$NON-NLS-1$
@@ -674,11 +680,11 @@ public enum HelpTag {
 
     remove_host_device("remove_host_device", HelpTagType.WEBADMIN, "VMs Tab > Host Devices Sub-Tab > Remove Host Device(s)"), //$NON-NLS-1$ //$NON-NLS-2$
 
-    repin_host("repin_host", HelpTagType.WEBADMIN, "VMs Tab > Host Devices Sub-Tab > Pin to another Host"), //$NON-NLS-1$ //$NON-NLS-2$
-
     errata("errata", HelpTagType.WEBADMIN, "System tree > Errata"), //$NON-NLS-1$ //$NON-NLS-2$
 
-    reset_brick("reset_brick", HelpTagType.WEBADMIN, "Volumes Tab > Bricks Sub-Tab > Reset Bricks"); //$NON-NLS-1$ //$NON-NLS-2$
+    reset_brick("reset_brick", HelpTagType.WEBADMIN, "Volumes Tab > Bricks Sub-Tab > Reset Bricks"), //$NON-NLS-1$ //$NON-NLS-2$
+
+    create_iso_domain("create_iso_domain", HelpTagType.WEBADMIN, "Storage Tab > New Domain > Confirm ISO domain type"); //$NON-NLS-1$ //$NON-NLS-2$
 
     public final String name;
 

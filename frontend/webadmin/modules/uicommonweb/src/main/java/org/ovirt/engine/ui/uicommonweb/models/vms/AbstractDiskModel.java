@@ -21,8 +21,6 @@ import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VMStatus;
 import org.ovirt.engine.core.common.businessentities.comparators.NameableComparator;
 import org.ovirt.engine.core.common.businessentities.profiles.DiskProfile;
-import org.ovirt.engine.core.common.businessentities.storage.CinderDisk;
-import org.ovirt.engine.core.common.businessentities.storage.CinderVolumeType;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
 import org.ovirt.engine.core.common.businessentities.storage.DiskBackup;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
@@ -81,7 +79,6 @@ public abstract class AbstractDiskModel extends DiskModel {
     private ListModel<StorageType> storageType;
     private ListModel<VDS> host;
     private ListModel<StoragePool> dataCenter;
-    private ListModel<String> cinderVolumeType;
 
     private SanStorageModelBase sanStorageModelBase;
     private boolean previousIsQuotaAvailable;
@@ -190,14 +187,6 @@ public abstract class AbstractDiskModel extends DiskModel {
         this.dataCenter = dataCenter;
     }
 
-    public ListModel<String> getCinderVolumeType() {
-        return cinderVolumeType;
-    }
-
-    public void setCinderVolumeType(ListModel<String> cinderVolumeType) {
-        this.cinderVolumeType = cinderVolumeType;
-    }
-
     public SanStorageModelBase getSanStorageModelBase() {
         return sanStorageModelBase;
     }
@@ -275,7 +264,7 @@ public abstract class AbstractDiskModel extends DiskModel {
 
         setIsScsiPassthrough(new EntityModel<>());
         getIsScsiPassthrough().setIsAvailable(false);
-        getIsScsiPassthrough().setEntity(true);
+        getIsScsiPassthrough().setEntity(false);
         getIsScsiPassthrough().getEntityChangedEvent().addListener(this);
 
         setIsSgIoUnfiltered(new EntityModel<>());
@@ -283,8 +272,9 @@ public abstract class AbstractDiskModel extends DiskModel {
         getIsSgIoUnfiltered().setEntity(false);
         getIsSgIoUnfiltered().getEntityChangedEvent().addListener(this);
 
+        // Incremental backup flag should be enabled by default (BZ 1915029)
         setIsIncrementalBackup(new EntityModel<>());
-        getIsIncrementalBackup().setEntity(false);
+        getIsIncrementalBackup().setEntity(true);
 
         setDiskStorageType(new EntityModel<>());
         getDiskStorageType().setEntity(DiskStorageType.IMAGE);
@@ -312,9 +302,6 @@ public abstract class AbstractDiskModel extends DiskModel {
 
         setIsVirtioScsiEnabled(new EntityModel<>());
 
-        setCinderVolumeType(new ListModel<>());
-        getCinderVolumeType().setIsAvailable(false);
-
         setIsModelDisabled(new EntityModel<>(false));
     }
 
@@ -329,8 +316,6 @@ public abstract class AbstractDiskModel extends DiskModel {
     protected abstract DiskImage getDiskImage();
 
     protected abstract LunDisk getLunDisk();
-
-    protected abstract CinderDisk getCinderDisk();
 
     protected abstract ManagedBlockStorageDisk getManagedBlockDisk();
 
@@ -387,10 +372,8 @@ public abstract class AbstractDiskModel extends DiskModel {
             Predicate<StorageDomain> domainByDiskType;
             switch (getDiskStorageType().getEntity()) {
                 case IMAGE:
-                    domainByDiskType = d -> d.getStorageDomainType().isDataDomain();
-                    break;
-                case CINDER:
-                    domainByDiskType = d -> d.getStorageType() == StorageType.CINDER;
+                    domainByDiskType = d -> d.getStorageDomainType().isDataDomain()
+                        || d.getStorageDomainType().isKubevirtDomain();
                     break;
                 case MANAGED_BLOCK_STORAGE:
                     domainByDiskType = d -> d.getStorageType().isManagedBlockStorage();
@@ -413,10 +396,6 @@ public abstract class AbstractDiskModel extends DiskModel {
                 switch (getDiskStorageType().getEntity()) {
                     case IMAGE:
                         setMessage(constants.noActiveStorageDomainsInDC());
-                        getIsModelDisabled().setEntity(true);
-                        break;
-                    case CINDER:
-                        setMessage(constants.noCinderStorageDomainsInDC());
                         getIsModelDisabled().setEntity(true);
                         break;
                     case MANAGED_BLOCK_STORAGE:
@@ -570,34 +549,19 @@ public abstract class AbstractDiskModel extends DiskModel {
 
     public void updateInterfaceList(final Version clusterVersion) {
         AsyncDataProvider.getInstance().getDiskInterfaceList(getVm().getOs(), clusterVersion,
-                    getVm().getEffectiveBiosType().getChipsetType(), new AsyncQuery<>(
-                diskInterfaces -> {
-                    if (Boolean.FALSE.equals(getIsVirtioScsiEnabled().getEntity())) {
-                        diskInterfaces.remove(DiskInterface.VirtIO_SCSI);
-                    }
+                    getVm().getBiosType().getChipsetType(), new AsyncQuery<>(
+                        diskInterfaces -> {
+                            if (Boolean.FALSE.equals(getIsVirtioScsiEnabled().getEntity())) {
+                                diskInterfaces.remove(DiskInterface.VirtIO_SCSI);
+                            }
 
-                    setInterfaces(diskInterfaces);
-                }));
+                            setInterfaces(diskInterfaces);
+                        }));
     }
 
     private void setInterfaces(List<DiskInterface> diskInterfaces) {
         getDiskInterface().setItems(diskInterfaces);
         setDefaultInterface();
-    }
-
-    protected void updateCinderVolumeTypes() {
-        StorageDomain storageDomain = getStorageDomain().getSelectedItem();
-        if (storageDomain == null || storageDomain.getStorageType() != StorageType.CINDER) {
-            return;
-        }
-
-        AsyncDataProvider.getInstance().getCinderVolumeTypesList(new AsyncQuery<>(cinderVolumeTypes -> {
-            List<String> volumeTypesNames = new ArrayList<>();
-            for (CinderVolumeType cinderVolumeType : cinderVolumeTypes) {
-                volumeTypesNames.add(cinderVolumeType.getName());
-            }
-            getCinderVolumeType().setItems(volumeTypesNames);
-        }), storageDomain.getId());
     }
 
     private void updateDiskProfiles(StoragePool selectedItem) {
@@ -684,21 +648,18 @@ public abstract class AbstractDiskModel extends DiskModel {
     }
 
     private boolean isHostAvailable(VDS host) {
-        boolean isStatusUp = host.getStatus() == VDSStatus.Up;
-
-        return isStatusUp;
+        return host.getStatus() == VDSStatus.Up && host.getClusterSupportsVirtService();
     }
 
     protected void diskStorageType_EntityChanged() {
         boolean isInVm = getVm() != null;
         boolean isDiskImage = getDiskStorageType().getEntity() == DiskStorageType.IMAGE;
         boolean isLunDisk = getDiskStorageType().getEntity() == DiskStorageType.LUN;
-        boolean isCinderDisk = getDiskStorageType().getEntity() == DiskStorageType.CINDER;
         boolean isManagedBlockDisk = getDiskStorageType().getEntity() == DiskStorageType.MANAGED_BLOCK_STORAGE;
 
-        getSize().setIsAvailable(isDiskImage || isCinderDisk || isManagedBlockDisk);
-        getSizeExtend().setIsAvailable((isDiskImage || isCinderDisk || isManagedBlockDisk) && !getIsNew());
-        getStorageDomain().setIsAvailable(isDiskImage || isCinderDisk || isManagedBlockDisk);
+        getSize().setIsAvailable(isDiskImage || isManagedBlockDisk);
+        getSizeExtend().setIsAvailable((isDiskImage || isManagedBlockDisk) && !getIsNew());
+        getStorageDomain().setIsAvailable(isDiskImage || isManagedBlockDisk);
         getVolumeType().setIsAvailable(isDiskImage);
         getIsWipeAfterDelete().setIsAvailable(isDiskImage);
         updatePassDiscardChangeability();
@@ -707,7 +668,6 @@ public abstract class AbstractDiskModel extends DiskModel {
         getStorageType().setIsAvailable(isLunDisk);
         getDataCenter().setIsAvailable(!isInVm);
         getDiskProfile().setIsAvailable(isDiskImage);
-        getCinderVolumeType().setIsAvailable(isCinderDisk);
         getIsIncrementalBackup().setIsAvailable(isDiskImage);
 
         if (!isDiskImage) {
@@ -756,13 +716,14 @@ public abstract class AbstractDiskModel extends DiskModel {
             DiskInterface selectedInterface = getDiskInterface().getSelectedItem();
             DiskStorageType selectedDiskStorageType = getDiskStorageType().getEntity();
             boolean isApplicableInterface = selectedInterface == DiskInterface.VirtIO_SCSI ||
+                    selectedInterface == DiskInterface.VirtIO ||
                     selectedInterface == DiskInterface.IDE ||
                     selectedInterface == DiskInterface.SATA;
             boolean isApplicableDiskStorageType = selectedDiskStorageType == DiskStorageType.LUN ||
                     selectedDiskStorageType == DiskStorageType.IMAGE;
             boolean isApplicableStorageType = selectedDiskStorageType == DiskStorageType.LUN ||
-                    (getStorageDomain().getSelectedItem() != null &&
-                            getStorageDomain().getSelectedItem().getStorageType().isInternal());
+                    getStorageDomain().getSelectedItem() != null &&
+                            getStorageDomain().getSelectedItem().getStorageType().isInternal();
 
             if (isApplicableInterface && isApplicableDiskStorageType && isApplicableStorageType) {
                 getPassDiscard().setIsAvailable(true);
@@ -960,7 +921,6 @@ public abstract class AbstractDiskModel extends DiskModel {
 
         switch (getDiskStorageType().getEntity()) {
             case IMAGE:
-            case CINDER:
             case MANAGED_BLOCK_STORAGE:
                 updateStorageDomains(datacenter);
                 break;
@@ -985,7 +945,6 @@ public abstract class AbstractDiskModel extends DiskModel {
         }
         updateQuota(getDataCenter().getSelectedItem());
         updateDiskProfiles(getDataCenter().getSelectedItem());
-        updateCinderVolumeTypes();
         updatePassDiscardAvailability();
         updatePassDiscardChangeability();
         updateWipeAfterDeleteChangeability();
@@ -994,8 +953,8 @@ public abstract class AbstractDiskModel extends DiskModel {
 
     public boolean validate() {
         getDescription().validateEntity(new IValidation[] {
-                new SpecialAsciiI18NOrNoneValidation(),
-                new LengthValidation(BusinessEntitiesDefinitions.DISK_DESCRIPTION_MAX_SIZE)});
+            new SpecialAsciiI18NOrNoneValidation(),
+            new LengthValidation(BusinessEntitiesDefinitions.DISK_DESCRIPTION_MAX_SIZE)});
 
         getAlias().validateEntity(getDiskAliasValidations());
 
@@ -1004,12 +963,8 @@ public abstract class AbstractDiskModel extends DiskModel {
             getQuota().validateSelectedItem(new IValidation[] { new NotEmptyQuotaValidation() });
         }
 
-        if (getCinderVolumeType().getIsAvailable()) {
-            getCinderVolumeType().validateSelectedItem(new IValidation[]{new NotEmptyValidation()});
-        }
-
         return getAlias().getIsValid() && getDescription().getIsValid() && getQuota().getIsValid()
-                && getDiskInterface().getIsValid() && getCinderVolumeType().getIsValid();
+                && getDiskInterface().getIsValid();
     }
 
     private IValidation[] getDiskAliasValidations() {
@@ -1096,12 +1051,6 @@ public abstract class AbstractDiskModel extends DiskModel {
                     }
                 }
                 setDisk(lunDisk);
-                break;
-            case CINDER:
-                CinderDisk cinderDisk = getCinderDisk();
-                updateQuota(cinderDisk);
-                updateDiskSize(cinderDisk);
-                setDisk(cinderDisk);
                 break;
             case IMAGE:
                 DiskImage diskImage = getDiskImage();
@@ -1203,9 +1152,7 @@ public abstract class AbstractDiskModel extends DiskModel {
     protected Guid getStorageDomainId() {
         switch (getDisk().getDiskStorageType()) {
             case IMAGE:
-                return  getDiskImage().getStorageIds().get(0);
-            case CINDER:
-                return  getCinderDisk().getStorageIds().get(0);
+                return getDiskImage().getStorageIds().get(0);
             case MANAGED_BLOCK_STORAGE:
                 return getManagedBlockDisk().getStorageIds().get(0);
         }

@@ -13,6 +13,7 @@ import org.ovirt.engine.api.model.DataCenter;
 import org.ovirt.engine.api.model.Display;
 import org.ovirt.engine.api.model.ErrorHandling;
 import org.ovirt.engine.api.model.ExternalProvider;
+import org.ovirt.engine.api.model.FipsMode;
 import org.ovirt.engine.api.model.Ksm;
 import org.ovirt.engine.api.model.MacPool;
 import org.ovirt.engine.api.model.MemoryOverCommit;
@@ -94,10 +95,10 @@ public class ClusterMapper {
         if (model.isSetErrorHandling() && model.getErrorHandling().isSetOnError()) {
             entity.setMigrateOnError(map(model.getErrorHandling().getOnError(), null));
         }
-        if(model.isSetVirtService()) {
+        if (model.isSetVirtService()) {
             entity.setVirtService(model.isVirtService());
         }
-        if(model.isSetGlusterService()) {
+        if (model.isSetGlusterService()) {
             entity.setGlusterService(model.isGlusterService());
         }
         if (model.isSetThreadsAsCores()) {
@@ -106,7 +107,7 @@ public class ClusterMapper {
         if (model.isSetTunnelMigration()) {
             entity.setTunnelMigration(model.isTunnelMigration());
         }
-        if (model.isSetTrustedService()){
+        if (model.isSetTrustedService()) {
             entity.setTrustedService(model.isTrustedService());
         }
         if (model.isSetHaReservation()) {
@@ -180,6 +181,13 @@ public class ClusterMapper {
                 entity.setDefaultNetworkProviderId(providerId == null ? null : GuidUtils.asGuid(providerId));
             }
         }
+
+        if (model.isSetVncEncryption()) {
+            entity.setVncEncryptionEnabled(model.isVncEncryption());
+        }
+        if (model.isSetFipsMode() && model.getFipsMode() != null) {
+            entity.setFipsMode(map(model.getFipsMode(), null));
+        }
         return entity;
     }
 
@@ -213,7 +221,7 @@ public class ClusterMapper {
         if (entity.getCompatibilityVersion() != null) {
             model.setVersion(VersionMapper.map(entity.getCompatibilityVersion()));
         }
-        model.setMemoryPolicy(map(entity, (MemoryPolicy)null));
+        model.setMemoryPolicy(map(entity, (MemoryPolicy) null));
         Guid clusterPolicyId = entity.getClusterPolicyId();
         if (clusterPolicyId != null) {
             SchedulingPolicy schedulingPolicy = model.getSchedulingPolicy();
@@ -223,7 +231,7 @@ public class ClusterMapper {
             }
             schedulingPolicy.setId(clusterPolicyId.toString());
         }
-        model.setErrorHandling(map(entity.getMigrateOnError(), (ErrorHandling)null));
+        model.setErrorHandling(map(entity.getMigrateOnError(), (ErrorHandling) null));
         model.setVirtService(entity.supportsVirtService());
         model.setGlusterService(entity.supportsGlusterService());
         model.setThreadsAsCores(entity.getCountThreadsAsCores());
@@ -231,6 +239,7 @@ public class ClusterMapper {
         model.setTrustedService(entity.supportsTrustedService());
         model.setHaReservation(entity.supportsHaReservation());
         model.setBallooningEnabled(entity.isEnableBallooning());
+        model.setVncEncryption(entity.isVncEncryptionEnabled());
         Ksm ksm = model.getKsm();
         if (ksm == null) {
             ksm = new Ksm();
@@ -275,19 +284,30 @@ public class ClusterMapper {
         if (entity.getGlusterTunedProfile() != null && !entity.getGlusterTunedProfile().isEmpty()) {
             model.setGlusterTunedProfile(entity.getGlusterTunedProfile());
         }
+        model.setFipsMode(map(entity.getFipsMode(), null));
+
+        if (entity.isUpgradeRunning()) {
+            model.setUpgradeInProgress(true);
+            model.setUpgradePercentComplete(entity.getUpgradePercentComplete());
+        } else {
+            model.setUpgradeInProgress(false);
+            model.setUpgradePercentComplete(0);
+        }
+        model.setUpgradeCorrelationId(entity.getUpgradeCorrelationId());
+
         return model;
     }
 
     @Mapping(from = MemoryPolicy.class, to = Cluster.class)
     public static Cluster map(MemoryPolicy model, Cluster template) {
         Cluster entity = template != null ? template : new Cluster();
-        if (model.isSetOverCommit() && model.getOverCommit().getPercent()!=null) {
+        if (model.isSetOverCommit() && model.getOverCommit().getPercent() != null) {
             entity.setMaxVdsMemoryOverCommit(model.getOverCommit().getPercent());
         }
         if (model.isSetTransparentHugepages() &&
             model.getTransparentHugepages().isSetEnabled()) {
             entity.setTransparentHugepages(model.getTransparentHugepages().isEnabled());
-        } else if (template != null && greaterOrEqual(template.getCompatibilityVersion(), min_thp_version)){
+        } else if (template != null && greaterOrEqual(template.getCompatibilityVersion(), min_thp_version)) {
             entity.setTransparentHugepages(true);
         }
         return entity;
@@ -314,49 +334,73 @@ public class ClusterMapper {
 
     @Mapping(from = MigrateOnError.class, to = MigrateOnErrorOptions.class)
     public static MigrateOnErrorOptions map(MigrateOnError model, MigrateOnErrorOptions template) {
-        if (model==null) {
+        if (model == null) {
             return null;
         }
         switch (model) {
-        case MIGRATE:
-            return MigrateOnErrorOptions.YES;
-        case DO_NOT_MIGRATE:
-            return MigrateOnErrorOptions.NO;
-        case MIGRATE_HIGHLY_AVAILABLE:
-            return MigrateOnErrorOptions.HA_ONLY;
-        default:
-            assert false : "unknown migrate-on-error value: " + model.toString();
-            return null;
+            case MIGRATE:
+                return MigrateOnErrorOptions.YES;
+            case DO_NOT_MIGRATE:
+                return MigrateOnErrorOptions.NO;
+            case MIGRATE_HIGHLY_AVAILABLE:
+                return MigrateOnErrorOptions.HA_ONLY;
+            default:
+                assert false : "unknown migrate-on-error value: " + model.toString();
+                return null;
         }
     }
 
     @Mapping(from = MigrateOnErrorOptions.class, to = MigrateOnError.class)
     public static MigrateOnError map(MigrateOnErrorOptions model, MigrateOnError template) {
-        if (model==null) {
+        if (model == null) {
             return null;
         }
         switch (model) {
-        case YES:
-            return MigrateOnError.MIGRATE;
-        case NO:
-            return MigrateOnError.DO_NOT_MIGRATE;
-        case HA_ONLY:
-            return MigrateOnError.MIGRATE_HIGHLY_AVAILABLE;
-        default:
-            assert false : "unknown migrate-on-error value: " + model.toString();
-            return null;
+            case YES:
+                return MigrateOnError.MIGRATE;
+            case NO:
+                return MigrateOnError.DO_NOT_MIGRATE;
+            case HA_ONLY:
+                return MigrateOnError.MIGRATE_HIGHLY_AVAILABLE;
+            default:
+                assert false : "unknown migrate-on-error value: " + model.toString();
+                return null;
         }
     }
 
     @Mapping(from = MigrateOnErrorOptions.class, to = ErrorHandling.class)
     private static ErrorHandling map(MigrateOnErrorOptions migrateOnError, ErrorHandling template) {
-        MigrateOnError value = map(migrateOnError, (MigrateOnError)null);
-        if (value==null) {
+        MigrateOnError value = map(migrateOnError, (MigrateOnError) null);
+        if (value == null) {
             return null;
         } else {
-            template = template==null ? new ErrorHandling() : template;
+            template = template == null ? new ErrorHandling() : template;
             template.setOnError(value);
             return template;
+        }
+    }
+
+    @Mapping(from = org.ovirt.engine.core.common.businessentities.FipsMode.class, to = FipsMode.class)
+    public static FipsMode map(org.ovirt.engine.core.common.businessentities.FipsMode model, FipsMode template) {
+        switch (model) {
+            case DISABLED:
+                return FipsMode.DISABLED;
+            case ENABLED:
+                return FipsMode.ENABLED;
+            default:
+                return FipsMode.UNDEFINED;
+        }
+    }
+
+    @Mapping(from = FipsMode.class, to = org.ovirt.engine.core.common.businessentities.FipsMode.class)
+    public static org.ovirt.engine.core.common.businessentities.FipsMode map(FipsMode model, org.ovirt.engine.core.common.businessentities.FipsMode template) {
+        switch (model) {
+            case DISABLED:
+                return org.ovirt.engine.core.common.businessentities.FipsMode.DISABLED;
+            case ENABLED:
+                return org.ovirt.engine.core.common.businessentities.FipsMode.ENABLED;
+            default:
+                return org.ovirt.engine.core.common.businessentities.FipsMode.UNDEFINED;
         }
     }
 }

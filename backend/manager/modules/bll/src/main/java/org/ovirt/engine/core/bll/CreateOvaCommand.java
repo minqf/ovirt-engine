@@ -1,35 +1,45 @@
 package org.ovirt.engine.core.bll;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import javax.enterprise.inject.Instance;
+import javax.enterprise.inject.Typed;
 import javax.inject.Inject;
 
+import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.bll.context.CommandContext;
+import org.ovirt.engine.core.bll.job.ExecutionHandler;
+import org.ovirt.engine.core.bll.storage.disk.DiskHandler;
 import org.ovirt.engine.core.bll.storage.disk.image.ImagesHandler;
+import org.ovirt.engine.core.bll.tasks.interfaces.CommandCallback;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
 import org.ovirt.engine.core.bll.utils.VmDeviceUtils;
+import org.ovirt.engine.core.common.action.ActionParametersBase;
+import org.ovirt.engine.core.common.action.ActionReturnValue;
+import org.ovirt.engine.core.common.action.ActionType;
+import org.ovirt.engine.core.common.action.AnsibleCommandParameters;
+import org.ovirt.engine.core.common.action.AnsibleImageMeasureCommandParameters;
 import org.ovirt.engine.core.common.action.CreateOvaParameters;
+import org.ovirt.engine.core.common.action.VmExternalDataKind;
 import org.ovirt.engine.core.common.businessentities.VM;
+import org.ovirt.engine.core.common.businessentities.VmEntityType;
 import org.ovirt.engine.core.common.businessentities.VmTemplate;
 import org.ovirt.engine.core.common.businessentities.network.VmNetworkInterface;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.FullEntityOvfData;
 import org.ovirt.engine.core.common.errors.EngineError;
 import org.ovirt.engine.core.common.errors.EngineException;
-import org.ovirt.engine.core.common.utils.ansible.AnsibleCommandConfig;
-import org.ovirt.engine.core.common.utils.ansible.AnsibleConstants;
-import org.ovirt.engine.core.common.utils.ansible.AnsibleExecutor;
-import org.ovirt.engine.core.common.utils.ansible.AnsibleReturnCode;
-import org.ovirt.engine.core.common.utils.ansible.AnsibleReturnValue;
-import org.ovirt.engine.core.common.utils.ansible.AnsibleRunnerHTTPClient;
+import org.ovirt.engine.core.common.utils.Pair;
+import org.ovirt.engine.core.common.utils.SecretValue;
 import org.ovirt.engine.core.common.vdscommands.VDSReturnValue;
 import org.ovirt.engine.core.compat.Guid;
+import org.ovirt.engine.core.compat.Version;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dao.VmDao;
 import org.ovirt.engine.core.dao.VmTemplateDao;
@@ -37,20 +47,20 @@ import org.ovirt.engine.core.dao.network.VmNetworkInterfaceDao;
 import org.ovirt.engine.core.utils.ovf.OvfManager;
 import org.ovirt.engine.core.vdsbroker.vdsbroker.PrepareImageReturn;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 @NonTransactiveCommandAttribute
 @InternalCommandAttribute
-public class CreateOvaCommand<T extends CreateOvaParameters> extends CommandBase<T> {
+public class CreateOvaCommand<T extends CreateOvaParameters> extends CommandBase<T> implements SerialChildExecutingCommand {
 
     @Inject
     private OvfManager ovfManager;
     @Inject
-    private AnsibleExecutor ansibleExecutor;
-    @Inject
-    private AnsibleRunnerHTTPClient runnerClient;
-    @Inject
     protected AuditLogDirector auditLogDirector;
     @Inject
     private VmHandler vmHandler;
+    @Inject
+    private DiskHandler diskHandler;
     @Inject
     private VmDeviceUtils vmDeviceUtils;
     @Inject
@@ -61,9 +71,11 @@ public class CreateOvaCommand<T extends CreateOvaParameters> extends CommandBase
     private VmDao vmDao;
     @Inject
     private VmTemplateDao vmTemplateDao;
+    @Inject
+    @Typed(SerialChildCommandsExecutionCallback.class)
+    private Instance<SerialChildCommandsExecutionCallback> callbackProvider;
 
     public static final String CREATE_OVA_LOG_DIRECTORY = "ova";
-    public static final Pattern DISK_TARGET_SIZE_PATTERN = Pattern.compile("required size: ([0-9]+).*", Pattern.DOTALL);
     public static final int TAR_BLOCK_SIZE = 512;
 
     public CreateOvaCommand(T parameters, CommandContext cmdContext) {
@@ -80,37 +92,39 @@ public class CreateOvaCommand<T extends CreateOvaParameters> extends CommandBase
     protected void executeCommand() {
         List<DiskImage> disks = getParameters().getDisks();
         Map<Guid, String> diskIdToPath = prepareImages(disks);
+        getParameters().setDiskIdToPath(diskIdToPath);
         fillDiskApparentSize(disks, diskIdToPath);
-        String ovf = createOvf(disks);
-        log.debug("Exporting OVF: {}", ovf);
-        boolean succeeded = runAnsiblePackOvaPlaybook(ovf, disks, diskIdToPath);
-        teardownImages(disks);
-        setSucceeded(succeeded);
+        setSucceeded(true);
     }
 
-    private String createOvf(Collection<DiskImage> disks) {
-        switch(getParameters().getEntityType()) {
-        case TEMPLATE:
-            VmTemplate template = vmTemplateDao.get(getParameters().getEntityId());
-            vmHandler.updateVmInitFromDB(template, true);
-            vmDeviceUtils.setVmDevices(template);
-            List<VmNetworkInterface> interfaces = vmNetworkInterfaceDao.getAllForTemplate(template.getId());
-            template.setInterfaces(interfaces);
-            FullEntityOvfData fullEntityOvfData = new FullEntityOvfData(template);
-            fullEntityOvfData.setDiskImages(new ArrayList<>(disks));
-            fullEntityOvfData.setInterfaces(interfaces);
-            return ovfManager.exportOva(template, fullEntityOvfData, template.getCompatibilityVersion());
+    private Pair<String, Version> createOvf(Collection<DiskImage> disks) {
+        switch (getParameters().getEntityType()) {
+            case TEMPLATE:
+                VmTemplate template = vmTemplateDao.get(getParameters().getEntityId());
+                vmHandler.updateVmInitFromDB(template, true);
+                vmDeviceUtils.setVmDevices(template);
+                template.setVmExternalData(getVmExternalData());
+                List<VmNetworkInterface> interfaces = vmNetworkInterfaceDao.getAllForTemplate(template.getId());
+                template.setInterfaces(interfaces);
+                FullEntityOvfData fullEntityOvfData = new FullEntityOvfData(template);
+                fullEntityOvfData.setDiskImages(new ArrayList<>(disks));
+                fullEntityOvfData.setInterfaces(interfaces);
+                return new Pair<>(ovfManager.exportOva(template, fullEntityOvfData, template.getCompatibilityVersion()),
+                        template.getCompatibilityVersion());
 
-        default:
-            VM vm = vmDao.get(getParameters().getEntityId());
-            vmHandler.updateVmInitFromDB(vm.getStaticData(), true);
-            interfaces = vmNetworkInterfaceDao.getAllForVm(vm.getId());
-            vm.setInterfaces(interfaces);
-            vmDeviceUtils.setVmDevices(vm.getStaticData());
-            fullEntityOvfData = new FullEntityOvfData(vm);
-            fullEntityOvfData.setDiskImages(new ArrayList<>(disks));
-            fullEntityOvfData.setInterfaces(interfaces);
-            return ovfManager.exportOva(vm, fullEntityOvfData, vm.getCompatibilityVersion());
+            default:
+                VM vm = vmDao.get(getParameters().getEntityId());
+                vmHandler.updateVmInitFromDB(vm.getStaticData(), true);
+                vmHandler.updateNumaNodesFromDb(vm);
+                vm.setVmExternalData(getVmExternalData());
+                interfaces = vmNetworkInterfaceDao.getAllForVm(vm.getId());
+                vm.setInterfaces(interfaces);
+                vmDeviceUtils.setVmDevices(vm.getStaticData());
+                fullEntityOvfData = new FullEntityOvfData(vm);
+                fullEntityOvfData.setDiskImages(new ArrayList<>(disks));
+                fullEntityOvfData.setInterfaces(interfaces);
+                return new Pair<>(ovfManager.exportOva(vm, fullEntityOvfData, vm.getCompatibilityVersion()),
+                        vm.getCompatibilityVersion());
         }
     }
 
@@ -144,100 +158,185 @@ public class CreateOvaCommand<T extends CreateOvaParameters> extends CommandBase
                 getParameters().getProxyHostId());
     }
 
-    private void fillDiskApparentSize(Collection<DiskImage> disks, Map<Guid, String> diskIdToPath) {
-        disks.forEach(destination -> {
-            String output = runAnsibleImageMeasurePlaybook(diskIdToPath.get(destination.getId()));
-            Matcher matcher = DISK_TARGET_SIZE_PATTERN.matcher(output);
-            if (!matcher.find()) {
-                log.error("failed to measure image, output: {}", output);
-                throw new EngineException(EngineError.GeneralException, "Failed to measure image");
-            }
-            destination.setActualSizeInBytes(Long.parseLong(matcher.group(1)));
-        });
+    private void fillDiskApparentSize(List<DiskImage> disks, Map<Guid, String> diskIdToPath) {
+        disks.forEach(disk -> runAnsibleImageMeasurePlaybook(diskIdToPath.get(disk.getId()), disk.getId()));
     }
 
-    private String runAnsibleImageMeasurePlaybook(String path) {
-        AnsibleCommandConfig command = new AnsibleCommandConfig()
-            .hosts(getVds())
-            .variable("image_path", path)
-            .playAction("Image measure")
-            // /var/log/ovirt-engine/ova/ovirt-export-ova-ansible-{hostname}-{correlationid}-{timestamp}.log
-            .logFileDirectory(CREATE_OVA_LOG_DIRECTORY)
-            .logFilePrefix("ovirt-image-measure-ansible")
-            .logFileName(getVds().getHostName())
-            .logFileSuffix(getCorrelationId())
-            .playbook(AnsibleConstants.IMAGE_MEASURE_PLAYBOOK);
-
-        StringBuilder stdout = new StringBuilder();
-        AnsibleReturnValue ansibleReturnValue = ansibleExecutor.runCommand(
-            command,
-            log,
-            (eventName, eventUrl) -> stdout.append(runnerClient.getCommandStdout(eventUrl))
-        );
-
-        boolean succeeded = ansibleReturnValue.getAnsibleReturnCode() == AnsibleReturnCode.OK;
-        if (!succeeded) {
-            log.error(
-                "Failed to measure image: {}. Please check logs for more details: {}",
-                ansibleReturnValue.getStderr(),
-                ansibleReturnValue.getLogFile()
-            );
+    private void runAnsibleImageMeasurePlaybook(String path, Guid diskId) {
+        ActionReturnValue actionReturnValue = runInternalAction(ActionType.AnsibleImageMeasure,
+                createImageMeasureParameters(path, diskId),
+                ExecutionHandler.createDefaultContextForTasks(getContext()));
+        if (!actionReturnValue.getSucceeded()) {
+            log.error("Failed to start Ansible Image Measure playbook");
             throw new EngineException(EngineError.GeneralException, "Failed to measure image");
         }
-
-        return stdout.toString();
     }
 
-    private boolean runAnsiblePackOvaPlaybook(String ovf, Collection<DiskImage> disks, Map<Guid, String> diskIdToPath) {
-        String encodedOvf = genOvfParameter(ovf);
-        AnsibleCommandConfig commandConfig = new AnsibleCommandConfig()
-                .hosts(getVds())
-                .variable("target_directory", getParameters().getDirectory())
-                .variable("entity_type", getParameters().getEntityType().name().toLowerCase())
-                .variable("ova_size", String.valueOf(calcOvaSize(disks, genOvfParameterEncodedSize(ovf))))
-                .variable("ova_name", getParameters().getName())
-                .variable("ovirt_ova_pack_ovf", encodedOvf)
-                .variable("ovirt_ova_pack_disks", genDiskParameters(disks, diskIdToPath))
-                // /var/log/ovirt-engine/ova/ovirt-export-ova-ansible-{hostname}-{correlationid}-{timestamp}.log
-                .logFileDirectory(CREATE_OVA_LOG_DIRECTORY)
-                .logFilePrefix("ovirt-export-ova-ansible")
-                .logFileName(getVds().getHostName())
-                .logFileSuffix(getCorrelationId())
-                .playAction("Pack OVA")
-                .playbook(AnsibleConstants.EXPORT_OVA_PLAYBOOK);
+    private AnsibleCommandParameters createImageMeasureParameters(String path, Guid diskId) {
+        AnsibleImageMeasureCommandParameters params = new AnsibleImageMeasureCommandParameters();
+        params.setHostId(getVdsId());
+        params.setDiskId(diskId);
+        params.setDisks(getParameters().getDisks());
+        params.setPlayAction("Image measure");
+        params.setParentCommand(getActionType());
+        params.setParentParameters(getParameters());
+        params.setEndProcedure(ActionParametersBase.EndProcedure.COMMAND_MANAGED);
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("image_path", path);
+        params.setVariables(vars);
+        return params;
+    }
 
-        AnsibleReturnValue ansibleReturnCode = ansibleExecutor.runCommand(commandConfig);
-        boolean succeeded = ansibleReturnCode.getAnsibleReturnCode() == AnsibleReturnCode.OK;
-        if (!succeeded) {
-            log.error("Failed to create OVA. Please check logs for more details: {}", ansibleReturnCode.getLogFile());
+    private AnsibleCommandParameters createPackOvaParameters(String ovf,
+            Collection<DiskImage> disks,
+            Map<Guid, String> diskIdToPath,
+            SecretValue<String> tpmData,
+            SecretValue<String> nvramData,
+            Version compatibilityVersion) {
+        String encodedOvf = encode(ovf);
+        AnsibleCommandParameters params = new AnsibleCommandParameters();
+        params.setHostId(getVdsId());
+        params.setPlayAction("Pack OVA");
+        params.setParentCommand(getActionType());
+        params.setParentParameters(getParameters());
+        params.setEndProcedure(ActionParametersBase.EndProcedure.COMMAND_MANAGED);
+        Map<String, Object> vars = new HashMap<>();
+        vars.put("target_directory", getParameters().getDirectory());
+        vars.put("entity_type", getParameters().getEntityType().name().toLowerCase());
+        vars.put("ova_size", String.valueOf(calcOvaSize(disks, tpmData, nvramData, encodedOvf)));
+        vars.put("ova_name", getParameters().getName());
+        vars.put("ovirt_ova_pack_ovf", encodedOvf);
+        vars.put("ovirt_ova_pack_disks", genDiskParameters(disks, diskIdToPath));
+        if (!SecretValue.isNull(tpmData) && !tpmData.getValue().isEmpty()) {
+            vars.put("ovirt_ova_pack_tpm", tpmData.getValue());
         }
-
-        return succeeded;
+        if (!SecretValue.isNull(nvramData) && !nvramData.getValue().isEmpty()) {
+            vars.put("ovirt_ova_pack_nvram", nvramData.getValue());
+        }
+        vars.put("ovirt_ova_pack_padding", Boolean.toString(compatibilityVersion.greater(Version.v4_6)));
+        params.setVariables(vars);
+        return params;
     }
 
-    private long calcOvaSize(Collection<DiskImage> disks, String ovf) {
+    private void packOva() {
+        List<DiskImage> disks = getParameters().getDisks();
+        disks.forEach(this::updateDiskVmElementFromDb);
+        Pair<String, Version> ovf = createOvf(disks);
+        log.debug("Exporting OVF: {}", ovf.getFirst());
+        ActionReturnValue actionReturnValue = runInternalAction(ActionType.AnsiblePackOva,
+                createPackOvaParameters(ovf.getFirst(), disks, getParameters().getDiskIdToPath(), getTpmData(),
+                        getNvramData(), ovf.getSecond()),
+                ExecutionHandler.createDefaultContextForTasks(getContext()));
+        if (!actionReturnValue.getSucceeded()) {
+            log.error("Failed to start Ansible Pack OVA playbook");
+            throw new EngineException(EngineError.GeneralException, "Failed to pack ova");
+        }
+        setSucceeded(true);
+    }
+
+    private SecretValue<String> getTpmData() {
+        var tpmDataAndHash = vmDao.getTpmData(getParameters().getEntityId());
+        return tpmDataAndHash != null ? tpmDataAndHash.getFirst() : null;
+    }
+
+    private SecretValue<String> getNvramData() {
+        var nvramDataAndHash = vmDao.getNvramData(getParameters().getEntityId());
+        return nvramDataAndHash != null ? nvramDataAndHash.getFirst() : null;
+    }
+
+    private Map<VmExternalDataKind, SecretValue<String>> getVmExternalData() {
+        Map<VmExternalDataKind, SecretValue<String>> externalData = new HashMap<>();
+        SecretValue<String> tpmData = getTpmData();
+        if (tpmData != null && !StringUtils.isEmpty(tpmData.getValue())) {
+            externalData.put(VmExternalDataKind.TPM, tpmData);
+        }
+        SecretValue<String> nvramData = getNvramData();
+        if (nvramData != null && !StringUtils.isEmpty(nvramData.getValue())) {
+            externalData.put(VmExternalDataKind.NVRAM, nvramData);
+        }
+        return externalData;
+    }
+
+    private void updateDiskVmElementFromDb(DiskImage diskImage) {
+        diskHandler.updateDiskVmElementFromDb(diskImage, getParameters().getEntityId());
+    }
+
+    private long calcOvaSize(Collection<DiskImage> disks, SecretValue<String> tpmData, SecretValue<String> nvramData,
+            String ovf) {
         // 1 block for the OVF, 1 block per-disk and 2 null-blocks at the end
-        return TAR_BLOCK_SIZE * (1 + disks.size() + 2)
-                + (int) Math.ceil(ovf.length() / (TAR_BLOCK_SIZE * 1.0)) * TAR_BLOCK_SIZE
+        return TAR_BLOCK_SIZE * (1 + disks.size() + 2) + blockAlignedSize(ovf.length())
+                + (SecretValue.isNull(tpmData) ? 0 : blockAlignedSize(tpmData.getValue().length()))
+                + (SecretValue.isNull(nvramData) ? 0 : blockAlignedSize(nvramData.getValue().length()))
                 + disks.stream().mapToLong(DiskImage::getActualSizeInBytes).sum();
     }
 
-    private String genOvfParameter(String ovf) {
-        // replace " characters with \\" inside the OVF another \ is added in AnsibleRunnerHTTPClient
-        return ovf.replaceAll("\"", "\\\\\\\\\\\"");
+    private long blockAlignedSize(long size) {
+        return (long) Math.ceil(size / (TAR_BLOCK_SIZE * 1.0)) * TAR_BLOCK_SIZE;
     }
 
-    private String genOvfParameterEncodedSize(String ovf) {
-        // replace " characters with \\\" inside the OVF
-        return ovf.replaceAll("\"", "\\\\\\\\\\\\\"");
+    private String encode(String str) {
+        // replace " characters with \"
+        return str.replaceAll("\"", "\\\\\"");
     }
 
     private String genDiskParameters(Collection<DiskImage> disks, Map<Guid, String> diskIdToPath) {
-        return disks.stream()
-                .map(disk -> String.format("%s::%s",
-                        diskIdToPath.get(disk.getId()),
-                        String.valueOf(disk.getActualSizeInBytes())))
-                .collect(Collectors.joining("+"));
+        var diskPathToSize = disks.stream()
+                .collect(Collectors.toMap(
+                        disk -> diskIdToPath.get(disk.getId()),
+                        disk -> disk.getActualSizeInBytes()));
+        String json;
+        try {
+            json = new ObjectMapper().writeValueAsString(diskPathToSize);
+        } catch (IOException e) {
+            throw new RuntimeException("failed to serialize disk info");
+        }
+        return encode(json);
+    }
+
+    private void teardown() {
+        if (getParameters().getEntityType() == VmEntityType.TEMPLATE
+                || vmDao.get(getParameters().getEntityId()).isDown()) {
+            teardownImages(getParameters().getDisks());
+        }
+        setSucceeded(true);
+    }
+
+    @Override
+    public boolean performNextOperation(int completedChildCount) {
+        switch (getParameters().getPhase()) {
+            case MEASURE:
+                getParameters().setPhase(CreateOvaParameters.Phase.PACK_OVA);
+                break;
+
+            case PACK_OVA:
+                getParameters().setPhase(CreateOvaParameters.Phase.TEARDOWN);
+                break;
+
+            case TEARDOWN:
+                return false;
+
+            default:
+        }
+
+        persistCommandIfNeeded();
+        executeNextOperation();
+        return true;
+    }
+
+    private void executeNextOperation() {
+        switch (getParameters().getPhase()) {
+            case MEASURE:
+                fillDiskApparentSize(getParameters().getDisks(), getParameters().getDiskIdToPath());
+                break;
+
+            case PACK_OVA:
+                packOva();
+                break;
+
+            case TEARDOWN:
+                teardown();
+                break;
+        }
     }
 
     @Override
@@ -245,4 +344,8 @@ public class CreateOvaCommand<T extends CreateOvaParameters> extends CommandBase
         return null;
     }
 
+    @Override
+    public CommandCallback getCallback() {
+        return callbackProvider.get();
+    }
 }

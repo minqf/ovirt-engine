@@ -94,9 +94,9 @@ public abstract class AbstractBackendResource<R extends BaseResource, Q>
 
     protected CreationStatus getAsynchronousStatus(ActionReturnValue result, PollingType pollingType) {
         CreationStatus asyncStatus = null;
-        if (pollingType==PollingType.JOB) {
+        if (pollingType == PollingType.JOB) {
             asyncStatus = getJobIdStatus(result);
-        } else if (pollingType==PollingType.VDSM_TASKS){
+        } else if (pollingType == PollingType.VDSM_TASKS) {
             asyncStatus = getVdsmTasksStatus(result);
         } else {
             throw new IllegalStateException("Unexpected Polling Status");
@@ -119,7 +119,29 @@ public abstract class AbstractBackendResource<R extends BaseResource, Q>
         return asyncStatus;
     }
 
-    private CreationStatus getJobIdStatus(ActionReturnValue result) {
+    /**
+     * Returns true if there are still processes running in the
+     * background, associated with the current request.
+     *
+     * For vdsm-task polling, the indication is the existence of running
+     * vdsm tasks.
+     *
+     * For job polling, the indication is that the job is in PENDING or
+     * IN_PROGRESS status.
+     */
+    protected boolean isAsyncTaskOrJobExists(PollingType pollingType, ActionReturnValue createResult) {
+        if (pollingType == PollingType.VDSM_TASKS) {
+            //when the polling-type is vdsm_tasks, check for existing async-tasks
+            return createResult.getHasAsyncTasks();
+        } else if (pollingType == PollingType.JOB) {
+            //when the polling-type is job, check if the job is pending or in progress
+            CreationStatus status = getJobIdStatus(createResult);
+            return status == CreationStatus.PENDING || status == CreationStatus.IN_PROGRESS;
+        }
+        return false; //shouldn't reach here
+    }
+
+    protected CreationStatus getJobIdStatus(ActionReturnValue result) {
         Guid jobId = result.getJobId();
         if (jobId == null || jobId.equals(Guid.Empty)) {
             return CreationStatus.COMPLETE;
@@ -128,7 +150,7 @@ public abstract class AbstractBackendResource<R extends BaseResource, Q>
             QueryReturnValue queryResult = runQuery(QueryType.GetJobByJobId, params);
             if (queryResult != null && queryResult.getSucceeded() && queryResult.getReturnValue() != null) {
                 Job job = queryResult.getReturnValue();
-                return job.getStatus()==JobExecutionStatus.STARTED ? CreationStatus.IN_PROGRESS : CreationStatus.COMPLETE;
+                return job.getStatus() == JobExecutionStatus.STARTED ? CreationStatus.IN_PROGRESS : CreationStatus.COMPLETE;
             } else {
                 //not supposed to happen
                 return CreationStatus.COMPLETE;
@@ -214,7 +236,7 @@ public abstract class AbstractBackendResource<R extends BaseResource, Q>
     }
 
     protected R addLinks(R model, Class<? extends BaseResource> suggestedParent, boolean doNotLinkSubCollections) {
-        return doNotLinkSubCollections?
+        return doNotLinkSubCollections ?
                 LinkHelper.addLinks(addParents(model), suggestedParent)
                 :
                 addLinks(model, suggestedParent);
@@ -270,7 +292,7 @@ public abstract class AbstractBackendResource<R extends BaseResource, Q>
         if (subCollections != null) {
             String path = LinkHelper.getPath(model, suggestedParent);
             for (String relation : subCollections) {
-                if(!shouldExclude(relation, subCollectionMembersToExclude)) {
+                if (!shouldExclude(relation, subCollectionMembersToExclude)) {
                     if (path != null) {
                         String href = String.join("/", path, relation);
                         addOrUpdateLink(model, relation, href);
@@ -284,18 +306,18 @@ public abstract class AbstractBackendResource<R extends BaseResource, Q>
     }
 
     private boolean shouldExclude(String member, String[] subCollectionMembersToExclude) {
-        if(subCollectionMembersToExclude !=null && subCollectionMembersToExclude.length > 0){
-            for(String excludeMember : subCollectionMembersToExclude){
+        if (subCollectionMembersToExclude != null && subCollectionMembersToExclude.length > 0) {
+            for (String excludeMember : subCollectionMembersToExclude) {
                 if (member.equals(excludeMember)) {
-                        return true;
+                    return true;
                 }
             }
         }
         return false;
     }
 
-    protected R injectSearchLinks(R resource, String[] rels){
-        for(String rel : rels){
+    protected R injectSearchLinks(R resource, String[] rels) {
+        for (String rel : rels) {
             resource.getLinks().add(LinkCreator.createSearchLink(resource.getHref(), rel));
         }
         return resource;
@@ -478,7 +500,7 @@ public abstract class AbstractBackendResource<R extends BaseResource, Q>
      */
     private ServiceTreeNode getRequiredNode(Class<?> clazz) {
         ServiceTreeNode node = ServiceTree.getNode(clazz);
-        return node==null ? null : node.getSon()!=null ? node.getSon() : node;
+        return node == null ? null : node.getSon() != null ? node.getSon() : node;
     }
 
     private static void addSubCollections(ServiceTreeNode node, List<String> subCollections) {

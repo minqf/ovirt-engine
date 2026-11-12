@@ -30,6 +30,7 @@ import org.ovirt.engine.core.common.businessentities.network.VdsNetworkInterface
 import org.ovirt.engine.core.common.businessentities.network.VdsNetworkStatistics;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
+import org.ovirt.engine.core.common.utils.HugePageUtils;
 import org.ovirt.engine.core.common.utils.NetworkCommonUtils;
 import org.ovirt.engine.core.common.vdscommands.BrokerCommandCallback;
 import org.ovirt.engine.core.common.vdscommands.SetVdsStatusVDSCommandParameters;
@@ -58,15 +59,15 @@ import org.slf4j.LoggerFactory;
 public class HostMonitoring implements HostMonitoringInterface {
     private final VDS vds;
     private final VdsManager vdsManager;
-    private VDSStatus firstStatus;
+    private final VDSStatus firstStatus;
     private final MonitoringStrategy monitoringStrategy;
-    private volatile boolean saveVdsDynamic;
+    private final AtomicBoolean saveVdsDynamic = new AtomicBoolean();
+    private final AtomicBoolean processHardwareCapsNeeded = new AtomicBoolean();
     private volatile boolean saveVdsStatistics;
-    private volatile boolean processHardwareCapsNeeded;
     private volatile boolean refreshedCapabilities = false;
-    private static Map<Guid, Long> hostDownTimes = new HashMap<>();
+    private static final Map<Guid, Long> hostDownTimes = new HashMap<>();
     private volatile boolean vdsMaintenanceTimeoutOccurred;
-    private Map<String, InterfaceStatus> oldInterfaceStatus = new HashMap<>();
+    private final Map<String, InterfaceStatus> oldInterfaceStatus = new HashMap<>();
     private final ResourceManager resourceManager;
     private final AuditLogDirector auditLogDirector;
     private final ClusterDao clusterDao;
@@ -111,7 +112,7 @@ public class HostMonitoring implements HostMonitoringInterface {
                     // use this lock in order to allow only one host updating DB and
                     // calling UpEvent in a time
                     vdsManager.cancelRecoveryJob();
-                    if (saveVdsDynamic) {
+                    if (saveVdsDynamic.get()) {
                         vdsDynamicDao.updateStatus(vds.getId(), vds.getStatus());
                     }
                     log.debug("Host '{}' ({}) firing up event.", vds.getName(), vds.getId());
@@ -124,7 +125,7 @@ public class HostMonitoring implements HostMonitoringInterface {
         } catch (Throwable t) {
             logFailureMessage("ResourceManager::refreshVdsRunTimeInfo:", t);
             log.debug("Exception", t);
-        }  finally {
+        } finally {
             vdsManager.afterRefreshTreatment(succeeded);
         }
     }
@@ -162,7 +163,9 @@ public class HostMonitoring implements HostMonitoringInterface {
         try {
             executingAsyncVdsCommand = beforeFirstRefreshTreatment(isVdsUpOrGoingToMaintenance);
             if (!executingAsyncVdsCommand && vdsManager.isTimeToRefreshStatistics()) {
-                saveVdsDynamic |= refreshCommitedMemory(vds, vdsManager.getLastVmsList(), resourceManager);
+                log.debug("[{}] About to refresh VDS runtime info", vds.getHostName());
+                saveVdsDynamic.compareAndSet(false,
+                        refreshCommitedMemory(vds, vdsManager.getLastVmsList(), resourceManager));
             }
             succeeded = true;
         } catch (VDSRecoveringException e) {
@@ -187,8 +190,8 @@ public class HostMonitoring implements HostMonitoringInterface {
 
     class RefreshCapabilitiesCallback implements BrokerCommandCallback {
 
-        private VDS vds;
-        private VDS oldVds;
+        private final VDS vds;
+        private final VDS oldVds;
 
         RefreshCapabilitiesCallback(VDS vds) {
             this.vds = vds;
@@ -200,7 +203,9 @@ public class HostMonitoring implements HostMonitoringInterface {
             try {
                 final AtomicBoolean processHardwareNeededAtomic = new AtomicBoolean();
                 VDSReturnValue caps = (VDSReturnValue) response.get("result");
-                vdsManager.invokeGetHardwareInfo(vds, caps);
+                if (caps.getSucceeded()) {
+                    vdsManager.getHardwareInfo(vds);
+                }
                 VDSStatus refreshReturnStatus = vdsManager.processRefreshCapabilitiesResponse(processHardwareNeededAtomic,
                         vds,
                         oldVds,
@@ -226,9 +231,9 @@ public class HostMonitoring implements HostMonitoringInterface {
 
 
     private void processRefreshCapabilitiesResponse(AtomicBoolean processHardwareNeededAtomic) {
-        processHardwareCapsNeeded = processHardwareNeededAtomic.get();
+        processHardwareCapsNeeded.set(processHardwareNeededAtomic.get());
         refreshedCapabilities = true;
-        saveVdsDynamic = true;
+        saveVdsDynamic.set(true);
     }
 
     private void handleVDSRecoveringException(VDS vds, VDSRecoveringException e) {
@@ -252,7 +257,7 @@ public class HostMonitoring implements HostMonitoringInterface {
     }
 
     private void saveDataToDb() {
-        if (saveVdsDynamic) {
+        if (saveVdsDynamic.get()) {
             vdsManager.updateDynamicData(vds.getDynamicData());
             if (refreshedCapabilities) {
                 vdsManager.updateNumaData(vds);
@@ -264,7 +269,7 @@ public class HostMonitoring implements HostMonitoringInterface {
             vdsManager.updateStatisticsData(stat);
             checkVdsMemoryThreshold(clusterDao.get(vds.getClusterId()), stat);
             checkVdsCpuThreshold(stat);
-            checkVdsNetworkThreshold(stat);
+            checkVdsNetworkThreshold();
             checkVdsSwapThreshold(stat);
 
             final List<VdsNetworkStatistics> statistics = new LinkedList<>();
@@ -311,22 +316,26 @@ public class HostMonitoring implements HostMonitoringInterface {
      */
     private void checkVdsMemoryThreshold(Cluster cluster, VdsStatistics stat) {
 
-        if (stat.getMemFree() == null || stat.getUsageMemPercent() == null) {
+        if (stat.getMemFree() == null || vds.getPhysicalMemMb() == null) {
             return;
         }
 
         if (LogMaxMemoryUsedThresholdType.PERCENTAGE == cluster.getLogMaxMemoryUsedThresholdType()) {
             checkVdsMemoryThresholdPercentage(cluster, stat);
-        }  else {
+        } else {
             checkVdsMemoryThresholdAbsoluteValue(cluster, stat);
         }
     }
 
     private void checkVdsMemoryThresholdPercentage(Cluster cluster, VdsStatistics stat) {
         Integer maxUsedPercentageThreshold = cluster.getLogMaxMemoryUsedThreshold();
+        int memTotal = vds.getPhysicalMemMb() - HugePageUtils.totalHugePageMemMb(vds);
+        long memFree = stat.getMemFree();
+        // usage for the normal memory (hugepages are excluded)
+        long memUsage = 100 - Math.round(100 * memFree / (double) memTotal);
 
-        if (stat.getUsageMemPercent() > maxUsedPercentageThreshold) {
-            logMemoryAuditLog(vds, cluster, stat, AuditLogType.VDS_HIGH_MEM_USE, maxUsedPercentageThreshold);
+        if (memUsage > maxUsedPercentageThreshold) {
+            logMemoryAuditLog(vds, cluster, memUsage, AuditLogType.VDS_HIGH_MEM_USE, maxUsedPercentageThreshold);
         }
     }
 
@@ -337,6 +346,19 @@ public class HostMonitoring implements HostMonitoringInterface {
         if (stat.getMemFree() < maxUsedAbsoluteThreshold) {
             logMemoryAuditLog(vds, cluster, stat, AuditLogType.VDS_LOW_MEM, maxUsedAbsoluteThreshold);
         }
+    }
+
+    private void logMemoryAuditLog(VDS vds,
+            Cluster cluster,
+            Long memUsage,
+            AuditLogType valueToLog,
+            Integer threshold) {
+        AuditLogable logable = createAuditLogableForHost();
+        logable.addCustomValue("HostName", vds.getName());
+        logable.addCustomValue("Cluster", cluster.getName());
+        logable.addCustomValue("UsedMemory", memUsage.toString());
+        logable.addCustomValue("Threshold", threshold.toString());
+        auditLog(logable, valueToLog);
     }
 
     private void logMemoryAuditLog(VDS vds,
@@ -372,20 +394,22 @@ public class HostMonitoring implements HostMonitoringInterface {
     /**
      * check if value is less than configurable threshold , if yes , generated event list message
      */
-    private void checkVdsNetworkThreshold(VdsStatistics stat) {
+    private void checkVdsNetworkThreshold() {
         Integer maxUsedPercentageThreshold = Config.getValue(ConfigValues.LogMaxNetworkUsedThresholdInPercentage);
         for (VdsNetworkInterface iface : vds.getInterfaces()) {
             Double transmitRate = iface.getStatistics().getTransmitRate();
             Double receiveRate = iface.getStatistics().getReceiveRate();
-            if ((transmitRate != null && iface.getStatistics().getTransmitRate().intValue() > maxUsedPercentageThreshold)
-                    || (receiveRate != null && iface.getStatistics().getReceiveRate().intValue() > maxUsedPercentageThreshold)) {
+            if (transmitRate != null && iface.getStatistics().getTransmitRate().intValue() > maxUsedPercentageThreshold
+                    || receiveRate != null && iface.getStatistics().getReceiveRate().intValue() > maxUsedPercentageThreshold) {
                 AuditLogable logable = createAuditLogableForHost();
                 logable.setCustomId(iface.getName());
                 logable.addCustomValue("HostName", vds.getName());
                 logable.addCustomValue("InterfaceName", iface.getName());
                 logable.addCustomValue("Threshold", maxUsedPercentageThreshold.toString());
-                logable.addCustomValue("TransmitRate", String.valueOf(transmitRate.intValue()));
-                logable.addCustomValue("ReceiveRate", String.valueOf(receiveRate.intValue()));
+                logable.addCustomValue("TransmitRate",
+                        transmitRate == null ? "" : String.valueOf(transmitRate.intValue()));
+                logable.addCustomValue("ReceiveRate",
+                        receiveRate == null ? "" : String.valueOf(receiveRate.intValue()));
                 auditLog(logable, AuditLogType.HOST_INTERFACE_HIGH_NETWORK_USE);
             }
         }
@@ -405,18 +429,18 @@ public class HostMonitoring implements HostMonitoringInterface {
             return;
         }
 
-        Long swapUsedPercent = (stat.getSwapTotal() - stat.getSwapFree()) / stat.getSwapTotal();
+        long swapUsedPercent = (stat.getSwapTotal() - stat.getSwapFree()) / stat.getSwapTotal();
 
         // Allow the space to be up to 2% lower than as defined in configuration
         Long allowedMinAvailableThreshold = Math.round(minAvailableThreshold.doubleValue() * THRESHOLD);
-        AuditLogType valueToLog = stat.getSwapFree() <  allowedMinAvailableThreshold ?
+        AuditLogType valueToLog = stat.getSwapFree() < allowedMinAvailableThreshold ?
                 AuditLogType.VDS_LOW_SWAP :
                 AuditLogType.VDS_HIGH_SWAP_USE;
 
         if (stat.getSwapFree() < allowedMinAvailableThreshold || swapUsedPercent > maxUsedPercentageThreshold) {
             AuditLogable logable = createAuditLogableForHost();
             logable.addCustomValue("HostName", vds.getName());
-            logable.addCustomValue("UsedSwap", swapUsedPercent.toString());
+            logable.addCustomValue("UsedSwap", Long.toString(swapUsedPercent));
             logable.addCustomValue("AvailableSwapMemory", stat.getSwapFree().toString());
             logable.addCustomValue("Threshold", stat.getSwapFree() < allowedMinAvailableThreshold ?
                     minAvailableThreshold.toString() : maxUsedPercentageThreshold.toString());
@@ -438,7 +462,7 @@ public class HostMonitoring implements HostMonitoringInterface {
 
     public void afterRefreshTreatment() {
         try {
-            if (processHardwareCapsNeeded) {
+            if (processHardwareCapsNeeded.get()) {
                 monitoringStrategy.processHardwareCapabilities(vds);
                 markIsSetNonOperationalExecuted();
             }
@@ -499,13 +523,14 @@ public class HostMonitoring implements HostMonitoringInterface {
         }
         // get statistics data, images checks and vm_count data (dynamic)
         fetchHostInterfaces();
+        log.debug("[{}] About to refresh VDS Stats", vds.getHostName());
         resourceManager.runVdsCommand(VDSCommandType.GetStatsAsync,
                 new VdsIdAndVdsVDSCommandParametersBase(vds).withCallback(new GetStatsAsyncCallback(isVdsUpOrGoingToMaintenance)));
     }
 
     class GetStatsAsyncCallback implements BrokerCommandCallback {
 
-        private boolean vdsUpOrGoingToMaintenance;
+        private final boolean vdsUpOrGoingToMaintenance;
 
         GetStatsAsyncCallback(boolean vdsUpOrGoingToMaintenance) {
             this.vdsUpOrGoingToMaintenance = vdsUpOrGoingToMaintenance;
@@ -519,7 +544,7 @@ public class HostMonitoring implements HostMonitoringInterface {
                     vdsManager.setStatus(VDSStatus.Up, vds);
                 }
                 refreshVdsRunTimeInfo(vdsUpOrGoingToMaintenance);
-            } catch(Throwable t) {
+            } catch (Throwable t) {
                 onFailure(t);
             }
         }
@@ -544,7 +569,7 @@ public class HostMonitoring implements HostMonitoringInterface {
         // save also dynamic because vm_count data and image_check getting with
         // statistics data
         // TODO: omer- one day remove dynamic save when possible please check if vdsDynamic changed before save
-        saveVdsDynamic = true;
+        saveVdsDynamic.set(true);
         saveVdsStatistics = true;
 
         alertIfLowDiskSpaceOnHost();
@@ -565,7 +590,7 @@ public class HostMonitoring implements HostMonitoringInterface {
     private void fetchHostInterfaces() {
         List<VdsNetworkInterface> nics;
         if (vds.getInterfaces().isEmpty()) {
-             nics = interfaceDao.getAllInterfacesForVds(vds.getId());
+            nics = interfaceDao.getAllInterfacesForVds(vds.getId());
             vds.getInterfaces().addAll(nics);
         } else {
             nics = vds.getInterfaces();
@@ -640,8 +665,9 @@ public class HostMonitoring implements HostMonitoringInterface {
 
         Map<String, Set<String>> problematicNicsWithNetworks = new HashMap<>();
         try {
+            NetworkMonitoringHelper networkMonitoringHelper = new NetworkMonitoringHelper();
             reportNicStatusChanges();
-            problematicNicsWithNetworks = NetworkMonitoringHelper.determineProblematicNics(vds.getInterfaces(),
+            problematicNicsWithNetworks = networkMonitoringHelper.determineProblematicNics(vds.getInterfaces(),
                     networkDao.getAllForCluster(vds.getClusterId()));
         } catch (Exception e) {
             log.error("Failure on checkInterfaces on update runtime info for host '{}': {}",
@@ -784,8 +810,8 @@ public class HostMonitoring implements HostMonitoringInterface {
 
     class BeforeFirstRefreshTreatmentCallback implements BrokerCommandCallback {
 
-        private VDS vds;
-        private VDS oldVds;
+        private final VDS vds;
+        private final VDS oldVds;
 
         BeforeFirstRefreshTreatmentCallback(VDS vds) {
             this.vds = vds;
@@ -798,14 +824,17 @@ public class HostMonitoring implements HostMonitoringInterface {
             try {
                 final AtomicBoolean processHardwareCapsNeededTemp = new AtomicBoolean();
                 VDSReturnValue caps = (VDSReturnValue) response.get("result");
-                vdsManager.invokeGetHardwareInfo(vds, caps);
+                if (caps.getSucceeded()) {
+                    vdsManager.getHardwareInfo(vds);
+                }
                 vdsManager.processRefreshCapabilitiesResponse(processHardwareCapsNeededTemp,
                         vds,
                         oldVds,
                         caps);
                 processBeforeFirstRefreshTreatmentResponse(processHardwareCapsNeededTemp);
                 if (vdsManager.isTimeToRefreshStatistics()) {
-                    saveVdsDynamic |= refreshCommitedMemory(vds, vdsManager.getLastVmsList(), resourceManager);
+                    saveVdsDynamic.compareAndSet(false,
+                            refreshCommitedMemory(vds, vdsManager.getLastVmsList(), resourceManager));
                 }
             } catch (Throwable t) {
                 succeeded = false;
@@ -830,11 +859,12 @@ public class HostMonitoring implements HostMonitoringInterface {
         boolean flagsChanged = processHardwareCapsNeededTemp.get();
         vdsManager.setbeforeFirstRefresh(false);
         refreshedCapabilities = true;
-        saveVdsDynamic = true;
+        saveVdsDynamic.set(true);
         // change the _cpuFlagsChanged flag only if it was false,
         // because get capabilities is called twice on a new server in same
         // loop!
-        processHardwareCapsNeeded = processHardwareCapsNeeded ? processHardwareCapsNeeded : flagsChanged;
+        processHardwareCapsNeeded.compareAndSet(false, flagsChanged);
+
     }
 
     private AuditLogable createAuditLogableForHost() {
@@ -852,7 +882,7 @@ public class HostMonitoring implements HostMonitoringInterface {
                 VdsDynamic dbVds = vdsDynamicDao.get(vds.getId());
                 vds.setMaintenanceReason(dbVds.getMaintenanceReason());
                 vdsManager.setStatus(VDSStatus.Maintenance, vds);
-                saveVdsDynamic = true;
+                saveVdsDynamic.set(true);
                 saveVdsStatistics = true;
                 log.info(
                         "Updated host status from 'Preparing for Maintenance' to 'Maintenance' in database, host '{}'({})",
@@ -875,17 +905,30 @@ public class HostMonitoring implements HostMonitoringInterface {
 
         int memCommited = host.getGuestOverhead();
         int vmsCoresCount = 0;
+        int maxSharedCores = 0;
+        int vmsSharedCpusCount = 0;
 
         for (Map.Entry<Guid, VMStatus> entry : vmIdToStatus.entrySet()) {
             VMStatus status = entry.getValue();
             // VMs' pending resources are cleared in powering up, so in launch state
             // we shouldn't include them as committed.
             if (status != VMStatus.WaitForLaunch && status != VMStatus.Down) {
-                VmManager vmManager = resourceManager.getVmManager(entry.getKey());
-                memCommited += vmManager.getVmMemoryWithOverheadInMB();
-                vmsCoresCount += vmManager.getNumOfCpus();
+                VmManager vmManager = resourceManager.getVmManager(entry.getKey(), false);
+                if (vmManager != null) {
+                    memCommited += vmManager.getVmMemoryWithOverheadInMB();
+                    vmsCoresCount += vmManager.getNumOfCpus();
+                    int sharedCores = vmManager.getCpuPinningPolicy() != null && !vmManager.getCpuPinningPolicy().isExclusive()
+                            ? vmManager.getNumOfCores() : 0;
+                    maxSharedCores = Math.max(maxSharedCores, sharedCores);
+
+                    if (!vmManager.getCpuPinningPolicy().isExclusive()) {
+                        vmsSharedCpusCount += vmManager.getNumOfCpus();
+                    }
+                }
             }
         }
+
+        resourceManager.getVdsManager(host.getId()).setMaxRunningVmsSharedCoresCount(maxSharedCores);
 
         if (memCommited != host.getMemCommited()) {
             host.setMemCommited(memCommited);
@@ -895,6 +938,8 @@ public class HostMonitoring implements HostMonitoringInterface {
             host.setVmsCoresCount(vmsCoresCount);
             memoryUpdated = true;
         }
+
+        resourceManager.getVdsManager(host.getId()).setVmsSharedCpusCount(vmsSharedCpusCount);
 
         return memoryUpdated;
     }

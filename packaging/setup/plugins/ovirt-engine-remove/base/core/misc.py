@@ -10,9 +10,10 @@
 """Engine plugin."""
 
 
-import distutils.version
 import gettext
 import os
+
+from looseversion import LooseVersion
 
 from otopi import constants as otopicons
 from otopi import plugin
@@ -94,10 +95,10 @@ class Plugin(plugin.PluginBase):
                 _('Could not detect product setup')
             )
 
-        rpm_v = distutils.version.LooseVersion(
+        rpm_v = LooseVersion(
             osetupcons.Const.RPM_VERSION
         ).version[:3]
-        inst_v = distutils.version.LooseVersion(
+        inst_v = LooseVersion(
             self.environment[
                 osetupcons.CoreEnv.ORIGINAL_GENERATED_BY_VERSION
             ]
@@ -132,7 +133,7 @@ class Plugin(plugin.PluginBase):
         if self.environment[
             osetupcons.RemoveEnv.REMOVE_ALL
         ] is None:
-            self.logger.warn(_('Partial cleanup is not supported'))
+            self.logger.warning(_('Partial cleanup is not supported'))
             self.dialog.note(_(
                 'Removing only some components is not supported. If you reply '
                 'No, you will be prompted for components to be removed, '
@@ -156,7 +157,7 @@ class Plugin(plugin.PluginBase):
                 default=True,
             )
         if not self.environment[osetupcons.RemoveEnv.REMOVE_ALL]:
-            self.logger.warn(_('Partial cleanup is not supported'))
+            self.logger.warning(_('Partial cleanup is not supported'))
             self.dialog.note(_(
                 'You will now be prompted for components to be removed, '
                 'but regardless of which ones you choose, the engine will '

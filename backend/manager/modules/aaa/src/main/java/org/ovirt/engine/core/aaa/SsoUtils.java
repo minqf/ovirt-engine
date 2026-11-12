@@ -1,9 +1,14 @@
 package org.ovirt.engine.core.aaa;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import javax.naming.InitialContext;
 import javax.naming.NamingException;
@@ -28,7 +33,7 @@ public class SsoUtils {
     public static String createUserSession(HttpServletRequest req,
             Map<String, Object> jsonResponse,
             boolean loginAsAdmin) throws Exception {
-        String engineSessionId = null;
+        String engineSessionId;
         if (!FiltersHelper.isStatusOk(jsonResponse)) {
             throw new RuntimeException((String) jsonResponse.get("MESSAGE"));
         }
@@ -38,9 +43,10 @@ public class SsoUtils {
         String profile = null;
         int index = username.lastIndexOf("@");
         if (index != -1) {
-            profile = username.substring(index+1);
+            profile = username.substring(index + 1);
             username = username.substring(0, index);
         }
+        String authzName = (String) jsonResponse.get("user_authz");
         try {
             ctx = new InitialContext();
             ActionReturnValue queryRetVal = FiltersHelper.getBackend(ctx).runAction(ActionType.CreateUserSession,
@@ -61,14 +67,17 @@ public class SsoUtils {
             if (!queryRetVal.getSucceeded()) {
                 if (queryRetVal.getActionReturnValue() == CreateUserSessionsError.NUM_OF_SESSIONS_EXCEEDED) {
                     throw new RuntimeException(String.format(
-                            "Unable to login user %s@%s because the maximum number of allowed sessions %s is exceeded",
+                            "Unable to login user %s@%s with profile [%s] " +
+                                    "because the maximum number of allowed sessions %s is exceeded",
                             username,
+                            authzName,
                             profile,
                             EngineLocalConfig.getInstance().getInteger("ENGINE_MAX_USER_SESSIONS")));
                 }
                 throw new RuntimeException(String.format(
-                        "The user %s@%s is not authorized to perform login",
+                        "The user %s@%s with profile [%s] is not authorized to perform login",
                         username,
+                        authzName,
                         profile));
             }
             engineSessionId = queryRetVal.getActionReturnValue();
@@ -81,8 +90,8 @@ public class SsoUtils {
                         true);
             }
         } catch (Exception ex) {
-            log.error("User '{}@{}' login failed: {}", username, profile, ex.getMessage());
-            log.debug("User '{}@{}' login failed", username, profile, ex);
+            log.error("User '{}@{}' with profile [{}] login failed: {}", username, authzName, profile, ex.getMessage());
+            log.debug("User '{}@{}' with profile [{}] login failed", username, authzName, profile, ex);
             throw ex;
         } finally {
             try {
@@ -116,6 +125,33 @@ public class SsoUtils {
             password = null;
         }
         return password;
+    }
+
+    public static boolean isDomainValid(String appUrl) {
+        if (StringUtils.isBlank(appUrl)) {
+            return true;
+        }
+        Set<String> allowedDomains = new HashSet<>();
+        String engineUrl = EngineLocalConfig.getInstance().getProperty("SSO_ENGINE_URL");
+        allowedDomains.add(parseHostFromUrl(engineUrl, "SSO_ENGINE_URL"));
+
+        var alternateFqdnString = EngineLocalConfig.getInstance().getProperty("SSO_ALTERNATE_ENGINE_FQDNS", true);
+        if (StringUtils.isNotBlank(alternateFqdnString)) {
+            Arrays.stream(alternateFqdnString.trim().split("\\s *"))
+                    .filter(StringUtils::isNotBlank)
+                    .map(String::toLowerCase)
+                    .forEach(allowedDomains::add);
+        }
+
+        return allowedDomains.contains(parseHostFromUrl(appUrl, "appUrl"));
+    }
+
+    private static String parseHostFromUrl(String url, String urlPropertyName) {
+        try {
+            return new URI(url).getHost().toLowerCase();
+        } catch (URISyntaxException e) {
+            throw new IllegalStateException(urlPropertyName + " not a valid URI: " + url);
+        }
     }
 
 }

@@ -1,6 +1,7 @@
 package org.ovirt.engine.core.vdsbroker.vdsbroker;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -19,6 +20,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.ovirt.engine.core.common.businessentities.LeaseStatus;
 import org.ovirt.engine.core.common.businessentities.VDS;
+import org.ovirt.engine.core.common.businessentities.VdsCpuUnit;
 import org.ovirt.engine.core.common.businessentities.VmStatistics;
 import org.ovirt.engine.core.common.businessentities.network.VmInterfaceType;
 import org.ovirt.engine.core.common.businessentities.network.VmNetworkInterface;
@@ -149,8 +151,10 @@ public class VdsBrokerObjectsBuilderTest {
     public void testWhenVDSMNotSendingFields() {
         Map<String, Object> diskData = new HashMap<>();
         diskData.put(VdsProperties.vm_disk_read_rate, DEFAULT_VALUE);
+        diskData.put(VdsProperties.vm_disk_read_ops, DEFAULT_VALUE);
         diskData.put(VdsProperties.ImageId, IMAGE_ID.toString());
         diskData.put(VdsProperties.vm_disk_write_rate, DEFAULT_VALUE);
+        diskData.put(VdsProperties.vm_disk_write_ops, DEFAULT_VALUE);
 
         // Set the default values to the fields.
         diskData.put(VdsProperties.vm_disk_flush_latency, DEFAULT_VALUE);
@@ -204,14 +208,14 @@ public class VdsBrokerObjectsBuilderTest {
     }
 
     @Test
-    public void testAddNicWithId(){
+    public void testAddNicWithId() {
         String nicId = Guid.newGuid().toString();
         Map<String, Object> vmStruct = createNicDeviceStruct(nicId);
         validateVmNetworkInterfaceId(nicId, vmStruct);
     }
 
     @Test
-    public void testAddNicWithNullId(){
+    public void testAddNicWithNullId() {
         String nicId = null;
         Map<String, Object> vmStruct = createNicDeviceStruct(nicId);
         validateVmNetworkInterfaceId(nicId, vmStruct);
@@ -281,7 +285,7 @@ public class VdsBrokerObjectsBuilderTest {
         return map;
     }
 
-    private static Map<String, Object>  setDisksUsage(Object[] disksUsageData) {
+    private static Map<String, Object> setDisksUsage(Object[] disksUsageData) {
         Map<String, Object> map = new HashMap<>();
         map.put(VdsProperties.VM_DISKS_USAGE, disksUsageData);
         return map;
@@ -296,8 +300,10 @@ public class VdsBrokerObjectsBuilderTest {
     private static Map<String, Object> setDiskData() {
         Map<String, Object> diskData = new HashMap<>();
         diskData.put(VdsProperties.vm_disk_read_rate, DEFAULT_VALUE);
+        diskData.put(VdsProperties.vm_disk_read_ops, DEFAULT_VALUE);
         diskData.put(VdsProperties.ImageId, IMAGE_ID.toString());
         diskData.put(VdsProperties.vm_disk_write_rate, DEFAULT_VALUE);
+        diskData.put(VdsProperties.vm_disk_write_ops, DEFAULT_VALUE);
 
         // Set the default values to the fields.
         diskData.put(VdsProperties.vm_disk_flush_latency, DEFAULT_VALUE);
@@ -417,5 +423,62 @@ public class VdsBrokerObjectsBuilderTest {
     @Test
     public void testExtractIpv4GatewayEmptyString() {
         assertThat(vdsBrokerObjectsBuilder.extractGateway(Collections.singletonMap(VdsProperties.GLOBAL_GATEWAY, "")), nullValue());
+    }
+
+    @Test
+    public void testCpuTopology() {
+        Map<String, Object> vmStruct = createCpuTopologyStruct();
+        VDS vds = getVds();
+        vdsBrokerObjectsBuilder.updateCpuTopology(vds, vmStruct);
+        assertEquals(4, vds.getCpuTopology().size());
+        assertThat(vds.getCpuTopology(), contains(new VdsCpuUnit(0, 0, 0, 0), new VdsCpuUnit(0, 0, 0, 1),
+                new VdsCpuUnit(0, 0, 1, 2), new VdsCpuUnit(1, 1, 0, 3)));
+    }
+
+    @Test
+    public void testSetDiskReadRateAsLong() {
+        String longValue = "2243888802";
+        Map<String, Object> diskData = setDiskData();
+        diskData.put(VdsProperties.vm_disk_read_rate, longValue);
+        Map<String, Object> xml = setMockForTesting(diskData);
+        List<DiskImageDynamic> disks = vdsBrokerObjectsBuilder.buildVmDiskStatistics(xml);
+        assertEquals(2243888802L, disks.get(0).getReadRate());
+    }
+
+    @Test
+    public void testSetDiskWriteRateAsLong() {
+        String longValue = "2649267647";
+        Map<String, Object> diskData = setDiskData();
+        diskData.put(VdsProperties.vm_disk_write_rate, longValue);
+        Map<String, Object> xml = setMockForTesting(diskData);
+        List<DiskImageDynamic> disks = vdsBrokerObjectsBuilder.buildVmDiskStatistics(xml);
+        assertEquals(2649267647L, disks.get(0).getWriteRate());
+    }
+
+    private Map<String, Object> createCpuTopologyStruct() {
+        Map<String, Integer> cpuCapability1 = new HashMap<>();
+        cpuCapability1.put(VdsProperties.cpu_id, 0);
+        cpuCapability1.put(VdsProperties.core_id, 0);
+        cpuCapability1.put(VdsProperties.numa_id, 0);
+        cpuCapability1.put(VdsProperties.socket_id, 0);
+        Map<String, Integer> cpuCapability2 = new HashMap<>();
+        cpuCapability2.put(VdsProperties.cpu_id, 1);
+        cpuCapability2.put(VdsProperties.core_id, 0);
+        cpuCapability2.put(VdsProperties.numa_id, 0);
+        cpuCapability2.put(VdsProperties.socket_id, 0);
+        Map<String, Integer> cpuCapability3 = new HashMap<>();
+        cpuCapability3.put(VdsProperties.cpu_id, 2);
+        cpuCapability3.put(VdsProperties.core_id, 1);
+        cpuCapability3.put(VdsProperties.numa_id, 0);
+        cpuCapability3.put(VdsProperties.socket_id, 0);
+        Map<String, Integer> cpuCapability4 = new HashMap<>();
+        cpuCapability4.put(VdsProperties.cpu_id, 3);
+        cpuCapability4.put(VdsProperties.core_id, 0);
+        cpuCapability4.put(VdsProperties.numa_id, 1);
+        cpuCapability4.put(VdsProperties.socket_id, 1);
+        Map<String, Object> struct = new HashMap<>();
+        struct.put(VdsProperties.cpu_topology,
+                new Object[] { cpuCapability1, cpuCapability2, cpuCapability3, cpuCapability4 });
+        return struct;
     }
 }

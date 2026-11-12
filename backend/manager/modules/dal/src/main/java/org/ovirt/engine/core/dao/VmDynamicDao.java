@@ -3,6 +3,7 @@ package org.ovirt.engine.core.dao;
 import java.util.List;
 import java.util.Map;
 
+import org.ovirt.engine.core.common.businessentities.ActionGroup;
 import org.ovirt.engine.core.common.businessentities.GuestAgentStatus;
 import org.ovirt.engine.core.common.businessentities.VMStatus;
 import org.ovirt.engine.core.common.businessentities.VmDynamic;
@@ -66,17 +67,9 @@ public interface VmDynamicDao extends GenericDao<VmDynamic, Guid>, StatusAwareDa
     @Override
     void save(VmDynamic vm);
 
-    /**
-     * Update the console user name and id, but only if it was empty before. This
-     * method is needed in order to implement optimistic locking for the functionality
-     * that allows reconnection to the console without rebooting the virtual machine.
-     *
-     * @param vm the dynamic data of the virtual machine
-     * @return {@code true} if at least one row was updated, {@code false} otherwise
-     */
-    boolean updateConsoleUserWithOptimisticLocking(VmDynamic vm);
-
     void clearMigratingToVds(Guid id);
+
+    void clearMigratingToVdsAndSetDynamicPinning(Guid id, String cpuPinning, String numaPinning);
 
 
     /**
@@ -139,4 +132,15 @@ public interface VmDynamicDao extends GenericDao<VmDynamic, Guid>, StatusAwareDa
      * @return the VM IDs with with the specified ISO disk attached as a CDROM
      */
     List<Guid> getAllIdsWithSpecificIsoAttached(Guid isoDiskId);
+
+    /**
+     * Retrieve all running VMs for which the user with the specified role has direct or indirect
+     * permissions on
+     * @param userID
+     *             the user id
+     * @param actionGroup
+     *             the actionGroup
+     * @return the list of VmDynamics
+     */
+    List<VmDynamic> getAllRunningForUserAndActionGroup(Guid userID, ActionGroup actionGroup);
 }

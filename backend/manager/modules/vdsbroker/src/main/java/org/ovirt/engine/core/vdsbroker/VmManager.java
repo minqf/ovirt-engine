@@ -1,6 +1,9 @@
 package org.ovirt.engine.core.vdsbroker;
 
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -8,11 +11,14 @@ import java.util.stream.Collectors;
 import javax.annotation.PostConstruct;
 import javax.inject.Inject;
 
+import org.ovirt.engine.core.common.action.ExternalDataStatus;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
 import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.Cluster;
+import org.ovirt.engine.core.common.businessentities.CpuPinningPolicy;
 import org.ovirt.engine.core.common.businessentities.OriginType;
 import org.ovirt.engine.core.common.businessentities.VM;
+import org.ovirt.engine.core.common.businessentities.VMStatus;
 import org.ovirt.engine.core.common.businessentities.VmDevice;
 import org.ovirt.engine.core.common.businessentities.VmDynamic;
 import org.ovirt.engine.core.common.businessentities.VmStatic;
@@ -28,6 +34,8 @@ import org.ovirt.engine.core.dao.VmStaticDao;
 import org.ovirt.engine.core.dao.VmStatisticsDao;
 import org.ovirt.engine.core.dao.network.VmNetworkStatisticsDao;
 import org.ovirt.engine.core.vdsbroker.monitoring.VdsmVm;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class VmManager {
 
@@ -40,12 +48,19 @@ public class VmManager {
     private int memSizeMb;
     private int minAllocatedMem;
     private int numOfCpus;
+    private int numOfCores;
+    private CpuPinningPolicy cpuPinningPolicy;
     private Version clusterCompatibilityVersion;
     private ArchitectureType clusterArchitecture;
     private BiosType clusterBiosType;
-    private Guid leaseStorageDomainId;
 
-    private final ReentrantLock lock;
+    /** Locks the VM for changes of its dynamic properties */
+    private final Lock vmLock;
+    /** Locks the VM devices for changes of their dynamic properties (addresses, plugged/unplugged) */
+    private final Lock vmDevicesLock;
+
+    private boolean failedSchedulingDueToLeaseSd;
+
     private Long vmDataChangedTime;
     /** how long to wait for a response for power-off operation, in nanoseconds */
     private long powerOffTimeout;
@@ -60,12 +75,18 @@ public class VmManager {
 
     private boolean coldReboot;
 
+    private ExternalDataStatus externalDataStatus;
+
     /**
      * vmOverhead contains the last known VM memory impact incl. QEMU overhead prediction.
      *
      * The value is computed (and persisted for future use)
      */
     private int vmMemoryWithOverheadInMB;
+
+    private VMStatus lastStatusBeforeMigration;
+
+    private Set<Guid> devicesBeingHotUnplugged;
 
     @Inject
     private VmDeviceDao vmDeviceDao;
@@ -84,10 +105,13 @@ public class VmManager {
 
     VmManager(Guid vmId) {
         this.vmId = vmId;
-        lock = new ReentrantLock();
+        vmLock = new ReentrantLock();
+        vmDevicesLock = new VmDevicesLock();
         convertOperationProgress = -1;
         statistics = new VmStatistics(vmId);
         vmMemoryWithOverheadInMB = 0;
+        externalDataStatus = new ExternalDataStatus();
+        devicesBeingHotUnplugged = new HashSet<>();
     }
 
     @PostConstruct
@@ -98,6 +122,10 @@ public class VmManager {
         if (vmStatic != null) {
             updateStaticFields(vmStatic);
         }
+        VmDynamic vmDynamic = vmDynamicDao.get(vmId);
+        if (vmDynamic != null) {
+            updateDynamicFields(vmDynamic);
+        }
     }
 
     private void updateStaticFields(VmStatic vmStatic) {
@@ -107,13 +135,22 @@ public class VmManager {
         memSizeMb = vmStatic.getMemSizeMb();
         minAllocatedMem = vmStatic.getMinAllocatedMem();
         numOfCpus = vmStatic.getNumOfCpus();
+        cpuPinningPolicy = vmStatic.getCpuPinningPolicy();
+        if (cpuPinningPolicy != CpuPinningPolicy.RESIZE_AND_PIN_NUMA) {
+            numOfCores = vmStatic.getNumOfCpus(false);
+        }
         final Cluster cluster = clusterDao.get(vmStatic.getClusterId());
         clusterCompatibilityVersion = cluster.getCompatibilityVersion();
         clusterArchitecture = cluster.getArchitecture();
         clusterBiosType = cluster.getBiosType();
-        leaseStorageDomainId = vmStatic.getLeaseStorageDomainId();
 
         vmMemoryWithOverheadInMB = estimateOverhead(vmStatic);
+    }
+
+    private void updateDynamicFields(VmDynamic vmDynamic) {
+        if (cpuPinningPolicy == CpuPinningPolicy.RESIZE_AND_PIN_NUMA) {
+            numOfCores = vmDynamic.getCurrentSockets() * vmDynamic.getCurrentCoresPerSocket();
+        }
     }
 
     private int estimateOverhead(VmStatic vmStatic) {
@@ -130,20 +167,25 @@ public class VmManager {
         return vmOverheadCalculator.getTotalRequiredMemMb(compose);
     }
 
-    public void lock() {
-        lock.lock();
+    public void lockVm() {
+        vmLock.lock();
     }
 
-    public void unlock() {
-        lock.unlock();
+    public void unlockVm() {
+        vmLock.unlock();
     }
 
-    public boolean trylock() {
-        return lock.tryLock();
+    public boolean tryLockVm() {
+        return vmLock.tryLock();
+    }
+
+    public Lock getVmDevicesLock() {
+        return vmDevicesLock;
     }
 
     public void update(VmDynamic dynamic) {
         vmDynamicDao.update(dynamic);
+        updateDynamicFields(dynamic);
     }
 
     public void update(VmStatistics statistics) {
@@ -271,6 +313,14 @@ public class VmManager {
         return numOfCpus;
     }
 
+    public int getNumOfCores() {
+        return numOfCores;
+    }
+
+    public CpuPinningPolicy getCpuPinningPolicy() {
+        return cpuPinningPolicy;
+    }
+
     public void setClusterCompatibilityVersion(Version version) {
         this.clusterCompatibilityVersion = version;
     }
@@ -287,10 +337,6 @@ public class VmManager {
         this.clusterArchitecture = clusterArchitecture;
     }
 
-    public Guid getLeaseStorageDomainId() {
-        return leaseStorageDomainId;
-    }
-
     public long getPowerOffTimeout() {
         return powerOffTimeout;
     }
@@ -305,4 +351,74 @@ public class VmManager {
         return vmDynamicDao.get(vmId).getStopReason();
     }
 
+    public ExternalDataStatus getExternalDataStatus() {
+        return externalDataStatus;
+    }
+
+    public void resetExternalDataStatus() {
+        externalDataStatus = new ExternalDataStatus();
+    }
+
+    public VMStatus getLastStatusBeforeMigration() {
+        return lastStatusBeforeMigration;
+    }
+
+    public void setLastStatusBeforeMigration(VMStatus lastStatusBeforeMigration) {
+        this.lastStatusBeforeMigration = lastStatusBeforeMigration;
+    }
+
+    public boolean isFailedSchedulingDueToLeaseSd() {
+        return failedSchedulingDueToLeaseSd;
+    }
+
+    public void setFailedSchedulingDueToLeaseSd(boolean failedSchedulingDueToLeaseSd) {
+        this.failedSchedulingDueToLeaseSd = failedSchedulingDueToLeaseSd;
+    }
+
+    public boolean isDeviceBeingHotUnlugged(Guid deviceId) {
+        synchronized (devicesBeingHotUnplugged) {
+            return devicesBeingHotUnplugged.contains(deviceId);
+        }
+    }
+
+    public void setDeviceBeingHotUnlugged(Guid deviceId, boolean beingHotUnplugged) {
+        synchronized (devicesBeingHotUnplugged) {
+            if (beingHotUnplugged) {
+                devicesBeingHotUnplugged.add(deviceId);
+            } else {
+                devicesBeingHotUnplugged.remove(deviceId);
+            }
+        }
+    }
+
+    public void rebootCleanup() {
+        synchronized (devicesBeingHotUnplugged) {
+            devicesBeingHotUnplugged.clear();
+        }
+    }
+
+    private class VmDevicesLock extends ReentrantLock {
+        protected Logger log = LoggerFactory.getLogger(getClass());
+
+        @Override
+        public void lock() {
+            log.debug("locking vm devices monitoring for VM {}", vmId);
+            super.lock();
+        }
+
+        @Override
+        public boolean tryLock() {
+            if (!super.tryLock()) {
+                log.debug("failed to lock vm devices monitoring for VM {}", vmId);
+                return false;
+            }
+            return true;
+        }
+
+        @Override
+        public void unlock() {
+            log.debug("unlocking vm devices monitoring for VM {}", vmId);
+            super.unlock();
+        }
+    }
 }

@@ -14,6 +14,8 @@ sign() {
 
 	common_backup "${sshpub}" "${sshcert}"
 
+	umask "$(/bin/sh -l -c umask)"
+
 	#
 	# TODO: replace when el-6 supports -m PKCS8
 	#
@@ -68,7 +70,7 @@ ID=""
 HOST=""
 PRINCIPALS=""
 OPTIONS="clear,permit-pty"
-DAYS="1800"
+DAYS="1827"
 while [ -n "$1" ]; do
 	x="$1"
 	v="${x#*=}"

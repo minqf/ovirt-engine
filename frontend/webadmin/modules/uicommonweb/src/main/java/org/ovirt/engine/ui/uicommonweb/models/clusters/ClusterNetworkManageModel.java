@@ -50,10 +50,10 @@ public class ClusterNetworkManageModel extends ListModel<ClusterNetworkModel> {
     }
 
     private ClusterNetworkModel getDisplayNetwork() {
-        if (!isMultiCluster()){
+        if (!isMultiCluster()) {
             for (ClusterNetworkModel clusterNetworkManageModel : getItems()) {
                 if (clusterNetworkManageModel.isDisplayNetwork()) {
-                   return clusterNetworkManageModel;
+                    return clusterNetworkManageModel;
                 }
             }
         }
@@ -116,9 +116,9 @@ public class ClusterNetworkManageModel extends ListModel<ClusterNetworkModel> {
             }
         }
         model.setManagement(value);
-   }
+    }
 
-   private ClusterNetworkModel getGlusterNetwork() {
+    private ClusterNetworkModel getGlusterNetwork() {
         return glusterNetwork;
     }
 
@@ -169,7 +169,7 @@ public class ClusterNetworkManageModel extends ListModel<ClusterNetworkModel> {
 
             // Attachment wasn't changed- check if needs update
             if (wasAttached && !needsDetach) {
-                if ((manageModel.isRequired() != networkCluster.isRequired())
+                if (manageModel.isRequired() != networkCluster.isRequired()
                         || manageModel.isDisplayNetwork() != networkCluster.isDisplay()
                         || manageModel.isMigrationNetwork() != networkCluster.isMigration()
                         || manageModel.isManagement() != networkCluster.isManagement()

@@ -86,7 +86,7 @@ public class IconValidation implements IValidation {
      */
     private ValidationResult validateSize(String icon) {
         final int maxEncodedSize = 32 * 1024;
-        final int maxRawSize = (int) (maxEncodedSize * (3d/4d) / 1024); // just estimate for users, in kB
+        final int maxRawSize = (int) (maxEncodedSize * (3d / 4d) / 1024); // just estimate for users, in kB
         boolean valid = maxEncodedSize > icon.length();
         if (valid) {
             return ValidationResult.ok();
@@ -107,10 +107,10 @@ public class IconValidation implements IValidation {
         final String iconBase64Data = dataUriToBase64Data(icon);
         final String iconRawData = atob(iconBase64Data);
         final String[] magicNumbers = new String[] {
-                "\u0089\u0050\u004e\u0047\r\n\u001a\n", //$NON-NLS-1$ // png
-                "\u00ff\u00d8\u00ff", //$NON-NLS-1$ // png
-                "GIF87a", //$NON-NLS-1$ // gif
-                "GIF89a" //$NON-NLS-1$ // gif
+            "\u0089\u0050\u004e\u0047\r\n\u001a\n", //$NON-NLS-1$ // png
+            "\u00ff\u00d8\u00ff", //$NON-NLS-1$ // png
+            "GIF87a", //$NON-NLS-1$ // gif
+            "GIF89a" //$NON-NLS-1$ // gif
         };
         for (String magicNumber : magicNumbers) {
             if (iconRawData.startsWith(magicNumber)) {

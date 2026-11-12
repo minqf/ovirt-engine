@@ -18,9 +18,10 @@ public class ImportVmTemplateFromConfParameters extends ImportVmTemplateParamete
     private Map<String, String> clusterMap;
     private Map<String, String> roleMap;
     private Map<String, String> domainMap;
+    private Map<Guid, Set<Guid>> imageToAvailableStorageDomains = new HashMap<>();
 
     private Set<DbUser> dbUsers;
-    private Map<String, Set<String>> userToRoles  = new HashMap<>();
+    private Map<String, Set<String>> userToRoles = new HashMap<>();
     private Collection<ExternalVnicProfileMapping> externalVnicProfileMappings;
 
     public ImportVmTemplateFromConfParameters() {
@@ -117,5 +118,13 @@ public class ImportVmTemplateFromConfParameters extends ImportVmTemplateParamete
     @Override
     public void setExternalVnicProfileMappings(Collection<ExternalVnicProfileMapping> externalVnicProfileMappings) {
         this.externalVnicProfileMappings = Objects.requireNonNull(externalVnicProfileMappings);
+    }
+
+    public Map<Guid, Set<Guid>> getImageToAvailableStorageDomains() {
+        return imageToAvailableStorageDomains;
+    }
+
+    public void setImageToAvailableStorageDomains(Map<Guid, Set<Guid>> imageToAvailableStorageDomains) {
+        this.imageToAvailableStorageDomains = imageToAvailableStorageDomains;
     }
 }

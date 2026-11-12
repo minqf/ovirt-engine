@@ -35,7 +35,7 @@ public class CidrAnnotationTest {
         ExternalSubnet container = createContainer(cidr, ipVersion);
         Set<ConstraintViolation<ExternalSubnet>> result = validator.validate(container);
         if (!validNetworkAddressExpectedResult && validCidrFormatExpectedResult) {
-            assertEquals(EngineMessage.CIDR_NOT_NETWORK_ADDRESS.name(),  result.iterator().next().getMessage(),
+            assertEquals(EngineMessage.CIDR_NOT_NETWORK_ADDRESS.name(), result.iterator().next().getMessage(),
                     "Failed to validate CIDR's error format: " + container.getCidr());
         } else if (!validCidrFormatExpectedResult) {
             assertEquals(EngineMessage.BAD_CIDR_FORMAT.name(), result.iterator().next().getMessage(),
@@ -50,10 +50,10 @@ public class CidrAnnotationTest {
     @ParameterizedTest
     @MethodSource(value = "namesParams")
     public void checkCidrNetworkAddressAnnotation
-            (String cidr,
-                    IpVersion ipVersion,
-                    boolean validCidrFormatExpectedResult,
-                    boolean validNetworkAddressExpectedResult) {
+    (String cidr,
+        IpVersion ipVersion,
+        boolean validCidrFormatExpectedResult,
+        boolean validNetworkAddressExpectedResult) {
         ExternalSubnet container = createContainer(cidr, ipVersion);
         Set<ConstraintViolation<ExternalSubnet>> result = validator.validate(container);
         if (!validCidrFormatExpectedResult) {

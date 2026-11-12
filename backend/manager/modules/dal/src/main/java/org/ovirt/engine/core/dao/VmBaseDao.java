@@ -7,9 +7,9 @@ import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.BootSequence;
 import org.ovirt.engine.core.common.businessentities.ConsoleDisconnectAction;
+import org.ovirt.engine.core.common.businessentities.CpuPinningPolicy;
 import org.ovirt.engine.core.common.businessentities.DisplayType;
 import org.ovirt.engine.core.common.businessentities.MigrationSupport;
-import org.ovirt.engine.core.common.businessentities.NumaTuneMode;
 import org.ovirt.engine.core.common.businessentities.OriginType;
 import org.ovirt.engine.core.common.businessentities.SerialNumberPolicy;
 import org.ovirt.engine.core.common.businessentities.SsoMethod;
@@ -48,7 +48,6 @@ public abstract class VmBaseDao<T extends VmBase> extends DefaultGenericDao<T, G
                 .addValue("threads_per_cpu", entity.getThreadsPerCpu())
                 .addValue("os", entity.getOsId())
                 .addValue("num_of_monitors", entity.getNumOfMonitors())
-                .addValue("single_qxl_pci", entity.getSingleQxlPci())
                 .addValue("allow_console_reconnect", entity.isAllowConsoleReconnect())
                 .addValue("vm_type", entity.getVmType())
                 .addValue("priority", entity.getPriority())
@@ -82,10 +81,10 @@ public abstract class VmBaseDao<T extends VmBase> extends DefaultGenericDao<T, G
                 .addValue("is_spice_file_transfer_enabled", entity.isSpiceFileTransferEnabled())
                 .addValue("is_spice_copy_paste_enabled", entity.isSpiceCopyPasteEnabled())
                 .addValue("cpu_profile_id", entity.getCpuProfileId())
-                .addValue("numatune_mode", entity.getNumaTuneMode().getValue())
                 .addValue("is_auto_converge", entity.getAutoConverge())
                 .addValue("is_migrate_compressed", entity.getMigrateCompressed())
                 .addValue("is_migrate_encrypted", entity.getMigrateEncrypted())
+                .addValue("parallel_migrations", entity.getParallelMigrations())
                 .addValue("predefined_properties", entity.getPredefinedProperties())
                 .addValue("userdefined_properties", entity.getUserDefinedProperties())
                 .addValue("custom_emulated_machine", entity.getCustomEmulatedMachine())
@@ -95,12 +94,17 @@ public abstract class VmBaseDao<T extends VmBase> extends DefaultGenericDao<T, G
                 .addValue(SMALL_ICON_ID_COLUMN, entity.getSmallIconId())
                 .addValue(LARGE_ICON_ID_COLUMN, entity.getLargeIconId())
                 .addValue("console_disconnect_action", entity.getConsoleDisconnectAction().toString())
+                .addValue("console_disconnect_action_delay", entity.getConsoleDisconnectActionDelay())
                 .addValue("resume_behavior", entity.getResumeBehavior() == null ? null : entity.getResumeBehavior().toString())
                 .addValue("custom_compatibility_version", entity.getCustomCompatibilityVersion())
                 .addValue("migration_policy_id", entity.getMigrationPolicyId())
                 .addValue("lease_sd_id", entity.getLeaseStorageDomainId())
                 .addValue("multi_queues_enabled", entity.isMultiQueuesEnabled())
-                .addValue("use_tsc_frequency", entity.getUseTscFrequency());
+                .addValue("use_tsc_frequency", entity.getUseTscFrequency())
+                .addValue("cpu_pinning", StringUtils.isEmpty(entity.getCpuPinning()) ? null : entity.getCpuPinning())
+                .addValue("virtio_scsi_multi_queues", entity.getVirtioScsiMultiQueues())
+                .addValue("balloon_enabled", entity.isBalloonEnabled())
+                .addValue("cpu_pinning_policy", entity.getCpuPinningPolicy());
     }
 
     /**
@@ -116,7 +120,6 @@ public abstract class VmBaseDao<T extends VmBase> extends DefaultGenericDao<T, G
             entity.setOsId(rs.getInt("os"));
             entity.setNumOfMonitors(rs.getInt("num_of_monitors"));
             entity.setAllowConsoleReconnect(rs.getBoolean("allow_console_reconnect"));
-            entity.setSingleQxlPci(rs.getBoolean("single_qxl_pci"));
             entity.setDefaultDisplayType(DisplayType.forValue(rs.getInt("default_display_type")));
             entity.setDescription(rs.getString("description"));
             entity.setComment(rs.getString("free_text_comment"));
@@ -157,10 +160,10 @@ public abstract class VmBaseDao<T extends VmBase> extends DefaultGenericDao<T, G
             entity.setMinAllocatedMem(rs.getInt("min_allocated_mem"));
             entity.setQuotaId(getGuid(rs, "quota_id"));
             entity.setCpuProfileId(getGuid(rs, "cpu_profile_id"));
-            entity.setNumaTuneMode(NumaTuneMode.forValue(rs.getString("numatune_mode")));
             entity.setAutoConverge((Boolean) rs.getObject("is_auto_converge"));
             entity.setMigrateCompressed((Boolean) rs.getObject("is_migrate_compressed"));
             entity.setMigrateEncrypted((Boolean) rs.getObject("is_migrate_encrypted"));
+            entity.setParallelMigrations((Integer) rs.getObject("parallel_migrations"));
             String predefinedProperties = rs.getString("predefined_properties");
             String userDefinedProperties = rs.getString("userdefined_properties");
             entity.setPredefinedProperties(predefinedProperties);
@@ -174,6 +177,7 @@ public abstract class VmBaseDao<T extends VmBase> extends DefaultGenericDao<T, G
             entity.setSmallIconId(getGuid(rs, SMALL_ICON_ID_COLUMN));
             entity.setLargeIconId(getGuid(rs, LARGE_ICON_ID_COLUMN));
             entity.setConsoleDisconnectAction(ConsoleDisconnectAction.fromString(rs.getString("console_disconnect_action")));
+            entity.setConsoleDisconnectActionDelay(rs.getInt("console_disconnect_action_delay"));
             String resumeBehavior = rs.getString("resume_behavior");
             entity.setResumeBehavior(resumeBehavior == null ? null : VmResumeBehavior.valueOf(resumeBehavior));
             entity.setCustomCompatibilityVersion(new VersionRowMapper("custom_compatibility_version").mapRow(rs, 0));
@@ -181,6 +185,10 @@ public abstract class VmBaseDao<T extends VmBase> extends DefaultGenericDao<T, G
             entity.setMigrationPolicyId(getGuid(rs, "migration_policy_id"));
             entity.setMultiQueuesEnabled(rs.getBoolean("multi_queues_enabled"));
             entity.setUseTscFrequency(rs.getBoolean("use_tsc_frequency"));
+            entity.setCpuPinning(rs.getString("cpu_pinning"));
+            entity.setVirtioScsiMultiQueues(rs.getInt("virtio_scsi_multi_queues"));
+            entity.setBalloonEnabled(rs.getBoolean("balloon_enabled"));
+            entity.setCpuPinningPolicy(CpuPinningPolicy.forValue(rs.getInt("cpu_pinning_policy")));
         }
     }
 

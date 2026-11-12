@@ -38,8 +38,8 @@ public class GetGlusterStorageDevicesQuery<P extends IdQueryParameters> extends 
         List<String> fsTypesToFilterOutList = getFsTypesFilter();
         // Filter out the devices which are not going to be used as storage device for gluster.
         for (StorageDevice device : storageDevices) {
-            if ((device.getMountPoint() != null && mountPointsFilterPattern.matcher(device.getMountPoint()).matches())
-                    || (device.getFsType() != null && fsTypesToFilterOutList.contains(device.getFsType()))) {
+            if (device.getMountPoint() != null && mountPointsFilterPattern.matcher(device.getMountPoint()).matches()
+                    || device.getFsType() != null && fsTypesToFilterOutList.contains(device.getFsType())) {
                 continue;
             }
             if (device.getCanCreateBrick() || device.getMountPoint() != null || device.getFsType() != null) {
@@ -54,7 +54,7 @@ public class GetGlusterStorageDevicesQuery<P extends IdQueryParameters> extends 
         // Mounts to be ignored can be exact mount point or a regular expression which should be with the starting part
         // of the mount point. So create a regex which can match against any given pattern in the list.
         StringBuilder pattern = new StringBuilder();
-        for(String mointPoint:mountPointsToIgnore){
+        for (String mointPoint:mountPointsToIgnore) {
             pattern.append("^");
             pattern.append(mointPoint);
             pattern.append("$");

@@ -27,6 +27,7 @@ import org.ovirt.engine.core.common.businessentities.VmBase;
 import org.ovirt.engine.core.common.businessentities.VmNumaNode;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.utils.HugePageUtils;
+import org.ovirt.engine.core.common.utils.VmCpuCountHelper;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.VdsDao;
 import org.ovirt.engine.core.dao.VdsNumaNodeDao;
@@ -46,10 +47,10 @@ public class NumaValidator {
     /**
      * preferred supports single pinned vNUMA node (without that VM fails to run in libvirt)
      */
-    private ValidationResult checkNumaPreferredTuneMode(NumaTuneMode numaTuneMode,
-            List<VmNumaNode> vmNumaNodes) {
+    private ValidationResult checkNumaPreferredTuneMode(List<VmNumaNode> vmNumaNodes) {
         // check tune mode
-        if (numaTuneMode != NumaTuneMode.PREFERRED) {
+        if (vmNumaNodes.stream().map(VmNumaNode::getNumaTuneMode)
+                .allMatch(tune -> tune != NumaTuneMode.PREFERRED)) {
             return ValidationResult.VALID;
         }
 
@@ -216,13 +217,12 @@ public class NumaValidator {
             return ValidationResult.VALID;
         }
 
-        ValidationResult validationResult = checkNumaPreferredTuneMode(vm.getNumaTuneMode(),
-                vmNumaNodes);
+        ValidationResult validationResult = checkNumaPreferredTuneMode(vmNumaNodes);
         if (!validationResult.isValid()) {
             return validationResult;
         }
 
-        validationResult = checkVmNumaNodeCount(vmNumaNodes.size(), vm.getNumOfCpus());
+        validationResult = checkVmNumaNodeCount(vmNumaNodes.size(), VmCpuCountHelper.getDynamicNumOfCpu(vm));
         if (!validationResult.isValid()) {
             return validationResult;
         }
@@ -237,7 +237,7 @@ public class NumaValidator {
             return validationResult;
         }
 
-        validationResult = checkVmNumaCpuAssignment(vm.getNumOfCpus(), vmNumaNodes);
+        validationResult = checkVmNumaCpuAssignment(VmCpuCountHelper.getDynamicNumOfCpu(vm), vmNumaNodes);
         if (!validationResult.isValid()) {
             return validationResult;
         }
@@ -266,7 +266,7 @@ public class NumaValidator {
      * @return whether the vm can run on all pinned hosts (hostsNodesMap) or not
      */
     public ValidationResult validateNumaCompatibility(final VM vm, final List<VmNumaNode> vmNumaNodes,
-    final Map<Guid, List<VdsNumaNode>> hostsNumaNodesMap) {
+        final Map<Guid, List<VdsNumaNode>> hostsNumaNodesMap) {
         for (Map.Entry<Guid, List<VdsNumaNode>> entry : hostsNumaNodesMap.entrySet()) {
             Guid pinnedVds = entry.getKey();
             List<VdsNumaNode> pinnedVdsNumaNodes = entry.getValue();
@@ -296,7 +296,7 @@ public class NumaValidator {
                                 String.format("$hostName %s", getHostNameOrId(pinnedVds)));
                     }
 
-                    if (vm.getNumaTuneMode() == NumaTuneMode.STRICT
+                    if (vmNumaNode.getNumaTuneMode() == NumaTuneMode.STRICT
                             && vmNumaNode.getMemTotal() > hostNodeIndexToNodeMap.get(vdsPinnedIndex).getMemTotal()) {
                         return new ValidationResult(EngineMessage.VM_NUMA_NODE_MEMORY_ERROR,
                                 String.format("$vmNodeIndex %d", vmNumaNode.getIndex()),
@@ -330,15 +330,24 @@ public class NumaValidator {
         }
 
         // Check if the VM is pinned to at least one host
-        if (vm.getDedicatedVmForVdsList().isEmpty()) {
+        if (vm.getDedicatedVmForVdsList().isEmpty() && !VmCpuCountHelper.isResizeAndPinPolicy(vm) && isNumaPinning(vmNumaNodes)) {
             return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_NOT_PINNED_TO_AT_LEAST_ONE_HOST);
         }
 
         // check that VM's NUMA policy fits all pinned/assigned hosts NUMA policy
         final Map<Guid, List<VdsNumaNode>> hostsNumaNodesMap = new HashMap<>();
-        vm.getDedicatedVmForVdsList().forEach(vdsId -> hostsNumaNodesMap.put(vdsId, vdsNumaNodeDao.getAllVdsNumaNodeByVdsId(vdsId)));
+        if (VmCpuCountHelper.isResizeAndPinPolicy(vm)) {
+            return ValidationResult.VALID;
+        } else {
+            vm.getDedicatedVmForVdsList()
+                    .forEach(vdsId -> hostsNumaNodesMap.put(vdsId, vdsNumaNodeDao.getAllVdsNumaNodeByVdsId(vdsId)));
+        }
 
         return validateNumaCompatibility(vm, vmNumaNodes, hostsNumaNodesMap);
+    }
+
+    private boolean isNumaPinning(final List<VmNumaNode> vmNumaNodes) {
+        return vmNumaNodes.stream().anyMatch(node -> !node.getVdsNumaNodeList().isEmpty());
     }
 
     private String formatMissingIndices(List<Integer> missingIndices) {

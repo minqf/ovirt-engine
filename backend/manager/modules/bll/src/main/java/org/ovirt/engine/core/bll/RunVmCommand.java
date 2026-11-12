@@ -48,26 +48,32 @@ import org.ovirt.engine.core.common.action.ProcessDownVmParameters;
 import org.ovirt.engine.core.common.action.RunVmParams;
 import org.ovirt.engine.core.common.action.RunVmParams.RunVmFlow;
 import org.ovirt.engine.core.common.action.VmLeaseParameters;
+import org.ovirt.engine.core.common.action.VmNumaNodeOperationParameters;
 import org.ovirt.engine.core.common.asynctasks.EntityInfo;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
 import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.BootSequence;
+import org.ovirt.engine.core.common.businessentities.CpuPinningPolicy;
+import org.ovirt.engine.core.common.businessentities.DisplayType;
 import org.ovirt.engine.core.common.businessentities.GraphicsInfo;
 import org.ovirt.engine.core.common.businessentities.GraphicsType;
 import org.ovirt.engine.core.common.businessentities.InitializationType;
 import org.ovirt.engine.core.common.businessentities.Snapshot;
 import org.ovirt.engine.core.common.businessentities.Snapshot.SnapshotType;
 import org.ovirt.engine.core.common.businessentities.StorageDomain;
+import org.ovirt.engine.core.common.businessentities.UsbPolicy;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VMStatus;
 import org.ovirt.engine.core.common.businessentities.VdsNumaNode;
 import org.ovirt.engine.core.common.businessentities.VmDevice;
 import org.ovirt.engine.core.common.businessentities.VmDeviceGeneralType;
+import org.ovirt.engine.core.common.businessentities.VmExitStatus;
 import org.ovirt.engine.core.common.businessentities.VmNumaNode;
 import org.ovirt.engine.core.common.businessentities.VmPayload;
 import org.ovirt.engine.core.common.businessentities.VmPool;
 import org.ovirt.engine.core.common.businessentities.VmPoolType;
 import org.ovirt.engine.core.common.businessentities.VmRngDevice;
+import org.ovirt.engine.core.common.businessentities.VmType;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.ImageFileType;
@@ -78,6 +84,7 @@ import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.job.Job;
 import org.ovirt.engine.core.common.job.Step;
 import org.ovirt.engine.core.common.job.StepEnum;
+import org.ovirt.engine.core.common.utils.VmCpuCountHelper;
 import org.ovirt.engine.core.common.utils.VmDeviceType;
 import org.ovirt.engine.core.common.validation.group.StartEntity;
 import org.ovirt.engine.core.common.vdscommands.CreateVDSCommandParameters;
@@ -118,6 +125,7 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
     private boolean needsHostDevices = false;
     private InitializationType initializationType;
     protected VmPayload vmPayload;
+    private boolean vmIsBeingUpdated;
 
     public static final String ISO_PREFIX = "iso://";
     public static final String STATELESS_SNAPSHOT_DESCRIPTION = "stateless snapshot";
@@ -163,6 +171,10 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
     private StorageDomainDao storageDomainDao;
     @Inject
     private ManagedBlockStorageCommandUtil managedBlockStorageCommandUtil;
+    @Inject
+    private HaAutoStartVmsRunner haAutoStartVmsRunner;
+    @Inject
+    private NextRunConfigurationApplier nextRunConfigurationApplier;
 
     protected RunVmCommand(Guid commandId) {
         super(commandId);
@@ -179,6 +191,10 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
             return;
         }
 
+        if (!applyPendingNextRunConfiguration()) {
+            return;
+        }
+
         super.init();
         setStoragePoolId(getVm().getStoragePoolId());
         loadPayload();
@@ -187,6 +203,37 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
         fetchVmDisksFromDb();
         getVm().setBootSequence(getVm().getDefaultBootSequence());
         getVm().setRunOnce(false);
+    }
+
+    /**
+     * Applies the Next Run configuration that is still pending, e.g. because the VM was locked by another operation
+     * when it went down.
+     *
+     * @return false if the VM cannot be started at the moment
+     */
+    private boolean applyPendingNextRunConfiguration() {
+        if (getVm().getStatus() != VMStatus.Down) {
+            // the VM is resumed rather than started, its configuration must not be changed
+            return true;
+        }
+
+        if (getLock() != null) {
+            // the caller holds the VM lock, the nested UpdateVm would not be able to acquire it
+            return true;
+        }
+
+        switch (nextRunConfigurationApplier.apply(getVm())) {
+            case TEMPLATE_VERSION_CHANGED:
+                // the VM is being re-created from a newer template version, it cannot be started now
+                vmIsBeingUpdated = true;
+                return false;
+            case APPLIED:
+                // reload the VM, its configuration has just been changed
+                setVm(null);
+                return getVm() != null;
+            default:
+                return true;
+        }
     }
 
     @Override
@@ -204,12 +251,7 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
     protected boolean shouldRestoreMemory() {
         // If the memory from the snapshot could have been restored already, the disks might be
         // non coherent with the memory, thus we don't want to try to restore the memory again
-        return !memoryFromSnapshotUsed &&
-                (getFlow() == RunVmFlow.RESUME_HIBERNATE ||
-                FeatureSupported.isMemorySnapshotSupportedByArchitecture(
-                getVm().getClusterArch(),
-                getVm().getCompatibilityVersion())) &&
-                getActiveSnapshot().containsMemory();
+        return !memoryFromSnapshotUsed && getActiveSnapshot().containsMemory();
     }
 
     /**
@@ -299,23 +341,28 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
                         markHostDevicesAsUsed();
                     }
                 }
-            } catch(EngineException e) {
+            } catch (EngineException e) {
                 // if the returned exception is such that shoudn't trigger the re-run process,
                 // re-throw it. otherwise, continue (the vm will be down and a re-run will be triggered)
                 switch (e.getErrorCode()) {
-                case Done: // should never get here with errorCode = 'Done' though
-                case exist:
-                    cleanupPassthroughVnics();
-                    reportCompleted();
-                    throw e;
-                case VDS_NETWORK_ERROR: // probably wrong xml format sent.
-                case PROVIDER_FAILURE:
-                case HOST_DEVICES_TAKEN_BY_OTHER_VM:
-                case INVALID_HA_VM_LEASE:
-                    runningFailed();
-                    throw e;
-                default:
-                    log.warn("Failed to run VM '{}': {}", getVmName(), e.getMessage());
+                    case Done: // should never get here with errorCode = 'Done' though
+                    case exist:
+                        cleanupPassthroughVnics();
+                        reportCompleted();
+                        throw e;
+                    case VDS_NETWORK_ERROR:
+                        getVm().setRunOnVds(getVdsId());
+                        resourceManager.setVmUnknown(getVm());
+                        cleanupPassthroughVnics();
+                        reportCompleted();
+                        throw e;
+                    case PROVIDER_FAILURE:
+                    case HOST_DEVICES_TAKEN_BY_OTHER_VM:
+                    case INVALID_HA_VM_LEASE:
+                        runningFailed();
+                        throw e;
+                    default:
+                        log.warn("Failed to run VM '{}': {}", getVmName(), e.getMessage());
                 }
 
             } finally {
@@ -380,14 +427,14 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
     @Override
     protected void executeVmCommand() {
         switch (getVm().getOrigin()) {
-        case KUBEVIRT:
-            runKubevirtVm();
-            break;
-        default:
-            getVmManager().setPowerOffTimeout(System.nanoTime());
-            setActionReturnValue(VMStatus.Down);
-            initVm();
-            perform();
+            case KUBEVIRT:
+                runKubevirtVm();
+                break;
+            default:
+                getVmManager().setPowerOffTimeout(System.nanoTime());
+                setActionReturnValue(VMStatus.Down);
+                initVm();
+                perform();
         }
     }
 
@@ -402,6 +449,7 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
     public void rerun() {
         cleanupPassthroughVnics();
         setFlow(null);
+        getVdsManager().unpinVmCpus(getVmId());
         super.rerun();
     }
 
@@ -422,14 +470,14 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
             return cachedFlow;
         }
 
-        switch(getVm().getStatus()) {
-        case Paused:
-            return setFlow(RunVmFlow.RESUME_PAUSE);
+        switch (getVm().getStatus()) {
+            case Paused:
+                return setFlow(RunVmFlow.RESUME_PAUSE);
 
-        case Suspended:
-            return setFlow(RunVmFlow.RESUME_HIBERNATE);
+            case Suspended:
+                return setFlow(RunVmFlow.RESUME_HIBERNATE);
 
-        default:
+            default:
         }
 
         if (isRunAsStateless()) {
@@ -454,23 +502,23 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
     }
 
     protected void perform() {
-        switch(getFlow()) {
-        case RESUME_PAUSE:
-            resumeVm();
-            break;
+        switch (getFlow()) {
+            case RESUME_PAUSE:
+                resumeVm();
+                break;
 
-        case REMOVE_STATELESS_IMAGES:
-            removeStatlessSnapshot();
-            break;
+            case REMOVE_STATELESS_IMAGES:
+                removeStatlessSnapshot();
+                break;
 
-        case CREATE_STATELESS_IMAGES:
-            createStatelessSnapshot();
-            break;
+            case CREATE_STATELESS_IMAGES:
+                createStatelessSnapshot();
+                break;
 
-        case RESUME_HIBERNATE:
-        case RUN:
-        default:
-            runVm();
+            case RESUME_HIBERNATE:
+            case RUN:
+            default:
+                runVm();
         }
     }
 
@@ -502,9 +550,13 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
             return getVm().getIsoPath();
         }
 
-        String guestToolPath = guestToolsVersionTreatment(isoDomainListSynchronizer.getRegexToolPattern());
-        if (guestToolPath != null) {
-            return guestToolPath;
+        if (FeatureSupported.isWindowsGuestToolsSupported(getVm().getCompatibilityVersion())) {
+            // Auto-attaching WGT is removed since 4.4.
+            String guestToolPath = guestToolsVersionTreatment(isoDomainListSynchronizer.getRegexToolPattern());
+
+            if (guestToolPath != null) {
+                return guestToolPath;
+            }
         }
 
         return getVm().getIsoPath();
@@ -519,10 +571,10 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
 
         log.info("Creating stateless snapshot for VM '{}' ({})",
                 getVm().getName(), getVm().getId());
-        CreateSnapshotForVmParameters createAllSnapshotsFromVmParameters = buildCreateSnapshotParameters();
+        CreateSnapshotForVmParameters createSnapshotForVmParameters = buildCreateSnapshotParameters();
 
         ActionReturnValue actionReturnValue = runInternalAction(ActionType.CreateSnapshotForVm,
-                createAllSnapshotsFromVmParameters,
+                createSnapshotForVmParameters,
                 createContextForStatelessSnapshotCreation());
 
         // setting lock to null in order not to release lock twice
@@ -586,7 +638,7 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
 
     private void removeStatlessSnapshot() {
         runInternalAction(ActionType.ProcessDownVm,
-                new ProcessDownVmParameters(getVm().getId(), true),
+                new ProcessDownVmParameters(getVm().getId(), true, getVdsId()),
                 ExecutionHandler.createDefaultContextForTasks(getContext(), getLock()));
         // setting lock to null in order not to release lock twice
         setLock(null);
@@ -597,7 +649,7 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
         updateCdPath();
         // set the path for windows guest tools secondary cd-rom
         if (getParameters().isAttachWgt()) {
-            getVm().setWgtCdPath(cdPathWindowsToLinux(guestToolsVersionTreatment(getRegexVirtIoPattern())));
+            getVm().setWgtCdPath(cdPathWindowsToLinux(guestToolsVersionTreatment(vmHandler.getRegexVirtIoIsoPattern())));
         }
 
         if (!StringUtils.isEmpty(getParameters().getFloppyPath())) {
@@ -637,7 +689,7 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
      * @return the VDS create VM parameters
      */
     protected CreateVDSCommandParameters buildCreateVmParameters() {
-        CreateVDSCommandParameters parameters  = new CreateVDSCommandParameters(getVdsId(), getVm());
+        CreateVDSCommandParameters parameters = new CreateVDSCommandParameters(getVdsId(), getVm());
         parameters.setRunInUnknownStatus(getParameters().isRunInUnknownStatus());
         parameters.setVmPayload(vmPayload);
         if (shouldRestoreMemory()) {
@@ -674,69 +726,62 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
     @Override
     public AuditLogType getAuditLogTypeValue() {
         switch (getActionState()) {
-        case EXECUTE:
-            if (getFlow() == RunVmFlow.REMOVE_STATELESS_IMAGES) {
-                return AuditLogType.USER_RUN_VM_FAILURE_STATELESS_SNAPSHOT_LEFT;
-            }
-            if (getFlow() == RunVmFlow.RESUME_PAUSE) {
-                return getSucceeded() ? AuditLogType.USER_RESUME_VM : AuditLogType.USER_FAILED_RESUME_VM;
-            } else if (isInternalExecution()) {
-                if (getSucceeded()) {
-                    boolean isStateless = isStatelessSnapshotExistsForVm();
-                    if (isStateless) {
-                        return AuditLogType.VDS_INITIATED_RUN_VM_AS_STATELESS;
-                    } else if (getFlow() == RunVmFlow.CREATE_STATELESS_IMAGES) {
-                        return AuditLogType.VDS_INITIATED_RUN_AS_STATELESS_VM_NOT_YET_RUNNING;
-                    } else {
-                        return AuditLogType.VDS_INITIATED_RUN_VM;
+            case EXECUTE:
+                if (getFlow() == RunVmFlow.REMOVE_STATELESS_IMAGES) {
+                    return AuditLogType.USER_RUN_VM_FAILURE_STATELESS_SNAPSHOT_LEFT;
+                }
+                if (getFlow() == RunVmFlow.RESUME_PAUSE) {
+                    return getSucceeded() ? AuditLogType.USER_RESUME_VM : AuditLogType.USER_FAILED_RESUME_VM;
+                } else if (isInternalExecution()) {
+                    if (getSucceeded()) {
+                        boolean isStateless = isStatelessSnapshotExistsForVm();
+                        if (isStateless) {
+                            return AuditLogType.VDS_INITIATED_RUN_VM_AS_STATELESS;
+                        } else if (getFlow() == RunVmFlow.CREATE_STATELESS_IMAGES) {
+                            return AuditLogType.VDS_INITIATED_RUN_AS_STATELESS_VM_NOT_YET_RUNNING;
+                        } else {
+                            return AuditLogType.VDS_INITIATED_RUN_VM;
+                        }
                     }
+
+                    return AuditLogType.VDS_INITIATED_RUN_VM_FAILED;
+                } else {
+                    addCustomValue("DueToError", " ");
+                    return getSucceeded() ?
+                            getActionReturnValue() == VMStatus.Up ?
+                                isVmRunningOnNonDefaultVds() ?
+                                        AuditLogType.USER_RUN_VM_ON_NON_DEFAULT_VDS
+                                        : isStatelessSnapshotExistsForVm() ?
+                                                AuditLogType.USER_RUN_VM_AS_STATELESS
+                                                : AuditLogType.USER_RUN_VM
+                                    : _isRerun ?
+                                            AuditLogType.VDS_INITIATED_RUN_VM
+                                            : getVm().isRunAndPause() ?
+                                                    AuditLogType.USER_INITIATED_RUN_VM_AND_PAUSE
+                                                    : getFlow() == RunVmFlow.CREATE_STATELESS_IMAGES ?
+                                                            AuditLogType.USER_INITIATED_RUN_VM
+                                                            : AuditLogType.USER_STARTED_VM
+                            : _isRerun ? AuditLogType.USER_INITIATED_RUN_VM_FAILED : AuditLogType.USER_FAILED_RUN_VM;
                 }
 
-                return AuditLogType.VDS_INITIATED_RUN_VM_FAILED;
-            } else {
-                addCustomValue("DueToError", " ");
-                return getSucceeded() ?
-                        getActionReturnValue() == VMStatus.Up ?
-                               isVmRunningOnNonDefaultVds() ?
-                                       AuditLogType.USER_RUN_VM_ON_NON_DEFAULT_VDS
-                                       : isStatelessSnapshotExistsForVm() ?
-                                               AuditLogType.USER_RUN_VM_AS_STATELESS
-                                               : AuditLogType.USER_RUN_VM
-                                : _isRerun ?
-                                        AuditLogType.VDS_INITIATED_RUN_VM
-                                        : getVm().isRunAndPause() ?
-                                                AuditLogType.USER_INITIATED_RUN_VM_AND_PAUSE
-                                                : getFlow() == RunVmFlow.CREATE_STATELESS_IMAGES ?
-                                                        AuditLogType.USER_INITIATED_RUN_VM
-                                                        : AuditLogType.USER_STARTED_VM
-                        : _isRerun ? AuditLogType.USER_INITIATED_RUN_VM_FAILED : AuditLogType.USER_FAILED_RUN_VM;
-            }
+            case END_SUCCESS:
+                // if not running as stateless, or if succeeded running as
+                // stateless,
+                // command should be with 'CommandShouldBeLogged = false':
+                return isStatelessSnapshotExistsForVm() && !getSucceeded() ?
+                        AuditLogType.USER_RUN_VM_AS_STATELESS_FINISHED_FAILURE : AuditLogType.UNASSIGNED;
 
-        case END_SUCCESS:
-            // if not running as stateless, or if succeeded running as
-            // stateless,
-            // command should be with 'CommandShouldBeLogged = false':
-            return isStatelessSnapshotExistsForVm() && !getSucceeded() ?
-                    AuditLogType.USER_RUN_VM_AS_STATELESS_FINISHED_FAILURE : AuditLogType.UNASSIGNED;
+            case END_FAILURE:
+                // if not running as stateless, command should
+                // be with 'CommandShouldBeLogged = false':
+                return isStatelessSnapshotExistsForVm() ?
+                        AuditLogType.USER_RUN_VM_AS_STATELESS_FINISHED_FAILURE : AuditLogType.UNASSIGNED;
 
-        case END_FAILURE:
-            // if not running as stateless, command should
-            // be with 'CommandShouldBeLogged = false':
-            return isStatelessSnapshotExistsForVm() ?
-                    AuditLogType.USER_RUN_VM_AS_STATELESS_FINISHED_FAILURE : AuditLogType.UNASSIGNED;
-
-        default:
-            // all other cases should be with 'CommandShouldBeLogged =
-            // false':
-            return AuditLogType.UNASSIGNED;
+            default:
+                // all other cases should be with 'CommandShouldBeLogged =
+                // false':
+                return AuditLogType.UNASSIGNED;
         }
-    }
-
-    private String getRegexVirtIoPattern() {
-        return String.format("%1$s(?<%2$s>[0-9]{1,}.[0-9])\\.(?<%3$s>[0-9]{1,})[.\\w]*.[i|I][s|S][o|O]$",
-                "virtio-win-",
-                IsoDomainListSynchronizer.TOOL_CLUSTER_LEVEL,
-                IsoDomainListSynchronizer.TOOL_VERSION);
     }
 
     protected boolean isVmRunningOnNonDefaultVds() {
@@ -756,9 +801,11 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
             return;
         }
 
+        getVmManager().resetExternalDataStatus();
         fetchVmDisksFromDb();
         updateVmDevicesOnRun();
         updateGraphicsAndDisplayInfos();
+        updateUsbController();
 
         getVm().setRunAndPause(getParameters().getRunAndPause() == null ? getVm().isRunAndPause() : getParameters().getRunAndPause());
 
@@ -808,7 +855,26 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
     }
 
     protected String getEffectiveEmulatedMachine() {
-        return EmulatedMachineUtils.getEffective(getVm().getStaticData(), this::getCluster);
+        return EmulatedMachineUtils.getEffective(getVm(), this::getCluster);
+    }
+
+    private void updateUsbController() {
+        if (getVm().getClusterArch().getFamily() == ArchitectureType.ppc
+                && getVm().getUsbPolicy() == UsbPolicy.DISABLED
+                && getVm().getVmType() == VmType.HighPerformance) {
+            if (getVm().getDefaultDisplayType() != DisplayType.none) {
+                // if the VM is set with a console, let libvirt add a corresponding usb controller needed
+                // for input devices (to make the console usable)
+                getVmDeviceUtils().removeUsbControllers(getVm().getId());
+                return;
+            }
+            // otherwise, make sure that headless VM is set with disabled USB controller
+            if (!getVmDeviceUtils().isUsbControllerDisabled(getVm().getId())) {
+                getVmDeviceUtils().removeUsbControllers(getVm().getId());
+                getVmDeviceUtils().addDisableUsbControllers(getVm().getId());
+                return;
+            }
+        }
     }
 
     /**
@@ -870,7 +936,7 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
                     }
                 } else {
                     if (!isPayloadExists(VmDeviceType.CDROM)) {
-                        if(osRepository.isCloudInit(getVm().getVmOsId())) {
+                        if (osRepository.isCloudInit(getVm().getVmOsId())) {
                             initializationType = InitializationType.CloudInit;
                         } else {
                             initializationType = InitializationType.Ignition;
@@ -931,6 +997,10 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
             getVm().setUseHostCpuFlags(true);
         }
 
+        addNumaPinningForDedicated(getVdsId());
+        addNumaPinningForResizeAndPin();
+        setExclusiveCpuPinning(getVdsManager());
+
         return true;
     }
 
@@ -948,7 +1018,7 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
         List<VdsNumaNode> hostNodes = vdsNumaNodeDao.getAllVdsNumaNodeByVdsId(getVdsId());
         boolean vmFitsToSomeNumaNode = hostNodes.stream()
                 .filter(node -> getVm().getMemSizeMb() <= node.getMemTotal())
-                .anyMatch(node -> getVm().getNumOfCpus() <= node.getCpuIds().size());
+                .anyMatch(node -> VmCpuCountHelper.getDynamicNumOfCpu(getVm()) <= node.getCpuIds().size());
 
         if (!vmFitsToSomeNumaNode) {
             addCustomValue("HostName", getVdsName());
@@ -991,9 +1061,9 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
                     int toolVersion = Integer.parseInt(matchToolPattern.group(IsoDomainListSynchronizer.TOOL_VERSION));
 
                     if (clusterVer.compareTo(getVm().getCompatibilityVersion()) <= 0) {
-                        if ((bestClusterVer == null)
-                                || (clusterVer.compareTo(bestClusterVer) > 0)
-                                || (clusterVer.equals(bestClusterVer) && toolVersion > bestToolVer)) {
+                        if (bestClusterVer == null
+                                || clusterVer.compareTo(bestClusterVer) > 0
+                                || clusterVer.equals(bestClusterVer) && toolVersion > bestToolVer) {
                             bestToolVer = toolVersion;
                             bestClusterVer = clusterVer;
                             selectedCd = fileName;
@@ -1018,7 +1088,7 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
                     .filter(m -> m.getRepoImageName().equals(toolsName))
                     .findFirst()
                     .orElse(null);
-            if (dataDisk != null){
+            if (dataDisk != null) {
                 return dataDisk.getRepoImageId();
             }
             String isoDir = (String) runVdsCommand(VDSCommandType.IsoDirectory,
@@ -1038,6 +1108,10 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_VM_NOT_FOUND);
         }
 
+        if (vmIsBeingUpdated) {
+            return failValidation(EngineMessage.ACTION_TYPE_FAILED_VM_IS_BEING_UPDATED);
+        }
+
         if (!validateObject(vm.getStaticData())) {
             return false;
         }
@@ -1046,8 +1120,13 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
             return false;
         }
 
-        if (getVm().getCustomCompatibilityVersion() != null &&
-                vm.getCustomCompatibilityVersion().less(getStoragePool().getCompatibilityVersion())) {
+        // Skip the compatibility version check when resuming a Paused or Suspended VM,
+        // since the VM was already running with its custom compatibility version before
+        // the data center was upgraded and is only being resumed, not started fresh.
+        if (vm.getCustomCompatibilityVersion() != null &&
+                vm.getCustomCompatibilityVersion().less(getStoragePool().getCompatibilityVersion()) &&
+                vm.getStatus() != VMStatus.Paused &&
+                vm.getStatus() != VMStatus.Suspended) {
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_VM_COMPATIBILITY_VERSION_NOT_SUPPORTED,
                     String.format("$VmName %1$s", getVm().getName()),
                     String.format("$VmVersion %1$s", getVm().getCustomCompatibilityVersion().toString()),
@@ -1056,6 +1135,7 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
 
         RunVmValidator runVmValidator = getRunVmValidator();
 
+        getVmManager().setFailedSchedulingDueToLeaseSd(false);
         if (!runVmValidator.canRunVm(
                 getReturnValue().getValidationMessages(),
                 getStoragePool(),
@@ -1063,6 +1143,12 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
                 getVdsWhiteList(),
                 getCluster(),
                 getParameters().isRunInUnknownStatus())) {
+            if (!isInternalExecution() && getVmManager().isFailedSchedulingDueToLeaseSd()) {
+                getVm().setStatus(VMStatus.Down);
+                getVm().setExitStatus(VmExitStatus.Error);
+                getVmManager().update(getVm().getDynamicData());
+                haAutoStartVmsRunner.addVmsToRun(Collections.singletonList(getVmId()));
+            }
             return false;
         }
 
@@ -1080,17 +1166,17 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
             return false;
         }
 
-        boolean isCloudInitEnabled = (!getVm().isInitialized() && getVm().getVmInit() != null && osRepository.isCloudInit(getVm().getVmOsId())) ||
-                (getParameters().getInitializationType() == InitializationType.CloudInit);
+        boolean isCloudInitEnabled = !getVm().isInitialized() && getVm().getVmInit() != null && osRepository.isCloudInit(getVm().getVmOsId()) ||
+                getParameters().getInitializationType() == InitializationType.CloudInit;
 
-        boolean isIgnitionEnabled = (!getVm().isInitialized() && getVm().getVmInit() != null && osRepository.isIgnition(getVm().getVmOsId())) ||
-                (getParameters().getInitializationType() == InitializationType.Ignition);
+        boolean isIgnitionEnabled = !getVm().isInitialized() && getVm().getVmInit() != null && osRepository.isIgnition(getVm().getVmOsId()) ||
+                getParameters().getInitializationType() == InitializationType.Ignition;
 
         if ((isCloudInitEnabled || isIgnitionEnabled) && hasMaximumNumberOfDisks()) {
             return failValidation(EngineMessage.VMPAYLOAD_CDROM_OR_CLOUD_INIT_MAXIMUM_DEVICES);
         }
 
-        if (!validate(vmHandler.isCpuSupported(
+        if (getVm().getCustomCpuName() == null && !validate(vmHandler.isCpuSupported(
                 getVm().getVmOsId(),
                 getVm().getCompatibilityVersion(),
                 getCluster().getCpuName()))) {
@@ -1111,13 +1197,36 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
         }
 
         if (FeatureSupported.isBiosTypeSupported(getCluster().getCompatibilityVersion())
-                && getVm().getBiosType() != BiosType.CLUSTER_DEFAULT
                 && getVm().getBiosType() != BiosType.I440FX_SEA_BIOS
                 && getCluster().getArchitecture().getFamily() != ArchitectureType.x86) {
             return failValidation(EngineMessage.NON_DEFAULT_BIOS_TYPE_FOR_X86_ONLY);
         }
 
+        if (!getVm().getStatus().equals(VMStatus.Paused) && isVmDuringBackup()) {
+            return failValidation(EngineMessage.ACTION_TYPE_FAILED_VM_IS_DURING_BACKUP);
+        }
+
         return true;
+    }
+
+    @Override
+    protected boolean shouldBlockDuringBackup() {
+        return false;
+    }
+
+    private void addNumaPinningForResizeAndPin() {
+        // The CPU topology and CPU Pinning change happens under schedule(), when allocating CPUs
+        // - VdsCpuUnitPinningHelper::updatePhysicalCpuAllocations.
+        if (getVm().getCpuPinningPolicy() == CpuPinningPolicy.RESIZE_AND_PIN_NUMA) {
+            List<VmNumaNode> newVmNumaList = getVm().getvNumaNodeList();
+            VmNumaNodeOperationParameters params =
+                    new VmNumaNodeOperationParameters(getVm(), new ArrayList<>(newVmNumaList));
+
+            if (!backend.runInternalAction(ActionType.SetVmNumaNodes, params).getSucceeded()) {
+                auditLogDirector.log(this, AuditLogType.NUMA_UPDATE_VM_NUMA_NODE_FAILED);
+                throw new EngineException(EngineError.FAILED_NUMA_UPDATE);
+            }
+        }
     }
 
     protected void checkVmLeaseStorageDomain() {
@@ -1375,7 +1484,9 @@ public class RunVmCommand<T extends RunVmParams> extends RunVmCommandBase<T>
         list.add(new QuotaClusterConsumptionParameter(getVm().getQuotaId(),
                 QuotaConsumptionParameter.QuotaAction.CONSUME,
                 getVm().getClusterId(),
-                getVm().getCpuPerSocket() * getVm().getNumOfSockets(),
+                VmCpuCountHelper.isDynamicCpuTopologySet(getVm()) ?
+                        getVm().getCurrentCoresPerSocket() * getVm().getCurrentSockets() :
+                        getVm().getCpuPerSocket() * getVm().getNumOfSockets(),
                 getVm().getMemSizeMb()));
         return list;
     }

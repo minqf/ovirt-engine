@@ -10,9 +10,13 @@ public class DiskImageDynamic implements BusinessEntity<Guid>, Comparable<DiskIm
     private static final long serialVersionUID = 6357763045419255853L;
     private Guid id;
 
-    private Integer readRate;
+    private Long readRate;
 
-    private Integer writeRate;
+    private Long readOps;
+
+    private Long writeRate;
+
+    private Long writeOps;
 
     private long actualSize;
 
@@ -26,20 +30,36 @@ public class DiskImageDynamic implements BusinessEntity<Guid>, Comparable<DiskIm
     public DiskImageDynamic() {
     }
 
-    public Integer getReadRate() {
+    public Long getReadRate() {
         return readRate;
     }
 
-    public void setReadRate(Integer rate) {
+    public void setReadRate(Long rate) {
         readRate = rate;
     }
 
-    public Integer getWriteRate() {
+    public Long getReadOps() {
+        return readOps;
+    }
+
+    public void setReadOps(Long ops) {
+        readOps = ops;
+    }
+
+    public Long getWriteRate() {
         return writeRate;
     }
 
-    public void setWriteRate(Integer rate) {
+    public void setWriteRate(Long rate) {
         writeRate = rate;
+    }
+
+    public Long getWriteOps() {
+        return writeOps;
+    }
+
+    public void setWriteOps(Long ops) {
+        writeOps = ops;
     }
 
     public Double getReadLatency() {
@@ -80,7 +100,9 @@ public class DiskImageDynamic implements BusinessEntity<Guid>, Comparable<DiskIm
                 id,
                 actualSize,
                 readRate,
+                readOps,
                 writeRate,
+                writeOps,
                 readLatency,
                 writeLatency,
                 flushLatency
@@ -99,7 +121,9 @@ public class DiskImageDynamic implements BusinessEntity<Guid>, Comparable<DiskIm
         return Objects.equals(id, other.id)
                 && actualSize == other.actualSize
                 && Objects.equals(readRate, other.readRate)
+                && Objects.equals(readOps, other.readOps)
                 && Objects.equals(writeRate, other.writeRate)
+                && Objects.equals(writeOps, other.writeOps)
                 && Objects.equals(readLatency, other.readLatency)
                 && Objects.equals(writeLatency, other.writeLatency)
                 && Objects.equals(flushLatency, other.flushLatency);

@@ -212,7 +212,7 @@ public class GlusterBrickEntity implements Queryable, BusinessEntityWithStatus<G
     }
 
     public Guid getId(boolean generateIfNull) {
-        if(id == null && generateIfNull) {
+        if (id == null && generateIfNull) {
             id = Guid.newGuid();
         }
         return id;
@@ -253,7 +253,7 @@ public class GlusterBrickEntity implements Queryable, BusinessEntityWithStatus<G
 
     @Override
     public GlusterAsyncTask getAsyncTask() {
-       return asyncTask;
+        return asyncTask;
     }
 
     @Override
@@ -315,7 +315,7 @@ public class GlusterBrickEntity implements Queryable, BusinessEntityWithStatus<G
                 double healRate = ((double) entries - entriesRemaining)
                         / (Config.<Integer> getValue(ConfigValues.GlusterRefreshRateHealInfo));
                 if (healRate > 0) {
-                healRates.add(healRate);
+                    healRates.add(healRate);
                 }
             }
         }

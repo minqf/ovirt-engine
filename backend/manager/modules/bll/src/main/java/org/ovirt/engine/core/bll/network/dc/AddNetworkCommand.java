@@ -123,6 +123,8 @@ public class AddNetworkCommand<T extends AddNetworkStoragePoolParameters> extend
         AddNetworkValidator validator = getNetworkValidator();
         return validate(hasStoragePoolValidator.storagePoolExists())
                 && validate(validator.stpForVmNetworkOnly())
+                && validate(validator.portIsolationForVmNetworkOnly())
+                && validate(validator.portIsolationNoExternalNetwork())
                 && validate(validator.networkPrefixValid())
                 && validate(validator.networkNameNotUsed())
                 && validate(validator.networkNameNotUsedAsVdsmName())
@@ -147,16 +149,16 @@ public class AddNetworkCommand<T extends AddNetworkStoragePoolParameters> extend
     @Override
     public AuditLogType getAuditLogTypeValue() {
         switch (getActionState()) {
-        case EXECUTE:
-            if (!getSucceeded()) {
-                return NETWORK_ADD_NETWORK_START_ERROR;
-            } else if (skipHostSetupNetworks()) {
-                return NETWORK_ADD_NOTHING_TO_DO;
-            } else {
-                return NETWORK_ADD_NETWORK_STARTED;
-            }
-        case END_SUCCESS:
-            return NETWORK_ADD_NETWORK;
+            case EXECUTE:
+                if (!getSucceeded()) {
+                    return NETWORK_ADD_NETWORK_START_ERROR;
+                } else if (skipHostSetupNetworks()) {
+                    return NETWORK_ADD_NOTHING_TO_DO;
+                } else {
+                    return NETWORK_ADD_NETWORK_STARTED;
+                }
+            case END_SUCCESS:
+                return NETWORK_ADD_NETWORK;
         }
         return NETWORK_ADD_NETWORK_FAILED;
     }

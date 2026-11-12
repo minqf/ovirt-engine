@@ -79,10 +79,6 @@ public class GetVolumeInfoVDSCommand<P extends GetVolumeInfoVDSCommandParameters
                 long secsSinceEpoch = Long.parseLong(struct.get("ctime").toString());
                 newImage.setCreationDate(makeDTFromCTime(secsSinceEpoch));
             }
-            if (struct.containsKey("mtime")) {
-                long secsSinceEpoch = Long.parseLong(struct.get("mtime").toString());
-                newImage.setLastModifiedDate(makeDTFromCTime(secsSinceEpoch));
-            }
             if (struct.containsKey("domain")) {
                 newImage.setStorageIds(new ArrayList<>(Arrays.asList(new Guid(struct.get("domain").toString()))));
             }
@@ -108,6 +104,10 @@ public class GetVolumeInfoVDSCommand<P extends GetVolumeInfoVDSCommandParameters
 
             if (struct.containsKey("generation")) {
                 newImage.getImage().setGeneration(Integer.valueOf(struct.get("generation").toString()));
+            }
+
+            if (struct.containsKey("sequence")) {
+                newImage.getImage().setSequenceNumber(Integer.valueOf(struct.get("sequence").toString()));
             }
         } catch (RuntimeException ex) {
             log.error("Failed building DiskImage: {}", ex.getMessage());

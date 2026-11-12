@@ -4,16 +4,16 @@
 -- [engine_sessions] Table
 --
 CREATE OR REPLACE FUNCTION InsertEngineSession (
-    INOUT v_id INT,
+    INOUT v_id BIGINT,
     v_engine_session_id TEXT,
     v_user_id UUID,
     v_user_name VARCHAR(255),
     v_authz_name VARCHAR(255),
     v_source_ip VARCHAR(50),
-    v_group_ids VARCHAR(2048),
-    v_role_ids VARCHAR(2048)
+    v_group_ids TEXT,
+    v_role_ids TEXT
     )
-RETURNS INT AS $PROCEDURE$
+RETURNS BIGINT AS $FUNCTION$
 BEGIN
     INSERT INTO engine_sessions (
         engine_session_id,
@@ -35,33 +35,33 @@ BEGIN
         );
 
     v_id := CURRVAL('engine_session_seq');
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION GetEngineSession (v_id INT)
-RETURNS SETOF engine_sessions STABLE AS $PROCEDURE$
+CREATE OR REPLACE FUNCTION GetEngineSession (v_id BIGINT)
+RETURNS SETOF engine_sessions STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
     SELECT *
     FROM engine_sessions
     WHERE id = v_id;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetEngineSessionBySessionId (v_engine_session_id TEXT)
-RETURNS SETOF engine_sessions STABLE AS $PROCEDURE$
+RETURNS SETOF engine_sessions STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
     SELECT *
     FROM engine_sessions
     WHERE engine_session_id = v_engine_session_id;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION DeleteEngineSession (v_id INT)
-RETURNS INT AS $PROCEDURE$
+CREATE OR REPLACE FUNCTION DeleteEngineSession (v_id BIGINT)
+RETURNS INT AS $FUNCTION$
 DECLARE deleted_rows INT;
 
 BEGIN
@@ -72,11 +72,11 @@ BEGIN
     GET DIAGNOSTICS deleted_rows = ROW_COUNT;
 
     RETURN deleted_rows;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION DeleteAllFromEngineSessions ()
-RETURNS INT AS $PROCEDURE$
+RETURNS INT AS $FUNCTION$
 DECLARE deleted_rows INT;
 
 BEGIN
@@ -86,7 +86,7 @@ BEGIN
     GET DIAGNOSTICS deleted_rows = ROW_COUNT;
 
     RETURN deleted_rows;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 

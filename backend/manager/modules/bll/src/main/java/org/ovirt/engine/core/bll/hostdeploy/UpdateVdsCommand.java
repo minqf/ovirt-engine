@@ -55,7 +55,7 @@ import org.ovirt.engine.core.utils.transaction.TransactionSupport;
 import org.ovirt.engine.core.vdsbroker.ResourceManager;
 
 @NonTransactiveCommandAttribute(forceCompensation = true)
-public class UpdateVdsCommand<T extends UpdateVdsActionParameters>  extends VdsCommand<T>  implements RenamedEntityInfoProvider{
+public class UpdateVdsCommand<T extends UpdateVdsActionParameters> extends VdsCommand<T> implements RenamedEntityInfoProvider {
 
     @Inject
     private AuditLogDirector auditLogDirector;
@@ -99,7 +99,7 @@ public class UpdateVdsCommand<T extends UpdateVdsActionParameters>  extends VdsC
     @Inject
     private LabelDao labelDao;
 
-    private BiConsumer<AuditLogable, AuditLogDirector> affinityGroupLoggingMethod = (a, b) -> {};
+    private BiConsumer<AuditLogable, AuditLogDirector> affinityGroupLoggingMethod = (a, b) -> { };
 
     public UpdateVdsCommand(T parameters, CommandContext cmdContext) {
         this(parameters, cmdContext, ActionType.InstallVdsInternal);
@@ -125,7 +125,7 @@ public class UpdateVdsCommand<T extends UpdateVdsActionParameters>  extends VdsC
         // if fence agents list is null, try to fill it from database
         // so we can enable changing other host attributes from API
         // without failing validation or removing the persisted fence agents
-        boolean validateAgents=true;
+        boolean validateAgents = true;
         if (getParameters().getFenceAgents() == null) {
             getParameters().setFenceAgents(fenceAgentDao.getFenceAgentsForHost(getVdsId()));
             validateAgents = false;
@@ -147,13 +147,14 @@ public class UpdateVdsCommand<T extends UpdateVdsActionParameters>  extends VdsC
                 && validate(validator.clusterNotChanged())
                 && validate(validator.hostProviderExists())
                 && validate(validator.hostProviderTypeMatches())
-                && validateNetworkProviderConfiguration()
                 && isPowerManagementLegal(getParameters().getVdsStaticData().isPmEnabled(),
                         getParameters().getFenceAgents(),
                         oldHost.getClusterCompatibilityVersion().toString(),
                         validateAgents)
-                && validate(validator.supportsDeployingHostedEngine(
-                        getParameters().getHostedEngineDeployConfiguration()))
+                && validate(
+                        validator.supportsDeployingHostedEngine(getParameters().getHostedEngineDeployConfiguration(),
+                                getCluster(),
+                                oldHost.isHostedEngineDeployed()))
                 && validate(validateAffinityGroups());
     }
 
@@ -162,12 +163,6 @@ public class UpdateVdsCommand<T extends UpdateVdsActionParameters>  extends VdsC
                 oldHost,
                 updatedHost,
                 installHost);
-    }
-
-    private boolean validateNetworkProviderConfiguration() {
-        return !getParameters().isInstallHost()
-                || super.validateNetworkProviderConfiguration(
-                        getParameters().getVdsStaticData().getOpenstackNetworkProviderId());
     }
 
     @Override
@@ -188,7 +183,7 @@ public class UpdateVdsCommand<T extends UpdateVdsActionParameters>  extends VdsC
             InstallVdsParameters tempVar = new InstallVdsParameters(getVdsId(), getParameters().getPassword());
             tempVar.setIsReinstallOrUpgrade(getParameters().isReinstallOrUpgrade());
             tempVar.setoVirtIsoFile(getParameters().getoVirtIsoFile());
-            if (vdsDynamicDao.get(getVdsId()).getStatus() ==  VDSStatus.InstallingOS) {
+            if (vdsDynamicDao.get(getVdsId()).getStatus() == VDSStatus.InstallingOS) {
                 // TODO: remove hack when reinstall api will provider override-firewall parameter.
                 // https://bugzilla.redhat.com/show_bug.cgi?id=1177126 - for now we override firewall
                 // configurations on each deploy for provisioned host to avoid wrong deployment.
@@ -198,11 +193,12 @@ public class UpdateVdsCommand<T extends UpdateVdsActionParameters>  extends VdsC
             }
             tempVar.setOverrideFirewall(getParameters().getOverrideFirewall());
             tempVar.setActivateHost(getParameters().getActivateHost());
-            tempVar.setNetworkProviderId(getParameters().getVdsStaticData().getOpenstackNetworkProviderId());
+            tempVar.setRebootHost(getParameters().getRebootHost());
             tempVar.setAuthMethod(getParameters().getAuthMethod());
-            tempVar.setActivateHost(getParameters().getActivateHost());
             tempVar.setHostedEngineDeployConfiguration(getParameters().getHostedEngineDeployConfiguration());
-            tempVar.setReconfigureGluster(getParameters().getReconfigureGluster());
+            tempVar.setReplaceHostConfiguration(getParameters().getReplaceHostConfiguration());
+            tempVar.setFqdnBox(null);
+            tempVar.setReconfigureGluster(false);
 
             List<ActionReturnValue> resultList = runInternalMultipleActions(
                     actionType,
@@ -270,7 +266,7 @@ public class UpdateVdsCommand<T extends UpdateVdsActionParameters>  extends VdsC
             public Void runInTransaction() {
                 getCompensationContext().snapshotEntity(getVds().getStaticData());
                 vdsStaticDao.update(getParameters().getVdsStaticData());
-                updateFenceAgents();// TODO: what compensation needed for fencing?
+                updateFenceAgents(); // TODO: what compensation needed for fencing?
                 getCompensationContext().stateChanged();
                 return null;
             }

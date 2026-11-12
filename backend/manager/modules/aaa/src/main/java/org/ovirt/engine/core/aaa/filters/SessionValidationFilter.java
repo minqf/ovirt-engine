@@ -21,7 +21,7 @@ public class SessionValidationFilter implements Filter {
     private static final Logger log = LoggerFactory.getLogger(SessionValidationFilter.class);
 
     @Override
-    public void init(FilterConfig filterConfig) throws ServletException {
+    public void init(FilterConfig filterConfig) {
     }
 
     @Override
@@ -29,7 +29,7 @@ public class SessionValidationFilter implements Filter {
             ServletException {
         boolean doFilter = false;
         try {
-            String requestEngineSession = (String)request.getAttribute(SessionConstants.HTTP_SESSION_ENGINE_SESSION_ID_KEY);
+            String requestEngineSession = (String) request.getAttribute(SessionConstants.HTTP_SESSION_ENGINE_SESSION_ID_KEY);
             if (requestEngineSession != null) {
                 if (!FiltersHelper.isSessionValid(requestEngineSession)) {
                     request.removeAttribute(SessionConstants.HTTP_SESSION_ENGINE_SESSION_ID_KEY);

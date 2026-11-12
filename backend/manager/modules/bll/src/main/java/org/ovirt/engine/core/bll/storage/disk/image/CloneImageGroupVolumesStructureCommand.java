@@ -1,5 +1,6 @@
 package org.ovirt.engine.core.bll.storage.disk.image;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -16,11 +17,9 @@ import org.ovirt.engine.core.bll.SerialChildCommandsExecutionCallback;
 import org.ovirt.engine.core.bll.SerialChildExecutingCommand;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.job.ExecutionHandler;
-import org.ovirt.engine.core.bll.storage.utils.VdsCommandsHelper;
 import org.ovirt.engine.core.bll.tasks.interfaces.CommandCallback;
 import org.ovirt.engine.core.bll.utils.CommandsWeightsUtils;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
-import org.ovirt.engine.core.common.FeatureSupported;
 import org.ovirt.engine.core.common.action.ActionParametersBase.EndProcedure;
 import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
@@ -28,15 +27,19 @@ import org.ovirt.engine.core.common.action.CloneImageGroupVolumesStructureComman
 import org.ovirt.engine.core.common.action.CreateVolumeContainerCommandParameters;
 import org.ovirt.engine.core.common.action.MeasureVolumeParameters;
 import org.ovirt.engine.core.common.businessentities.StorageDomainStatic;
+import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.Image;
+import org.ovirt.engine.core.common.businessentities.storage.StorageType;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeType;
+import org.ovirt.engine.core.common.utils.SizeConverter;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.DiskImageDao;
 import org.ovirt.engine.core.dao.ImageDao;
 import org.ovirt.engine.core.dao.StorageDomainDao;
 import org.ovirt.engine.core.dao.StorageDomainStaticDao;
+import org.ovirt.engine.core.dao.VmDao;
 import org.ovirt.engine.core.utils.CollectionUtils;
 
 @InternalCommandAttribute
@@ -58,10 +61,10 @@ public class CloneImageGroupVolumesStructureCommand<T extends CloneImageGroupVol
     private Instance<SerialChildCommandsExecutionCallback> callbackProvider;
 
     @Inject
-    private ImagesHandler imagesHandler;
-    @Inject
-    private VdsCommandsHelper vdsCommandsHelper;
+    private VmDao vmDao;
 
+    @Inject
+    private ImagesHandler imagesHandler;
 
     public CloneImageGroupVolumesStructureCommand(T parameters, CommandContext cmdContext) {
         super(parameters, cmdContext);
@@ -178,26 +181,55 @@ public class CloneImageGroupVolumesStructureCommand<T extends CloneImageGroupVol
                 image.getVolumeType(),
                 getParameters().getDescription(),
                 image.getSize(),
-                initialSize);
+                initialSize,
+                innerImage.getSequenceNumber());
 
         parameters.setEndProcedure(EndProcedure.COMMAND_MANAGED);
         parameters.setParentCommand(getActionType());
         parameters.setParentParameters(getParameters());
         parameters.setJobWeight(getParameters().getOperationsJobWeight().get(image.getImageId().toString()));
+        parameters.setBackup(image.getBackup());
         runInternalActionWithTasksContext(ActionType.CreateVolumeContainer, parameters);
     }
 
+    /**
+     * Method's calculation logic is described by the following table.
+     *
+     * type             src type        dst type        vol format          initial size
+     * =======================================================================================
+     * active           file            file            qcow2               null
+     * active           block           file            qcow2               null
+     * active           file            block           qcow2               3 chunks
+     * active           block           block           qcow2               3 chunks
+     * ---------------------------------------------------------------------------------------
+     * internal         file            file            raw                 null
+     * internal         file            file            qcow2               null
+     * internal         file            block           raw                 null
+     * internal         file            block           qcow2               measure
+     * internal         block           block           raw                 null
+     * internal         block           block           qcow2               measure
+     *
+     * Notes:
+     *  1. "chunks" stands for {@link org.ovirt.engine.core.common.config.ConfigValues#VolumeUtilizationChunkInMB}
+     *  2. "measure" stands for {@link ActionType#MeasureVolume} command's return value.
+     */
     private Long determineImageInitialSize(Image sourceImage,
             VolumeFormat destFormat,
             Guid storagePoolId,
             Guid srcDomain,
             Guid dstDomain,
             Guid imageGroupID) {
-        Guid hostId = vdsCommandsHelper.getHostForExecution(storagePoolId,
-                vds -> FeatureSupported.isMeasureVolumeSupported(vds));
+        StorageType srcDomainStorageType = storageDomainDao.get(srcDomain).getStorageType();
+        StorageType dstDomainStorageType = storageDomainDao.get(dstDomain).getStorageType();
+        if (getParameters().isLiveMigration() && sourceImage.isActive() && dstDomainStorageType.isBlockDomain()) {
+            return ImagesHandler.computeImageInitialSizeInBytes(sourceImage);
+        }
+
+        Guid hostId = imagesHandler.getHostForMeasurement(storagePoolId, imageGroupID);
         if (hostId != null) {
-            if (storageDomainDao.get(dstDomain).getStorageType().isBlockDomain() &&
-                    Guid.Empty.equals(sourceImage.getParentId())) {
+            boolean isPluggedToRunningVm = sourceImage.isActive() && isAttachedToRunningVMs(imageGroupID);
+            if ((srcDomainStorageType.isBlockDomain() || !isPluggedToRunningVm) &&
+                    dstDomainStorageType.isBlockDomain()) {
                 MeasureVolumeParameters parameters = new MeasureVolumeParameters(storagePoolId,
                         srcDomain,
                         imageGroupID,
@@ -207,6 +239,7 @@ public class CloneImageGroupVolumesStructureCommand<T extends CloneImageGroupVol
                 parameters.setParentCommand(getActionType());
                 parameters.setVdsRunningOn(hostId);
                 parameters.setCorrelationId(getCorrelationId());
+                parameters.setWithBacking(false);
                 ActionReturnValue actionReturnValue =
                         runInternalAction(ActionType.MeasureVolume, parameters,
                                 ExecutionHandler.createDefaultContextForTasks(getContext()));
@@ -214,7 +247,23 @@ public class CloneImageGroupVolumesStructureCommand<T extends CloneImageGroupVol
                     throw new RuntimeException("Could not measure volume");
                 }
 
-                return actionReturnValue.getActionReturnValue();
+                long requiredSize = actionReturnValue.getActionReturnValue();
+
+                // The required size for the leaf might be very small depending on the amount of data.
+                // Extend it to 1GB or disk size to avoid having the VM paused for extension too fast.
+                if (sourceImage.isActive()) {
+
+                    // TODO: 1GB is selected as this is the default chunk size in Vdsm.
+                    // This uses the logic from Vdsm's optimal_size
+                    // https://github.com/oVirt/vdsm/blob/e11b71eab5995fb00e5fe1619332687a5f717903/lib/vdsm/storage/blockVolume.py#L403
+                    // Ideally, we'd get a report from Vdsm about the chunk size and use it rather than assuming
+                    // it is the default chunk size.
+                    // https://bugzilla.redhat.com/show_bug.cgi?id=1993839
+                    requiredSize += SizeConverter.BYTES_IN_GB;
+                    return Math.min(requiredSize, sourceImage.getSize());
+                }
+
+                return requiredSize;
             }
         }
 
@@ -230,6 +279,13 @@ public class CloneImageGroupVolumesStructureCommand<T extends CloneImageGroupVol
         }
 
         return null;
+    }
+
+    private boolean isAttachedToRunningVMs(Guid imageGroupID) {
+        Map<Boolean, List<VM>> vms = vmDao.getForDisk(imageGroupID, false);
+        return !vms.isEmpty() && vms.computeIfAbsent(Boolean.TRUE, b -> new ArrayList<>())
+                .stream()
+                .anyMatch(VM::isRunning);
     }
 
     private VolumeFormat determineVolumeFormat(Guid destStorageDomainId,

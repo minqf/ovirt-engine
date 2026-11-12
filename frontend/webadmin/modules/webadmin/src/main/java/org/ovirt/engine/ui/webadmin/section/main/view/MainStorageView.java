@@ -1,5 +1,6 @@
 package org.ovirt.engine.ui.webadmin.section.main.view;
 
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -59,22 +60,22 @@ public class MainStorageView extends AbstractMainWithDetailsTableView<StorageDom
         getTable().addColumn(additionalStatusColumn, constants.empty(), "60px"); //$NON-NLS-1$
 
         AbstractTextColumn<StorageDomain> nameColumn = new AbstractLinkColumn<StorageDomain>(
-                new FieldUpdater<StorageDomain, String>() {
+            new FieldUpdater<StorageDomain, String>() {
 
-            @Override
-            public void update(int index, StorageDomain storageDomain, String value) {
-                Map<String, String> parameters = new HashMap<>();
-                parameters.put(FragmentParams.NAME.getName(), storageDomain.getName());
-                //The link was clicked, now fire an event to switch to details.
-                getPlaceTransitionHandler().handlePlaceTransition(
-                        WebAdminApplicationPlaces.storageGeneralSubTabPlace, parameters);
-            }
+                @Override
+                public void update(int index, StorageDomain storageDomain, String value) {
+                    Map<String, String> parameters = new HashMap<>();
+                    parameters.put(FragmentParams.NAME.getName(), storageDomain.getName());
+                    //The link was clicked, now fire an event to switch to details.
+                    getPlaceTransitionHandler().handlePlaceTransition(
+                            WebAdminApplicationPlaces.storageGeneralSubTabPlace, parameters);
+                }
 
-        }) {
-            @Override
-            public String getValue(StorageDomain object) {
-                return object.getName();
-            }
+            }) {
+                @Override
+                public String getValue(StorageDomain object) {
+                    return object.getName();
+                }
         };
         nameColumn.makeSortable(StorageDomainFieldAutoCompleter.NAME);
         getTable().addColumn(nameColumn, constants.domainNameStorage(), "150px"); //$NON-NLS-1$
@@ -130,6 +131,7 @@ public class MainStorageView extends AbstractMainWithDetailsTableView<StorageDom
                 return totalSpace == null ? null : Long.valueOf(totalSpace);
             }
         };
+        totalSpaceColumn.makeSortable(StorageDomainFieldAutoCompleter.TOTAL_SIZE);
         getTable().addColumn(totalSpaceColumn, constants.totalSpaceStorage(), "130px"); //$NON-NLS-1$
 
         AbstractStorageSizeColumn<StorageDomain> freeSpaceColumn = new AbstractStorageSizeColumn<StorageDomain>() {
@@ -139,7 +141,7 @@ public class MainStorageView extends AbstractMainWithDetailsTableView<StorageDom
                 return availableDiskSize == null ? null : Long.valueOf(availableDiskSize);
             }
         };
-        freeSpaceColumn.makeSortable(StorageDomainFieldAutoCompleter.SIZE);
+        freeSpaceColumn.makeSortable(StorageDomainFieldAutoCompleter.FREE_SIZE);
         getTable().addColumn(freeSpaceColumn, constants.freeSpaceStorage(), "130px"); //$NON-NLS-1$
 
         AbstractStorageSizeColumn<StorageDomain> confirmedFreeSpaceColumn = new AbstractStorageSizeColumn<StorageDomain>() {
@@ -158,7 +160,33 @@ public class MainStorageView extends AbstractMainWithDetailsTableView<StorageDom
                 return SafeHtmlUtils.fromString(constants.confirmedFreeSpaceStorageThinTooltip());
             }
         };
+        confirmedFreeSpaceColumn.makeSortable(new Comparator<StorageDomain>() {
+            @Override
+            public int compare(StorageDomain storage1, StorageDomain storage2) {
+                if (storage1.getConfirmedAvailableDiskSize() == null && storage2.getConfirmedAvailableDiskSize() == null
+                    && storage1.getAvailableDiskSize() != null && storage2.getAvailableDiskSize() != null) {
+                    return storage1.getAvailableDiskSize().compareTo(storage2.getAvailableDiskSize());
+                } else if (storage1.getConfirmedAvailableDiskSize() != null && storage2.getConfirmedAvailableDiskSize() != null) {
+                    return storage1.getConfirmedAvailableDiskSize().compareTo(storage2.getConfirmedAvailableDiskSize());
+                } else if (storage1.getConfirmedAvailableDiskSize() != null && storage2.getAvailableDiskSize() != null) {
+                    return storage1.getConfirmedAvailableDiskSize().compareTo(storage2.getAvailableDiskSize());
+                } else if (storage2.getConfirmedAvailableDiskSize() != null && storage1.getAvailableDiskSize() != null) {
+                    return storage1.getAvailableDiskSize().compareTo(storage2.getConfirmedAvailableDiskSize());
+                }
+                return storage2.getName().compareTo(storage1.getName());
+            }
+        });
         getTable().addColumn(confirmedFreeSpaceColumn, constants.confirmedFreeSpaceStorage(), "180px"); //$NON-NLS-1$
+
+        AbstractStorageSizeColumn<StorageDomain> allocatedSpaceColumn = new AbstractStorageSizeColumn<StorageDomain>() {
+            @Override
+            public Long getRawValue(StorageDomain object) {
+                Integer allocatedSpace = object.getCommittedDiskSize();
+                return allocatedSpace == null ? null : Long.valueOf(allocatedSpace);
+            }
+        };
+        allocatedSpaceColumn.makeSortable(StorageDomainFieldAutoCompleter.COMMITTED);
+        getTable().addColumn(allocatedSpaceColumn, constants.allocatedSpaceStorage(), "130px"); //$NON-NLS-1$
 
         AbstractTextColumn<StorageDomain> descriptionColumn = new AbstractTextColumn<StorageDomain>() {
             @Override

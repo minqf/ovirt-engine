@@ -7,13 +7,16 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 
+import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.bll.InternalCommandAttribute;
 import org.ovirt.engine.core.bll.NonTransactiveCommandAttribute;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.storage.domain.PostDeleteActionHandler;
+import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.RemoveImageParameters;
@@ -32,6 +35,7 @@ import org.ovirt.engine.core.common.vdscommands.VDSCommandType;
 import org.ovirt.engine.core.common.vdscommands.VDSReturnValue;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.TransactionScopeOption;
+import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dao.BaseDiskDao;
 import org.ovirt.engine.core.dao.DiskImageDao;
 import org.ovirt.engine.core.dao.DiskImageDynamicDao;
@@ -47,7 +51,7 @@ import org.ovirt.engine.core.utils.transaction.TransactionSupport;
  * This command responsible to removing image, contains all created snapshots.
  */
 @InternalCommandAttribute
-@NonTransactiveCommandAttribute(forceCompensation=true)
+@NonTransactiveCommandAttribute(forceCompensation = true)
 public class RemoveImageCommand<T extends RemoveImageParameters> extends BaseImagesCommand<T> {
 
     private static final Set<ActionType> ACTIONS_NOT_REQUIRED_DB_OPERATION = new HashSet<>(
@@ -56,6 +60,8 @@ public class RemoveImageCommand<T extends RemoveImageParameters> extends BaseIma
                     ActionType.RemoveVmTemplateFromImportExport,
                     ActionType.RemoveUnregisteredVmTemplate,
                     ActionType.RemoveUnregisteredVm));
+    @Inject
+    private AuditLogDirector auditLogDirector;
 
     @Inject
     private PostDeleteActionHandler postDeleteActionHandler;
@@ -78,6 +84,7 @@ public class RemoveImageCommand<T extends RemoveImageParameters> extends BaseIma
     private DiskImageDao diskImageDao;
     @Inject
     private VmDao vmDao;
+
 
     public RemoveImageCommand(T parameters, CommandContext cmdContext) {
         super(parameters, cmdContext);
@@ -120,29 +127,28 @@ public class RemoveImageCommand<T extends RemoveImageParameters> extends BaseIma
                 Guid taskId = persistAsyncTaskPlaceHolder(getParameters().getParentCommand());
 
                 VDSReturnValue vdsReturnValue = performDeleteImageVdsmOperation();
-                getTaskIdList().add(
-                        createTask(taskId,
-                                vdsReturnValue.getCreationInfo(),
-                                getParameters().getParentCommand(),
-                                VdcObjectType.Storage,
-                                getStorageDomainId()));
+                Guid vdsmTaskId = createTask(taskId,
+                        vdsReturnValue.getCreationInfo(),
+                        ActionType.RemoveImage,
+                        VdcObjectType.Storage,
+                        getStorageDomainId());
+                getTaskIdList().add(vdsmTaskId);
+                getReturnValue().getVdsmTaskIdList().add(vdsmTaskId);
             } catch (EngineException e) {
                 if (e.getErrorCode() == EngineError.ImageDoesNotExistInDomainError) {
                     log.info("Disk '{}' doesn't exist on storage domain '{}', rolling forward",
                             getDiskImage().getId(), getStorageDomainId());
+                    endSuccessfully();
                 } else if (e.getErrorCode() == EngineError.ImageDeleteError && isImageRemovedFromStorage()) {
                     // VDSM renames the image before deleting it, so technically the image doesn't exist after renaming,
                     // but the actual delete can still fail with ImageDeleteError.
                     // In this case, Engine has to check whether image still exists on the storage or not.
-                    log.info("Disk '{}' was deleted from storage domain '{}'", getDiskImage().getId(),
-                            getStorageDomainId());
+                    log.info("Failed to delete Disk '{}' from storage domain '{}', changing to illegal",
+                            getDiskImage().getId(), getStorageDomainId());
+                    endWithFailure();
                 } else {
                     throw e;
                 }
-            }
-
-            if (!ACTIONS_NOT_REQUIRED_DB_OPERATION.contains(getParameters().getParentCommand())) {
-                performImageDbOperations();
             }
         } else {
             log.warn("DiskImage is null, nothing to remove");
@@ -275,11 +281,21 @@ public class RemoveImageCommand<T extends RemoveImageParameters> extends BaseIma
 
     @Override
     protected void endSuccessfully() {
+        performImageDbOperations();
         setSucceeded(true);
     }
 
     @Override
     protected void endWithFailure() {
+        List<Guid> snapshotIds = diskImageDao
+                .getAllSnapshotsForImageGroup(getImageGroupId()).stream()
+                .map(DiskImage::getImageId)
+                .collect(Collectors.toList());
+        addCustomValue("DiskId", getImageGroupId().toString());
+        addCustomValue("VolumeIds", StringUtils.join(snapshotIds, ','));
+        auditLog(this, AuditLogType.DELETE_IMAGE_GROUP_TASK_FAILED);
+
+        imageDao.updateStatusOfImagesByImageGroupId(getImageGroupId(), ImageStatus.ILLEGAL);
         setSucceeded(true);
     }
 
@@ -295,15 +311,18 @@ public class RemoveImageCommand<T extends RemoveImageParameters> extends BaseIma
     }
 
     private void performImageDbOperations() {
+        if (ACTIONS_NOT_REQUIRED_DB_OPERATION.contains(getParameters().getParentCommand())) {
+            return;
+        }
         switch (getParameters().getDbOperationScope()) {
-        case IMAGE:
-            removeImageFromDB();
-            break;
-        case MAPPING:
-            removeImageMapping();
-            break;
-        case NONE:
-            break;
+            case IMAGE:
+                removeImageFromDB();
+                break;
+            case MAPPING:
+                removeImageMapping();
+                break;
+            case NONE:
+                break;
         }
     }
 

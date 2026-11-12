@@ -4,7 +4,7 @@
   <parent>
     <groupId>org.ovirt.engine.core</groupId>
     <artifactId>manager-modules</artifactId>
-    <version>4.4.0-SNAPSHOT</version>
+    <version>4.5.8-SNAPSHOT</version>
   </parent>
   <artifactId>dal</artifactId>
   <packaging>jar</packaging>
@@ -12,13 +12,9 @@
   <properties>
     <engine.dao>jdbc</engine.dao>
     <engine.db>pgsql</engine.db>
+    <dal.test.excludedGroups>dao</dal.test.excludedGroups>
   </properties>
   <dependencies>
-    <dependency>
-      <groupId>commons-collections</groupId>
-      <artifactId>commons-collections</artifactId>
-      <scope>provided</scope>
-    </dependency>
     <dependency>
       <groupId>${engine.groupId}</groupId>
       <artifactId>compat</artifactId>
@@ -40,6 +36,18 @@
       <version>${engine.version}</version>
     </dependency>
     <dependency>
+      <groupId>${engine.groupId}</groupId>
+      <artifactId>utils</artifactId>
+      <version>${engine.version}</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>commons-collections</groupId>
+      <artifactId>commons-collections</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-jdbc</artifactId>
     </dependency>
@@ -52,16 +60,16 @@
       <artifactId>jta</artifactId>
     </dependency>
     <dependency>
-      <groupId>org.reflections</groupId>
-      <artifactId>reflections</artifactId>
-      <version>${reflections.version}</version>
-      <scope>test</scope>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-annotations</artifactId>
     </dependency>
     <dependency>
-      <groupId>${engine.groupId}</groupId>
-      <artifactId>utils</artifactId>
-      <version>${engine.version}</version>
-      <type>test-jar</type>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.reflections</groupId>
+      <artifactId>reflections</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -72,7 +80,6 @@
     <dependency>
       <groupId>org.dbunit</groupId>
       <artifactId>dbunit</artifactId>
-      <version>2.5.3</version>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -147,11 +154,10 @@
         </executions>
       </plugin>
       <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
-          <properties>
-            <excludeTags>dao</excludeTags>
-          </properties>
+          <excludedGroups>${dal.test.excludedGroups}</excludedGroups>
           <systemPropertyVariables>
             <java.util.logging.config.file>src/test/resources/logging.properties</java.util.logging.config.file>
           </systemPropertyVariables>
@@ -162,13 +168,16 @@
   <profiles>
     <profile>
       <id>enable-dao-tests</id>
+      <properties>
+        <dal.test.excludedGroups></dal.test.excludedGroups>
+      </properties>
       <build>
         <plugins>
           <plugin>
             <artifactId>maven-surefire-plugin</artifactId>
-            <configuration combine.self="override">
-              <properties />
-              <systemPropertyVariables>
+            <configuration>
+              <properties combine.self="override"/>
+              <systemPropertyVariables combine.self="override">
                 <java.util.logging.config.file>src/test/resources/logging.properties</java.util.logging.config.file>
                 <ovirt-engine.config.defaults>src/test/resources/engine.conf</ovirt-engine.config.defaults>
                 <ovirt-engine.config.vars>/dev/null</ovirt-engine.config.vars>

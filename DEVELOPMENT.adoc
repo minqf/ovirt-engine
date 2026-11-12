@@ -1,0 +1,111 @@
+# oVirt Engine - Dev Container setup & building
+
+Before starting, ensure that https://www.docker.com/[Docker] is installed on the machine that the Dev Container will be running on. This could be your local device or on a https://code.visualstudio.com/docs/devcontainers/containers#_open-a-folder-on-a-remote-ssh-host-in-a-container[remote machine].
+
+## Dev Container & Database
+
+Opening the repository in VS Code with the Dev Containers extension will automatically start both the `engine` and `postgres` services defined in `docker-compose.yml` (plus the selected CentOS variant override).
+
+### Hosts File Configuration
+
+The engine container uses the hostname `ovirt-engine.test`. To access the oVirt UI in your browser, add this hostname to your local hosts file, pointing to the IP address of the machine where the container runs:
+
+Add a line in `/etc/hosts`:
+```
+192.168.1.100  ovirt-engine.test
+```
+
+Replace `192.168.1.100` with the actual IP of the machine running the container. If running locally, use `127.0.0.1`.
+
+PostgreSQL is reachable internally from the engine container at host `postgres` port `5432`. 
+
+### Opening the Dev Container
+
+When you are running the container on your own device, open the project directory in Visual Studio Code, and use `Dev Containers: Reopen in Container` command from the Command Palette (ctrl-shift-p). Next you will be asked which OS variant you want to run.
+
+For remote connections, follow the same steps, but start by connecting to your remote environment first. Utilize the Remote Explorer feature in VSC to SSH into a remote server. You'll find this in the 'Remote Explorer' tab. Just make sure you've installed the "Remote - SSH" and "Remote Explorer" extensions from Microsoft for this to work.
+
+More information on Dev Containers can be found https://code.visualstudio.com/docs/devcontainers/containers[here].
+
+> NOTE: only one instance of the container can be running at a time, so if you need to switch OS variants, you must first stop the running container with the helper script e.g. `./devcontainer/compose-down.sh centos10`
+
+### Building the application
+
+Build and install:
+```
+make install-dev [SKIP_CHECKS=1] [BUILD_GWT=0]
+```
+`SKIP_CHECK` (skip tests) and `BUILD_GWT` (skip frontend build) are convenient optional flags if you want to speed up the build.
+
+The build populates scripts, configuration and artifacts under `/home/build/ovirt` by default, you can override this by setting the `PREFIX` environment variable.
+
+### Run the oVirt Engine setup
+
+Run setup using the provided answers file (adjust path if you used a different prefix):
+
+```
+engine-setup --offline --config=answers.config.in
+```
+
+Omit `--config=answers.config.in` for an interactive run; be sure to keep DB host `postgres`, database `engine`, user `ovirt` (matching the running container's initialization script).
+
+For development on the setup, you can cleanup the setup config:
+```
+make clean-setup-conf [PREFIX=/prefix/path]
+```
+Remember to drop the database(s) or to recreate your postgres cluster entirely to have a real fresh start.
+
+You can re-install only the setup files with:
+```
+make install-setup-dev [PREFIX=your path]
+```
+
+### Running the engine service
+
+After setup succeeds, start the engine service:
+
+```
+ovirt-engine.py start
+```
+
+### Uploading images via `ovirt-imageio`
+
+Start the image I/O daemon (optional; required for upload/download features):
+
+```
+ovirt-imageio --conf-dir $PREFIX/etc/ovirt-imageio
+```
+
+> NOTE: If encountering a certificate error during connection testing, you'll need to accept the certificate in your browser. You can either locate the URL by accessing your browser's network console, clicking the 'Test Connection' button, and visiting the URL showing the error, OR simply navigate to `https://HOSTNAME:54323/info/` and accept the certificate. Alternatively you can install the oVirt generated CA as a trusted CA in your browser.
+
+### Connecting via console to your VM instance
+
+Enable the websocket proxy for noVNC console access:
+
+```
+ovirt-websocket-proxy.py start
+```
+
+Afterward, head to your newly created VM and select the 'v' arrow adjacent to the 'Console' button. Proceed to 'Console Options' and set 'Console Invocation' to 'noVNC'. Save these settings and click on the 'Console' button.
+
+Upon encountering the error message "Something went wrong, connection is closed," please note that this is expected behavior. To proceed, you must accept the SSL certificate in your browser. Access your browser's development console, copy the `wss://XXXXX` URL, and paste it into your browser's URL bar. Replace `wss` with `https` and navigate to the URL. Here, you can accept the certificate. You can reopen the console via the oVirt administrator panel.
+
+## Development Tools Setup
+
+### Checkstyle Integration in VS Code
+
+The project uses a custom checkstyle configuration with additional checks defined in the `ovirt-checkstyle-extension` module. To configure VS Code's checkstyle extension to use the same rules as the Maven build:
+
+1. Install the https://marketplace.visualstudio.com/items?itemName=shengchen.vscode-checkstyle[Checkstyle for Java] extension
+2. Generate the VS Code settings file:
++
+```
+mvn install -Pvscode-settings -pl build-tools-root
+```
++
+This will:
++
+* Build the required checkstyle modules
+* Generate `.vscode/settings.json` with the correct configuration and version
+
+NOTE: If settings don't take effect, try restarting VS Code or reloading the window (Ctrl-Shift-P -> Reload Window). 

@@ -41,6 +41,7 @@ public class HttpClientBuilder {
     private String trustStorePassword = "changeit";
     private Integer connectTimeout;
     private Integer readTimeout;
+    private Integer connectionRequestTimeout;
     private Integer poolSize;
     private Integer retryCount;
     private Integer validateAfterInactivity;
@@ -93,6 +94,11 @@ public class HttpClientBuilder {
         return this;
     }
 
+    public HttpClientBuilder setConnectionRequestTimeout(Integer connectionRequestTimeout) {
+        this.connectionRequestTimeout = connectionRequestTimeout;
+        return this;
+    }
+
     public HttpClientBuilder setPoolSize(Integer poolSize) {
         this.poolSize = poolSize;
         return this;
@@ -111,8 +117,9 @@ public class HttpClientBuilder {
     public CloseableHttpClient build() throws IOException, GeneralSecurityException {
         // Prepare the default configuration for all requests:
         RequestConfig requestConfig = RequestConfig.custom()
-                .setConnectTimeout(connectTimeout != null? connectTimeout: 0)
-                .setSocketTimeout(readTimeout != null? readTimeout: 0)
+                .setConnectTimeout(connectTimeout != null ? connectTimeout : 0)
+                .setSocketTimeout(readTimeout != null ? readTimeout : 0)
+                .setConnectionRequestTimeout(connectionRequestTimeout != null ? connectionRequestTimeout : 0)
                 .build();
 
         // Configure the trust manager:
@@ -129,7 +136,7 @@ public class HttpClientBuilder {
             }
         } else {
             trustManager = new TrustManager[] {
-                    new X509TrustManager() {
+                new X509TrustManager() {
                         public X509Certificate[] getAcceptedIssuers() {
                             return new X509Certificate[] {};
                         }

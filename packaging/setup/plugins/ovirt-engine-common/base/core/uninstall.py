@@ -27,6 +27,7 @@ from ovirt_engine_setup import constants as osetupcons
 def _(m):
     return gettext.dgettext(message=m, domain='ovirt-engine-setup')
 
+
 _HASH_ALGORITHMS = ('sha256', 'md5')
 
 
@@ -390,7 +391,7 @@ class Plugin(plugin.PluginBase):
             os.makedirs(os.path.dirname(output))
         if config.sections():
             # avoid to create empty uninstall files
-            with open(output, 'w') as f:
+            with open(output, 'w', encoding='utf-8') as f:
                 config.write(f)
 
 

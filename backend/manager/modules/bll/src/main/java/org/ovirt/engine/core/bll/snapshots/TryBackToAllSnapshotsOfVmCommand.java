@@ -39,7 +39,6 @@ import org.ovirt.engine.core.bll.validator.storage.DiskSnapshotsValidator;
 import org.ovirt.engine.core.bll.validator.storage.MultipleStorageDomainsValidator;
 import org.ovirt.engine.core.bll.validator.storage.StoragePoolValidator;
 import org.ovirt.engine.core.common.AuditLogType;
-import org.ovirt.engine.core.common.FeatureSupported;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.ActionReturnValue;
 import org.ovirt.engine.core.common.action.ActionType;
@@ -212,14 +211,15 @@ public class TryBackToAllSnapshotsOfVmCommand<T extends TryBackToAllSnapshotsOfV
             activeSnapshotLeaseDomainId = getVm().getStaticData().getLeaseStorageDomainId();
         }
 
+        Snapshot snapshot = snapshotDao.get(getVm().getId(), SnapshotType.ACTIVE);
         getSnapshotsManager().attemptToRestoreVmConfigurationFromSnapshot(getVm(),
                 getDstSnapshot(),
-                snapshotDao.getId(getVm().getId(), SnapshotType.ACTIVE),
-                getImagesToPreview(),
+                snapshot.getId(),
+                getFilteredImagesToPreview(),
                 getCompensationContext(),
                 getCurrentUser(),
                 new VmInterfaceManager(getMacPool()),
-                isRestoreMemory());
+                snapshot.containsMemory());
 
         // custom preview - without leases
         if (!getParameters().isRestoreLease()) {
@@ -243,7 +243,7 @@ public class TryBackToAllSnapshotsOfVmCommand<T extends TryBackToAllSnapshotsOfV
 
     @Override
     protected void executeVmCommand() {
-        final boolean restoreMemory = isRestoreMemory();
+        final boolean restoreMemory = getParameters().isRestoreMemory();
 
         final Guid newActiveSnapshotId = Guid.newGuid();
         final Snapshot snapshotToBePreviewed = getDstSnapshot();
@@ -275,6 +275,7 @@ public class TryBackToAllSnapshotsOfVmCommand<T extends TryBackToAllSnapshotsOfV
                     SnapshotType.PREVIEW,
                     getVm(),
                     true,
+                    null,
                     previousActiveSnapshot.getMemoryDiskId(),
                     previousActiveSnapshot.getMetadataDiskId(),
                     null,
@@ -316,7 +317,7 @@ public class TryBackToAllSnapshotsOfVmCommand<T extends TryBackToAllSnapshotsOfV
                             continue;
                         }
                         if (image.getDiskStorageType() == DiskStorageType.CINDER) {
-                            cinderDisks.add((CinderDisk)image);
+                            cinderDisks.add((CinderDisk) image);
                             continue;
                         }
                         ActionReturnValue actionReturnValue =
@@ -431,15 +432,9 @@ public class TryBackToAllSnapshotsOfVmCommand<T extends TryBackToAllSnapshotsOfV
         return dstLeaseDomainId != null ? LeaseAction.CREATE_NEW_LEASE : LeaseAction.DO_NOTHING;
     }
 
-    private boolean isRestoreMemory() {
-        return getParameters().isRestoreMemory() &&
-                FeatureSupported.isMemorySnapshotSupportedByArchitecture(
-                        getVm().getClusterArch(), getVm().getCompatibilityVersion());
-    }
-
     private boolean updateClusterCompatibilityVersionToOldCluster(boolean disableLock) {
         Version oldClusterVersion = getVm().getClusterCompatibilityVersionOrigin();
-        if (isRestoreMemory() && getVm().getCustomCompatibilityVersion() == null &&
+        if (getParameters().isRestoreMemory() && getVm().getCustomCompatibilityVersion() == null &&
                 oldClusterVersion.less(getVm().getClusterCompatibilityVersion())) {
             // the snapshot was taken before cluster version change, call the UpdateVmCommand
 
@@ -484,7 +479,7 @@ public class TryBackToAllSnapshotsOfVmCommand<T extends TryBackToAllSnapshotsOfV
                 UpdateVmCommand.getExclusiveLocksForUpdateVm(getVm()),
                 UpdateVmCommand.getSharedLocksForUpdateVm(getVm()));
     }
-    protected boolean tryBackAllCinderDisks( List<CinderDisk> cinderDisks, Guid newSnapshotId) {
+    protected boolean tryBackAllCinderDisks(List<CinderDisk> cinderDisks, Guid newSnapshotId) {
         for (CinderDisk disk : cinderDisks) {
             ImagesContainterParametersBase params = buildCinderChildCommandParameters(disk, newSnapshotId);
             ActionReturnValue actionReturnValue = runInternalAction(
@@ -546,16 +541,16 @@ public class TryBackToAllSnapshotsOfVmCommand<T extends TryBackToAllSnapshotsOfV
     @Override
     public AuditLogType getAuditLogTypeValue() {
         switch (getActionState()) {
-        case EXECUTE:
-            return getSucceeded() ? AuditLogType.USER_TRY_BACK_TO_SNAPSHOT
-                    : AuditLogType.USER_FAILED_TRY_BACK_TO_SNAPSHOT;
+            case EXECUTE:
+                return getSucceeded() ? AuditLogType.USER_TRY_BACK_TO_SNAPSHOT
+                        : AuditLogType.USER_FAILED_TRY_BACK_TO_SNAPSHOT;
 
-        case END_SUCCESS:
-            return getSucceeded() ? AuditLogType.USER_TRY_BACK_TO_SNAPSHOT_FINISH_SUCCESS
-                    : AuditLogType.USER_TRY_BACK_TO_SNAPSHOT_FINISH_FAILURE;
+            case END_SUCCESS:
+                return getSucceeded() ? AuditLogType.USER_TRY_BACK_TO_SNAPSHOT_FINISH_SUCCESS
+                        : AuditLogType.USER_TRY_BACK_TO_SNAPSHOT_FINISH_FAILURE;
 
-        default:
-            return AuditLogType.USER_TRY_BACK_TO_SNAPSHOT_FINISH_FAILURE;
+            default:
+                return AuditLogType.USER_TRY_BACK_TO_SNAPSHOT_FINISH_FAILURE;
         }
     }
 
@@ -567,7 +562,7 @@ public class TryBackToAllSnapshotsOfVmCommand<T extends TryBackToAllSnapshotsOfV
         // verify that the destination lease domain ID belongs to one of the VM's snapshots
         if (getParameters().getDstLeaseDomainId() != null) {
             if (!validate(snapshotsValidator.isLeaseDomainIdBelongsToSnapshot(getVmId(),
-                    getParameters().getDstLeaseDomainId())) &&!getParameters().getDstLeaseDomainId()
+                    getParameters().getDstLeaseDomainId())) && !getParameters().getDstLeaseDomainId()
                     .equals(getVm().getLeaseStorageDomainId())) {
                 return failValidation(EngineMessage.ACTION_TYPE_FAILED_LEASE_DOMAIN_ID_IS_NOT_VALID);
             }
@@ -638,11 +633,11 @@ public class TryBackToAllSnapshotsOfVmCommand<T extends TryBackToAllSnapshotsOfV
             return false;
         }
 
-        if (isRestoreMemory() && !validateMemoryTakenInSupportedVersion()) {
+        if (getParameters().isRestoreMemory() && !validateMemoryTakenInSupportedVersion()) {
             return false;
         }
 
-        if(!canRestoreVmConfigFromSnapshot()) {
+        if (!canRestoreVmConfigFromSnapshot()) {
             return failValidation(EngineMessage.MAC_POOL_NOT_ENOUGH_MAC_ADDRESSES);
         }
         return true;
@@ -730,5 +725,15 @@ public class TryBackToAllSnapshotsOfVmCommand<T extends TryBackToAllSnapshotsOfV
     @Override
     public CommandCallback getCallback() {
         return getParameters().isUseCinderCommandCallback() ? callbackProvider.get() : null;
+    }
+
+    private List<DiskImage> getFilteredImagesToPreview() {
+        List<DiskImage> images = getImagesToPreview();
+        List<DiskImage> imagesToExclude = diskImageDao.getAttachedDiskSnapshotsToVm(getVmId(), Boolean.TRUE);
+        Set<Guid> excludeIds = imagesToExclude.stream().map(DiskImage::getId).collect(Collectors.toSet());
+
+        return images.stream()
+                .filter(image -> !excludeIds.contains(image.getId()))
+                .collect(Collectors.toList());
     }
 }

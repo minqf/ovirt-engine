@@ -7,6 +7,10 @@ import com.google.gwt.i18n.client.Messages;
 import com.google.gwt.safehtml.shared.SafeHtml;
 
 public interface CommonApplicationMessages extends Messages {
+    String fromIndexToIndex(int from, int to);
+
+    String fromIndexToIndexOfTotalCount(int from, int to, int totalCount);
+
     String asyncCallFailure(String reason);
 
     String uiCommonRunActionFailed(String reason);
@@ -92,6 +96,8 @@ public interface CommonApplicationMessages extends Messages {
     String resumeBehaviorInfoIcon();
 
     String migrationPolicyInfo();
+
+    String parallelMigrationsInfo();
 
     String hostCpuInfo();
 
@@ -195,5 +201,9 @@ public interface CommonApplicationMessages extends Messages {
     String ovaPathInfo();
 
     String vmGuestCpuTypeWarning(String cpuType);
+
+    String biosTypeWarning(String bioType);
+
+    String homePageDefault(String currentDefault);
 }
 

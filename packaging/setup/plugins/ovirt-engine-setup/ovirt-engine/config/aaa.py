@@ -10,13 +10,9 @@
 """aaa plugin."""
 
 
-import base64
 import gettext
-import os
 import random
 import string
-
-from M2Crypto import RSA
 
 from otopi import plugin
 from otopi import util
@@ -58,6 +54,15 @@ class Plugin(plugin.PluginBase):
         super(Plugin, self).__init__(context=context)
 
     @plugin.event(
+        stage=plugin.Stages.STAGE_BOOT,
+    )
+    def _boot(self):
+        self.environment.setdefault(
+            oengcommcons.KeycloakEnv.SUPPORTED,
+            False
+        )
+
+    @plugin.event(
         stage=plugin.Stages.STAGE_INIT,
     )
     def _init(self):
@@ -85,6 +90,19 @@ class Plugin(plugin.PluginBase):
             oenginecons.ConfigEnv.ADMIN_PASSWORD,
             None
         )
+        self.environment.setdefault(
+            oengcommcons.KeycloakEnv.ENABLE,
+            False
+        )
+
+    @plugin.event(
+        stage=plugin.Stages.STAGE_SETUP,
+        condition=lambda self: not self.environment[
+            oengcommcons.KeycloakEnv.SUPPORTED
+        ],
+    )
+    def _setup(self):
+        self.environment[oengcommcons.KeycloakEnv.ENABLE] = False
 
     @plugin.event(
         stage=plugin.Stages.STAGE_CUSTOMIZATION,
@@ -98,9 +116,21 @@ class Plugin(plugin.PluginBase):
         condition=lambda self: (
             self.environment[
                 oenginecons.CoreEnv.ENABLE
-            ] and self.environment[
-                oenginecons.EngineDBEnv.NEW_DATABASE
-            ] and self.environment[
+            ]
+            and (
+                self.environment[
+                    oenginecons.EngineDBEnv.NEW_DATABASE
+                ]
+                or (
+                    self.environment[
+                        oengcommcons.KeycloakEnv.ENABLE
+                    ]
+                    and not self.environment[
+                        oengcommcons.KeycloakEnv.CONFIGURED
+                    ]
+                )
+            )
+            and self.environment[
                 oenginecons.ConfigEnv.ADMIN_PASSWORD
             ] is None
         ),
@@ -126,7 +156,7 @@ class Plugin(plugin.PluginBase):
                 self.logger.warning(_('Passwords do not match'))
             else:
                 try:
-                    if(_use_pwquality):
+                    if (_use_pwquality):
                         pwq = pwquality.PWQSettings()
                         pwq.read_config()
                         pwq.check(password, None, None)
@@ -165,9 +195,9 @@ class Plugin(plugin.PluginBase):
         ),
     )
     def _validation_late(self):
-        adminPassword = None
+        admin_password = None
         try:
-            adminPassword = vdcoption.VdcOption(
+            admin_password = vdcoption.VdcOption(
                 statement=database.Statement(
                     dbenvkeys=oenginecons.Const.ENGINE_DB_ENV_KEYS,
                     environment=self.environment,
@@ -179,69 +209,24 @@ class Plugin(plugin.PluginBase):
         except RuntimeError:
             pass
 
-        # we have legacy user
-        if adminPassword is not None:
-            self.environment[
-                oenginecons.ConfigEnv.ADMIN_USER_AUTHZ_NAME
-            ] = 'internal'
-            self.environment[
-                oenginecons.ConfigEnv.ADMIN_USER
-            ] = 'admin@internal'
-            self.environment[
-                oenginecons.ConfigEnv.ADMIN_USER_ID
-            ] = 'fdfc627c-d875-11e0-90f0-83df133b58cc'
-            if self.environment[
-                oenginecons.ConfigEnv.ADMIN_PASSWORD
-            ] is None:
-                if not adminPassword:
-                    self.environment[
-                        oenginecons.ConfigEnv.ADMIN_PASSWORD
-                    ] = ''
-                elif os.path.exists(
-                    oenginecons.FileLocations.OVIRT_ENGINE_PKI_ENGINE_STORE
-                ):
-                    def _getRSA():
-                        rc, stdout, stderr = self.execute(
-                            args=(
-                                self.command.get('openssl'),
-                                'pkcs12',
-                                '-in', (
-                                    oenginecons.FileLocations.
-                                    OVIRT_ENGINE_PKI_ENGINE_STORE
-                                ),
-                                '-passin', 'pass:%s' % self.environment[
-                                    oenginecons.PKIEnv.STORE_PASS
-                                ],
-                                '-nocerts',
-                                '-nodes',
-                            ),
-                        )
-                        return RSA.load_key_string(
-                            str('\n'.join(stdout))
-                        )
-
-                    self.environment[
-                        oenginecons.ConfigEnv.ADMIN_PASSWORD
-                    ] = _getRSA().private_decrypt(
-                        data=base64.b64decode(adminPassword),
-                        padding=RSA.pkcs1_padding,
-                    )
-                else:
-                    self.environment[
-                        oenginecons.ConfigEnv.ADMIN_PASSWORD
-                    ] = self._generatePassword()
-                    self.logger.warning(
-                        _(
-                            "Cannot decrypt admin's password during upgrade. "
-                            "Admin's password was set to a random password: "
-                            "{password}. Please replace password as soon as "
-                            "possible."
-                        ).format(
-                            password=self.environment[
-                                oenginecons.ConfigEnv.ADMIN_PASSWORD
-                            ],
-                        )
-                    )
+        # we have legacy user. Shouldn't happen anymore, after
+        # 3.6 https://gerrit.ovirt.org/q/Ica85b6a
+        if admin_password is not None:
+            self.dialog.note(
+                text=_(
+                    'Old AdminPassword found in vdc_options. This should not '
+                    'happen, and is likely a result of a bad past upgrade.\n'
+                    'Please contact support.\n'
+                    'If you are certain that it is not in use anymore, you '
+                    'can remove it with this command:\n'
+                    '# /usr/share/ovirt-engine/dbscripts/engine-psql.sh -c '
+                    '\\\n'
+                    '   "select fn_db_delete_config_value(\'AdminPassword\','
+                    '\'general\');"\n'
+                    '\nand then try again.\n'
+                )
+            )
+            raise RuntimeError(_('Old AdminPassword found in vdc_options'))
 
     @plugin.event(
         stage=plugin.Stages.STAGE_MISC,
@@ -320,9 +305,14 @@ class Plugin(plugin.PluginBase):
         after=(
             osetupcons.Stages.DIALOG_TITLES_S_SUMMARY,
         ),
-        condition=lambda self: self.environment[
-            oenginecons.ConfigEnv.ADMIN_PASSWORD
-        ] is not None,
+        condition=lambda self: (
+            self.environment[
+                oenginecons.ConfigEnv.ADMIN_PASSWORD
+            ] is not None and
+            self.environment[
+                oengcommcons.KeycloakEnv.ENABLE
+            ] is False
+        )
     )
     def _closeup(self):
         self.dialog.note(

@@ -73,13 +73,17 @@ class Plugin(plugin.PluginBase):
                         '(@VALUES@) [@DEFAULT@]: '
                     ),
                     prompt=True,
-                    default=True,
-                ) if self.environment[oenginecons.EngineDBEnv.NEW_DATABASE]
-                else (
-                    self._engine_fqdn is not None and
-                    self.environment[
-                        osetupcons.ConfigEnv.FQDN
-                    ] == self._engine_fqdn
+                    default=(
+                        True if self.environment[
+                            oenginecons.EngineDBEnv.NEW_DATABASE
+                        ]
+                        else (
+                            self._engine_fqdn is not None and
+                            self.environment[
+                                osetupcons.ConfigEnv.FQDN
+                            ] == self._engine_fqdn
+                        )
+                    ),
                 )
             )
         if self.environment[oenginecons.CoreEnv.ENABLE]:

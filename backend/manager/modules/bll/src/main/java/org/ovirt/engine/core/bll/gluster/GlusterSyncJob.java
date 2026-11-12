@@ -18,6 +18,7 @@ import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.bll.interfaces.BackendInternal;
 import org.ovirt.engine.core.bll.job.ExecutionHandler;
+import org.ovirt.engine.core.bll.scheduling.OnTimerMethodAnnotation;
 import org.ovirt.engine.core.bll.utils.GlusterEventFactory;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.action.ActionReturnValue;
@@ -62,7 +63,6 @@ import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogable;
 import org.ovirt.engine.core.dao.gluster.GlusterDBUtils;
 import org.ovirt.engine.core.utils.lock.EngineLock;
-import org.ovirt.engine.core.utils.timer.OnTimerMethodAnnotation;
 import org.ovirt.engine.core.utils.transaction.TransactionSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -159,7 +159,7 @@ public class GlusterSyncJob extends GlusterJob {
             if (fetchedServers != null) {
                 syncServers(cluster, existingServers, fetchedServers);
             }
-        } catch(Exception e) {
+        } catch (Exception e) {
             log.error("Error while refreshing server data for cluster '{}' from database: {}",
                     cluster.getName(),
                     e.getMessage());
@@ -863,21 +863,21 @@ public class GlusterSyncJob extends GlusterJob {
         boolean changed = false;
         boolean volumeTypeUnSupported = false;
         if (existingVolume.getVolumeType() != fetchedVolume.getVolumeType()) {
-            if(existingVolume.getVolumeType().isSupported() && !fetchedVolume.getVolumeType().isSupported()){
-                volumeTypeUnSupported= true;
+            if (existingVolume.getVolumeType().isSupported() && !fetchedVolume.getVolumeType().isSupported()) {
+                volumeTypeUnSupported = true;
             }
             existingVolume.setVolumeType(fetchedVolume.getVolumeType());
             changed = true;
         }
 
         if (existingVolume.getVolumeType().isReplicatedType() &&
-                !Objects.equals(existingVolume.getReplicaCount(), fetchedVolume.getReplicaCount())) {
-                existingVolume.setReplicaCount(fetchedVolume.getReplicaCount());
-                changed = true;
+            !Objects.equals(existingVolume.getReplicaCount(), fetchedVolume.getReplicaCount())) {
+            existingVolume.setReplicaCount(fetchedVolume.getReplicaCount());
+            changed = true;
         }
 
         if (existingVolume.getVolumeType().isStripedType() &&
-                !Objects.equals(existingVolume.getStripeCount(), fetchedVolume.getStripeCount())) {
+            !Objects.equals(existingVolume.getStripeCount(), fetchedVolume.getStripeCount())) {
             existingVolume.setStripeCount(fetchedVolume.getStripeCount());
             changed = true;
         }
@@ -998,6 +998,17 @@ public class GlusterSyncJob extends GlusterJob {
                     brick.getBrickDetails().setBrickProperties(brickProperties);
                     brickPropertiesToUpdate.add(brick);
                 }
+            } else {
+                /**
+                 * brickProperties Returns data from vds Command
+                 * When Gluster service is down or peer is disconnected then
+                 * the bricks coming from host were not visible in vds output.
+                 * The status for these bricks are skipped and reflect the last queried status.
+                 * This else part will update the status of these brick to Unknown status.
+                 */
+                logBrickStatusChange(volume, brick, GlusterStatus.UNKNOWN);
+                brick.setStatus(GlusterStatus.UNKNOWN);
+                bricksToUpdate.add(brick);
             }
         }
 
@@ -1046,12 +1057,12 @@ public class GlusterSyncJob extends GlusterJob {
                 null,
                 AuditLogType.GLUSTER_BRICK_STATUS_CHANGED,
                 customValues);
-        if(fetchedStatus == GlusterStatus.DOWN){
+        if (fetchedStatus == GlusterStatus.DOWN) {
             logUtil.logAuditMessage(volume,
                     AuditLogType.GLUSTER_BRICK_STATUS_DOWN,
                     brick.getId(),
                     brick.getQualifiedName());
-        }else if(fetchedStatus == GlusterStatus.UP){
+        } else if (fetchedStatus == GlusterStatus.UP) {
             alertDirector.removeAlertsByBrickIdLogType(brick.getId(), AuditLogType.GLUSTER_BRICK_STATUS_DOWN);
         }
     }
@@ -1188,9 +1199,9 @@ public class GlusterSyncJob extends GlusterJob {
         VDSReturnValue result = runVdsCommand(VDSCommandType.GetGlusterVolumeHealInfo,
                 new GlusterVolumeVDSParameters(upServer.getId(), volumeName));
 
-        if(result.getSucceeded()){
+        if (result.getSucceeded()) {
             return (Map<Guid, Integer>) result.getReturnValue();
-        }else{
+        } else {
             return Collections.emptyMap();
         }
     }

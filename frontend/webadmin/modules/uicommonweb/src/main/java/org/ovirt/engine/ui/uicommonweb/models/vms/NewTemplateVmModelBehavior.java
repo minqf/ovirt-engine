@@ -16,7 +16,6 @@ import org.ovirt.engine.core.common.businessentities.VmBase;
 import org.ovirt.engine.core.common.businessentities.VmTemplate;
 import org.ovirt.engine.core.common.businessentities.comparators.DiskByDiskAliasComparator;
 import org.ovirt.engine.core.common.businessentities.comparators.NameableComparator;
-import org.ovirt.engine.core.common.businessentities.storage.CinderDisk;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.DiskStorageType;
@@ -55,7 +54,6 @@ public class NewTemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel>
 
     public void setVm(VM vm) {
         this.vm = vm;
-        getModel().setSingleQxlEnabled(vm.getSingleQxlPci());
     }
 
     protected VM getVm() {
@@ -74,7 +72,7 @@ public class NewTemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel>
         DisksAllocationModel disksAllocationModel = getModel().getDisksAllocationModel();
         disksAllocationModel.setIsVolumeFormatAvailable(true);
         disksAllocationModel.setIsVolumeFormatChangeable(true);
-        disksAllocationModel.setIsAliasChangable(true);
+        disksAllocationModel.setIsAliasChangeable(true);
         disksAllocationModel.setContainer(getModel());
         disksAllocationModel.setIsThinProvisioning(false);
 
@@ -96,9 +94,6 @@ public class NewTemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel>
                                                     Arrays.asList(dataCenter),
                                                     filteredClusters,
                                                     vm.getClusterId());
-
-                                            initTemplate();
-
                                         }),
                                         true,
                                         false);
@@ -112,7 +107,7 @@ public class NewTemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel>
                 vm.getStoragePoolId());
     }
 
-    protected void updateTemplate() {
+    protected void initBaseTemplate() {
         final DataCenterWithCluster dataCenterWithCluster =
                 getModel().getDataCenterWithClustersList().getSelectedItem();
         StoragePool dataCenter = dataCenterWithCluster == null ? null : dataCenterWithCluster.getDataCenter();
@@ -121,11 +116,11 @@ public class NewTemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel>
         }
 
         AsyncDataProvider.getInstance().getTemplateListByDataCenter(new AsyncQuery<>(
-                templates -> postInitTemplate(AsyncDataProvider.getInstance().filterTemplatesByArchitecture(templates,
+                templates -> postInitBaseTemplate(AsyncDataProvider.getInstance().filterTemplatesByArchitecture(templates,
                         dataCenterWithCluster.getCluster().getArchitecture()))), dataCenter.getId());
     }
 
-    private void postInitTemplate(List<VmTemplate> templates) {
+    private void postInitBaseTemplate(List<VmTemplate> templates) {
         List<VmTemplate> baseWithoutBlank = filterOutBlank(keepBaseTemplates(templates));
 
         getModel().getIsSubTemplate().setEntity(false);
@@ -133,6 +128,7 @@ public class NewTemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel>
             // it is not allowed to create sub-templates of Blank template
             getModel().getIsSubTemplate().setIsChangeable(false,
                     constants.someNonDefaultTemplateHasToExistFirst());
+            initTemplate();
             return;
         }
 
@@ -182,7 +178,6 @@ public class NewTemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel>
                 continue;
             }
             if (disk.getDiskStorageType() == DiskStorageType.IMAGE ||
-                    disk.getDiskStorageType() == DiskStorageType.CINDER ||
                     disk.getDiskStorageType() == DiskStorageType.MANAGED_BLOCK_STORAGE) {
                 imageDisks.add(disk);
             }
@@ -213,16 +208,7 @@ public class NewTemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel>
                     diskModel.getAlias().setEntity(diskImage.getDiskAlias());
                     diskModel.setVm(getVm());
                     break;
-                case CINDER:
-                    CinderDisk cinderDisk = (CinderDisk) disk;
-                    diskModel.setSize(new EntityModel<>((int) cinderDisk.getSizeInGigabytes()));
-                    ListModel volumeTypes = new ListModel();
-                    volumeTypes.setItems(new ArrayList<>(Arrays.asList(cinderDisk.getVolumeType())), cinderDisk.getVolumeType());
-                    diskModel.setVolumeType(volumeTypes);
-                    diskModel.getAlias().setEntity(cinderDisk.getDiskAlias());
-                    diskModel.getVolumeFormat().setIsChangeable(false);
-                    break;
-            case MANAGED_BLOCK_STORAGE:
+                case MANAGED_BLOCK_STORAGE:
                     ManagedBlockStorageDisk managedBlockDisk = (ManagedBlockStorageDisk) disk;
                     diskModel.setSize(new EntityModel<>((int) managedBlockDisk.getSizeInGigabytes()));
                     ListModel managedBlockVolumeTypes = new ListModel();
@@ -242,18 +228,11 @@ public class NewTemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel>
 
     @Override
     public void postDataCenterWithClusterSelectedItemChanged() {
+        super.postDataCenterWithClusterSelectedItemChanged();
         updateQuotaByCluster(vm.getQuotaId(), vm.getQuotaName());
-        updateMemoryBalloon();
-        updateCpuSharesAvailability();
-        updateVirtioScsiAvailability();
-        updateOSValues();
-        updateTemplate();
-        updateNumOfSockets();
-        if(getModel().getSelectedCluster() != null) {
-            updateCpuProfile(getModel().getSelectedCluster().getId(), vm.getCpuProfileId());
-        }
-        updateCustomPropertySheet();
-        getModel().getCustomPropertySheet().deserialize(vm.getCustomProperties());
+
+        initBaseTemplate();
+        updateCpuProfile(getModel().getSelectedCluster(), vm.getCpuProfileId());
         updateLeaseStorageDomains(vm.getLeaseStorageDomainId());
     }
 
@@ -275,11 +254,19 @@ public class NewTemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel>
     public void provisioning_SelectedItemChanged() {
     }
 
+    @Override
+    protected void changeDefaultHost() {
+        super.changeDefaultHost();
+        updateDefaultHost(vm.getDedicatedVmForVdsList());
+    }
+
     private void initTemplate() {
         // Update model state according to VM properties.
         buildModel(this.vm.getStaticData(), (source, destination) -> {
+            updateDefaultHost(vm.getDedicatedVmForVdsList());
             updateSelectedCdImage(vm.getStaticData());
             updateTimeZone(vm.getTimeZone());
+            updateTpm(vm.getId());
             updateConsoleDevice(vm.getId());
 
             getModel().getStorageDomain().setIsChangeable(true);
@@ -351,7 +338,6 @@ public class NewTemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel>
                         for (DiskModel diskModel : diskImages) {
                             diskModel.getStorageDomain().setItems(activeStorageDomainList);
                         }
-                        initStorageDomainForType(StorageType.CINDER, DiskStorageType.CINDER, disks, storageDomains);
                         initStorageDomainForType(StorageType.MANAGED_BLOCK_STORAGE, DiskStorageType.MANAGED_BLOCK_STORAGE, disks, storageDomains);
                     }
                 }),
@@ -384,6 +370,7 @@ public class NewTemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel>
             // template.name for version should be the same as the base template name
             getModel().getName().setEntity(getModel().getBaseTemplate().getSelectedItem().getName());
         }
+        initTemplate();
     }
 
     @Override
@@ -399,11 +386,5 @@ public class NewTemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel>
             getModel().getTemplateVersionName().setEntity(getModel().getName().getEntity());
             getModel().getName().setEntity(getModel().getBaseTemplate().getSelectedItem().getName());
         }
-    }
-
-    @Override
-    public void enableSinglePCI(boolean enabled) {
-        super.enableSinglePCI(enabled);
-        getModel().setSingleQxlEnabled(vm != null && vm.getSingleQxlPci());
     }
 }

@@ -22,7 +22,7 @@ import com.google.inject.Inject;
 import com.google.inject.Provider;
 
 public class AbstractVmBasedPopupPresenterWidget<V extends AbstractVmBasedPopupPresenterWidget.ViewDef> extends
-    AbstractModelBoundPopupPresenterWidget<UnitVmModel, V>  {
+    AbstractModelBoundPopupPresenterWidget<UnitVmModel, V> {
 
     public interface ViewDef extends AbstractModelBoundPopupPresenterWidget.ViewDef<UnitVmModel>, TabbedView {
         void switchMode(boolean isAdvanced);
@@ -150,7 +150,9 @@ public class AbstractVmBasedPopupPresenterWidget<V extends AbstractVmBasedPopupP
     }
 
     private void switchAccordingToCluster(final UnitVmModel model) {
-        getView().switchManaged(model.getDataCenterWithClustersList().getSelectedItem().getCluster().isManaged());
+        if (model.getDataCenterWithClustersList().getSelectedItem() != null) {
+            getView().switchManaged(model.getDataCenterWithClustersList().getSelectedItem().getCluster().isManaged());
+        }
     }
 
     private void storeAdvancedModeToLocalStorage(UnitVmModel model) {

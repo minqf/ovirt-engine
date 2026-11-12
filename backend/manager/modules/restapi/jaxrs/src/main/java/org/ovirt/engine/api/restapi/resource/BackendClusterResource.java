@@ -4,7 +4,7 @@ import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.core.Response;
 
 import org.ovirt.engine.api.model.Action;
-import org.ovirt.engine.api.model.ClusterUpgradeAction;
+import org.ovirt.engine.api.model.ActionableResource;
 import org.ovirt.engine.api.resource.AffinityGroupsResource;
 import org.ovirt.engine.api.resource.AssignedCpuProfilesResource;
 import org.ovirt.engine.api.resource.AssignedPermissionsResource;
@@ -17,12 +17,14 @@ import org.ovirt.engine.api.resource.gluster.GlusterHooksResource;
 import org.ovirt.engine.api.resource.gluster.GlusterVolumesResource;
 import org.ovirt.engine.api.restapi.resource.gluster.BackendGlusterHooksResource;
 import org.ovirt.engine.api.restapi.resource.gluster.BackendGlusterVolumesResource;
+import org.ovirt.engine.api.restapi.resource.utils.LinksTreeNode;
 import org.ovirt.engine.api.restapi.util.LinkHelper;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.ActionParametersBase;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.ClusterOperationParameters;
 import org.ovirt.engine.core.common.action.ClusterParametersBase;
+import org.ovirt.engine.core.common.action.ClusterUpgradeParameters;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.queries.GetPermissionsForObjectParameters;
 import org.ovirt.engine.core.common.queries.IdQueryParameters;
@@ -73,10 +75,25 @@ public class BackendClusterResource<P extends BackendClustersResource>
 
     @Override
     public Response upgrade(Action action) {
-        if(action.getUpgradeAction() == ClusterUpgradeAction.START) {
-            return doAction(ActionType.StartClusterUpgrade, new ClusterParametersBase(guid), action);
+        switch (action.getUpgradeAction()) {
+            case START:
+                return doAction(ActionType.StartClusterUpgrade,
+                                new ClusterUpgradeParameters(guid, action.getCorrelationId()),
+                                action);
+
+            case UPDATE_PROGRESS:
+                return doAction(ActionType.UpdateClusterUpgrade,
+                                new ClusterUpgradeParameters(guid,
+                                                             action.getCorrelationId(),
+                                                             action.getUpgradePercentComplete()),
+                                action);
+
+            case FINISH:
+            default:
+                return doAction(ActionType.FinishClusterUpgrade,
+                                new ClusterUpgradeParameters(guid, action.getCorrelationId()),
+                                action);
         }
-        return doAction(ActionType.FinishClusterUpgrade, new ClusterParametersBase(guid), action);
     }
 
     @Override
@@ -160,11 +177,33 @@ public class BackendClusterResource<P extends BackendClustersResource>
 
     @Override
     public ClusterEnabledFeaturesResource getEnabledFeaturesResource() {
-       return inject(new BackendClusterEnabledFeaturesResource(guid));
+        return inject(new BackendClusterEnabledFeaturesResource(guid));
     }
 
     @Override
     public ClusterExternalProvidersResource getExternalNetworkProvidersResource() {
         return inject(new BackendClusterExternalNetworkProvidersResource(guid));
+    }
+
+    @Override
+    public void follow(ActionableResource entity, LinksTreeNode linksTree) {
+        org.ovirt.engine.api.model.Cluster cluster = (org.ovirt.engine.api.model.Cluster) entity;
+        removeGlusterVolumesFromFollowTree(linksTree, cluster);
+    }
+
+    /**
+     * specific case:
+     *
+     * if this cluster does not have gluster-service (meaning it's virt-only), but
+     * the user has requested to follow it's gluster_volumes link, silently ignore
+     * this request. It doesn't make sense to the Engine and if it reaches it, an
+     * exception will be thrown (see: https://bugzilla.redhat.com/2079361)
+     */
+    static void removeGlusterVolumesFromFollowTree(LinksTreeNode linksTree, org.ovirt.engine.api.model.Cluster cluster) {
+        final String GLUSTER_VOLUMES = "gluster_volumes";
+        if ((!cluster.isSetGlusterService() || !cluster.isGlusterService())
+                && linksTree.pathExists(GLUSTER_VOLUMES)) {
+            linksTree.markAsFollowed(GLUSTER_VOLUMES);
+        }
     }
 }

@@ -1,0 +1,13 @@
+{
+  "name": "oVirt on CentOS 9",
+  "dockerComposeFile": [
+    "../../docker-compose.yml",
+    "docker-compose.override.yml"
+  ],
+  "service": "engine",
+  "runServices": ["engine", "postgres"],
+  "remoteUser": "build",
+  "workspaceFolder": "/workspace",
+  "updateRemoteUserUID": true,
+  "shutdownAction": "stopCompose"
+}

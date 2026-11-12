@@ -159,8 +159,8 @@ public class NumaSupportPopupView extends AbstractModelBoundPopupView<NumaSuppor
         List<VM> vmsWithVNuma = supportModel.getVmsWithvNumaNodeList();
         List<VNodeModel> numaNodes = new ArrayList<>();
         for (VM vm: vmsWithVNuma) {
-            for(VmNumaNode vmNumaNode: vm.getvNumaNodeList()) {
-                numaNodes.add(new VNodeModel(vm, vmNumaNode));
+            for (VmNumaNode vmNumaNode: vm.getvNumaNodeList()) {
+                numaNodes.add(new VNodeModel(vm, vmNumaNode, false));
             }
         }
         contentPanel.setModel(supportModel.getNumaNodeList(), numaNodes);

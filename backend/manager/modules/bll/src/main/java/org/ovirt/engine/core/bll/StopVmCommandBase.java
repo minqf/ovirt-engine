@@ -18,11 +18,11 @@ import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.StopVmParametersBase;
 import org.ovirt.engine.core.common.asynctasks.EntityInfo;
 import org.ovirt.engine.core.common.businessentities.OriginType;
-import org.ovirt.engine.core.common.businessentities.Snapshot;
 import org.ovirt.engine.core.common.businessentities.VMStatus;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.errors.EngineException;
 import org.ovirt.engine.core.common.errors.EngineMessage;
+import org.ovirt.engine.core.common.utils.VmCpuCountHelper;
 import org.ovirt.engine.core.common.vdscommands.DestroyVmVDSCommandParameters;
 import org.ovirt.engine.core.common.vdscommands.VDSCommandType;
 import org.ovirt.engine.core.common.vdscommands.VDSReturnValue;
@@ -45,6 +45,7 @@ public abstract class StopVmCommandBase<T extends StopVmParametersBase> extends 
 
     @Inject
     private SnapshotDao snapshotDao;
+
     @Inject
     private KubevirtMonitoring kubevirt;
 
@@ -76,7 +77,7 @@ public abstract class StopVmCommandBase<T extends StopVmParametersBase> extends 
             return false;
         }
 
-        if (isVmDuringBackup()) {
+        if (isVmDuringBackup() && !getParameters().isForceStop()) {
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_VM_IS_DURING_BACKUP);
         }
 
@@ -112,19 +113,19 @@ public abstract class StopVmCommandBase<T extends StopVmParametersBase> extends 
      */
     private VDSReturnValue destroyMigratingVm() {
         // We must prevent VM monitoring from happening so it won't issue a migration rerun attempt
-        getVmManager().lock();
+        getVmManager().lockVm();
         try {
             VDSReturnValue returnValueFromDestination = null;
             try {
                 returnValueFromDestination = runVdsCommand(
                         VDSCommandType.DestroyVm,
                         buildDestroyVmVDSCommandParameters(getVm().getMigratingToVds()));
-            } catch(EngineException e) {
+            } catch (EngineException e) {
                 switch (e.getErrorCode()) {
-                case noVM:
-                    break;
-                default:
-                    throw e;
+                    case noVM:
+                        break;
+                    default:
+                        throw e;
                 }
             }
 
@@ -133,21 +134,21 @@ public abstract class StopVmCommandBase<T extends StopVmParametersBase> extends 
                 returnValueFromSource = runVdsCommand(
                         VDSCommandType.DestroyVm,
                         buildDestroyVmVDSCommandParameters(getVdsId()));
-            } catch(EngineException e) {
+            } catch (EngineException e) {
                 switch (e.getErrorCode()) {
-                case noVM:
-                    if (returnValueFromDestination == null) {
+                    case noVM:
+                        if (returnValueFromDestination == null) {
+                            throw e;
+                        }
+                        break;
+                    default:
                         throw e;
-                    }
-                    break;
-                default:
-                    throw e;
                 }
             }
 
             return returnValueFromSource != null ? returnValueFromSource : returnValueFromDestination;
         } finally {
-            getVmManager().unlock();
+            getVmManager().unlockVm();
         }
     }
 
@@ -164,7 +165,13 @@ public abstract class StopVmCommandBase<T extends StopVmParametersBase> extends 
             setSucceeded(true);
             return;
         }
+
         getParameters().setEntityInfo(new EntityInfo(VdcObjectType.VM, getVm().getId()));
+
+        boolean snapshotContainsMemory = getActiveSnapshot().containsMemory();
+        Guid snapshotMemoryDiskId = getActiveSnapshot().getMemoryDiskId();
+        Guid snapshotMetadataDiskId = getActiveSnapshot().getMetadataDiskId();
+
         suspendedVm = getVm().getStatus() == VMStatus.Suspended;
         if (suspendedVm) {
             endVmCommand();
@@ -172,13 +179,11 @@ public abstract class StopVmCommandBase<T extends StopVmParametersBase> extends 
         } else {
             super.executeVmCommand();
         }
-        vmStaticDao.incrementDbGeneration(getVm().getId());
-        removeMemoryDisksIfNeeded(getActiveSnapshot());
-    }
 
-    private void removeMemoryDisksIfNeeded(Snapshot snapshot) {
-        if (snapshot.containsMemory()) {
-            removeMemoryDisks(snapshot);
+        vmStaticDao.incrementDbGeneration(getVm().getId());
+
+        if (snapshotContainsMemory) {
+            removeMemoryDisks(snapshotMemoryDiskId, snapshotMetadataDiskId);
         }
     }
 
@@ -206,7 +211,9 @@ public abstract class StopVmCommandBase<T extends StopVmParametersBase> extends 
             list.add(new QuotaClusterConsumptionParameter(getVm().getQuotaId(),
                     QuotaConsumptionParameter.QuotaAction.RELEASE,
                     getVm().getClusterId(),
-                    getVm().getCpuPerSocket() * getVm().getNumOfSockets(),
+                    VmCpuCountHelper.isDynamicCpuTopologySet(getVm()) ?
+                            getVm().getCurrentCoresPerSocket() * getVm().getCurrentSockets() :
+                            getVm().getCpuPerSocket() * getVm().getNumOfSockets(),
                     getVm().getMemSizeMb()));
         }
         return list;
@@ -235,7 +242,7 @@ public abstract class StopVmCommandBase<T extends StopVmParametersBase> extends 
     }
 
     @Override
-    protected  boolean shouldSkipCommandExecution() {
+    protected boolean shouldSkipCommandExecution() {
         return getVm() != null && getVm().getStatus() == VMStatus.Down;
     }
 

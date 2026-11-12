@@ -34,7 +34,6 @@ import org.ovirt.engine.ui.uicommonweb.models.storage.StorageIsoListModel;
 import org.ovirt.engine.ui.uicommonweb.models.storage.StorageLeaseListModel;
 import org.ovirt.engine.ui.uicommonweb.models.storage.StorageListModel;
 import org.ovirt.engine.ui.uicommonweb.models.storage.StorageRegisterDiskImageListModel;
-import org.ovirt.engine.ui.uicommonweb.models.storage.StorageRegisterDiskListModel;
 import org.ovirt.engine.ui.uicommonweb.models.storage.StorageRegisterTemplateListModel;
 import org.ovirt.engine.ui.uicommonweb.models.storage.StorageRegisterVmListModel;
 import org.ovirt.engine.ui.uicommonweb.models.storage.StorageSnapshotListModel;
@@ -107,6 +106,9 @@ public class StorageModule extends AbstractGinModule {
                         } else if (lastExecutedCommand.getName().equals("OnSave") //$NON-NLS-1$
                                   || lastExecutedCommand.getName().equals("OnImport")) { //$NON-NLS-1$
                             return forceCreateConfirmPopupProvider.get();
+                        } else if (lastExecutedCommand.getName().equals("HandleISOForNFS") //$NON-NLS-1$
+                                || lastExecutedCommand.getName().equals("HandleISOForPosix")) { //$NON-NLS-1$
+                            return defaultConfirmPopupProvider.get();
                         } else {
                             return super.getConfirmModelPopup(source, lastExecutedCommand);
                         }
@@ -227,27 +229,6 @@ public class StorageModule extends AbstractGinModule {
                         } else {
                             return super.getConfirmModelPopup(source, lastExecutedCommand);
                         }
-                    }
-                };
-        result.setMainModelProvider(mainModelProvider);
-        result.setModelProvider(modelProvider);
-        return result;
-    }
-
-    @Provides
-    @Singleton
-    public SearchableDetailModelProvider<Disk, StorageListModel, StorageRegisterDiskListModel> getStorageRegisterDiskListProvider(EventBus eventBus,
-            Provider<DefaultConfirmationPopupPresenterWidget> defaultConfirmPopupProvider,
-            final Provider<StorageListModel> mainModelProvider,
-            final Provider<StorageRegisterDiskListModel> modelProvider) {
-
-        SearchableDetailTabModelProvider<Disk, StorageListModel, StorageRegisterDiskListModel> result =
-                new SearchableDetailTabModelProvider<Disk, StorageListModel, StorageRegisterDiskListModel>(
-                        eventBus, defaultConfirmPopupProvider) {
-                    @Override
-                    public AbstractModelBoundPopupPresenterWidget<? extends ConfirmationModel, ?> getConfirmModelPopup(
-                            StorageRegisterDiskListModel source, UICommand lastExecutedCommand) {
-                        return super.getConfirmModelPopup(source, lastExecutedCommand);
                     }
                 };
         result.setMainModelProvider(mainModelProvider);
@@ -524,22 +505,22 @@ public class StorageModule extends AbstractGinModule {
             final Provider<StorageDRListModel> modelProvider) {
 
         SearchableDetailTabModelProvider<StorageDomainDR, StorageListModel, StorageDRListModel> result =
-                new SearchableDetailTabModelProvider<StorageDomainDR, StorageListModel, StorageDRListModel>(
-                        eventBus, defaultConfirmPopupProvider) {
-            @Override
-            public AbstractModelBoundPopupPresenterWidget<? extends Model, ?> getModelPopup(StorageDRListModel source,
-                    UICommand lastExecutedCommand,
-                    Model windowModel) {
-                if (lastExecutedCommand == getModel().getNewCommand()) {
-                    return storageDRPopupProvider.get();
-                } else if (lastExecutedCommand == getModel().getEditCommand()) {
-                    return storageDRPopupProvider.get();
-                } else {
-                    return super.getModelPopup(source, lastExecutedCommand, windowModel);
-                }
-            }
+            new SearchableDetailTabModelProvider<StorageDomainDR, StorageListModel, StorageDRListModel>(
+                eventBus, defaultConfirmPopupProvider) {
+                    @Override
+                    public AbstractModelBoundPopupPresenterWidget<? extends Model, ?> getModelPopup(StorageDRListModel source,
+                        UICommand lastExecutedCommand,
+                        Model windowModel) {
+                        if (lastExecutedCommand == getModel().getNewCommand()) {
+                            return storageDRPopupProvider.get();
+                        } else if (lastExecutedCommand == getModel().getEditCommand()) {
+                            return storageDRPopupProvider.get();
+                        } else {
+                            return super.getModelPopup(source, lastExecutedCommand, windowModel);
+                        }
+                    }
 
-        };
+                };
         result.setMainModelProvider(mainModelProvider);
         result.setModelProvider(modelProvider);
         return result;
@@ -552,7 +533,6 @@ public class StorageModule extends AbstractGinModule {
         bind(StorageDataCenterListModel.class).in(Singleton.class);
         bind(StorageIsoListModel.class).in(Singleton.class);
         bind(StorageDiskListModel.class).in(Singleton.class);
-        bind(StorageRegisterDiskListModel.class).in(Singleton.class);
         bind(StorageRegisterDiskImageListModel.class).in(Singleton.class);
         bind(StorageSnapshotListModel.class).in(Singleton.class);
         bind(StorageTemplateListModel.class).in(Singleton.class);
@@ -565,29 +545,29 @@ public class StorageModule extends AbstractGinModule {
         bind(DiskProfileListModel.class).in(Singleton.class);
         bind(StorageDRListModel.class).in(Singleton.class);
         bind(StorageLeaseListModel.class).in(Singleton.class);
-        bind(new TypeLiteral<PermissionListModel<StorageDomain>>(){}).in(Singleton.class);
-        bind(new TypeLiteral<PermissionListModel<DiskProfile>>(){}).in(Singleton.class);
+        bind(new TypeLiteral<PermissionListModel<StorageDomain>>() { }).in(Singleton.class);
+        bind(new TypeLiteral<PermissionListModel<DiskProfile>>() { }).in(Singleton.class);
         bind(StorageMainSelectedItems.class).asEagerSingleton();
 
         // Form Detail Models
-        bind(new TypeLiteral<DetailModelProvider<StorageListModel, StorageGeneralModel>>(){})
-            .to(new TypeLiteral<DetailTabModelProvider<StorageListModel, StorageGeneralModel>>(){}).in(Singleton.class);
+        bind(new TypeLiteral<DetailModelProvider<StorageListModel, StorageGeneralModel>>() { })
+            .to(new TypeLiteral<DetailTabModelProvider<StorageListModel, StorageGeneralModel>>() { }).in(Singleton.class);
         // Search-able Detail Models
-        bind(new TypeLiteral<SearchableDetailModelProvider<VmTemplate, StorageListModel, StorageTemplateListModel>>(){})
-           .to(new TypeLiteral<SearchableDetailTabModelProvider<VmTemplate, StorageListModel, StorageTemplateListModel>>(){})
-           .in(Singleton.class);
-        bind(new TypeLiteral<SearchableDetailModelProvider<VM, StorageListModel, StorageVmListModel>>(){})
-           .to(new TypeLiteral<SearchableDetailTabModelProvider<VM, StorageListModel, StorageVmListModel>>(){})
-           .in(Singleton.class);
-        bind(new TypeLiteral<SearchableDetailModelProvider<VmBase, StorageListModel, StorageLeaseListModel>>(){})
-                .to(new TypeLiteral<SearchableDetailTabModelProvider<VmBase, StorageListModel, StorageLeaseListModel>>(){})
+        bind(new TypeLiteral<SearchableDetailModelProvider<VmTemplate, StorageListModel, StorageTemplateListModel>>() { })
+            .to(new TypeLiteral<SearchableDetailTabModelProvider<VmTemplate, StorageListModel, StorageTemplateListModel>>() { })
+            .in(Singleton.class);
+        bind(new TypeLiteral<SearchableDetailModelProvider<VM, StorageListModel, StorageVmListModel>>() { })
+            .to(new TypeLiteral<SearchableDetailTabModelProvider<VM, StorageListModel, StorageVmListModel>>() { })
+            .in(Singleton.class);
+        bind(new TypeLiteral<SearchableDetailModelProvider<VmBase, StorageListModel, StorageLeaseListModel>>() { })
+                .to(new TypeLiteral<SearchableDetailTabModelProvider<VmBase, StorageListModel, StorageLeaseListModel>>() { })
                 .in(Singleton.class);
         // Permission Detail Model
-        bind(new TypeLiteral<SearchableDetailModelProvider<Permission, StorageListModel, PermissionListModel<StorageDomain>>>(){})
-           .to(new TypeLiteral<PermissionModelProvider<StorageDomain, StorageListModel>>(){}).in(Singleton.class);
+        bind(new TypeLiteral<SearchableDetailModelProvider<Permission, StorageListModel, PermissionListModel<StorageDomain>>>() { })
+            .to(new TypeLiteral<PermissionModelProvider<StorageDomain, StorageListModel>>() { }).in(Singleton.class);
         // Permission Disk Profiles
-        bind(new TypeLiteral<SearchableDetailModelProvider<Permission, DiskProfileListModel, PermissionListModel<DiskProfile>>>(){})
-           .to(new TypeLiteral<PermissionModelProvider<DiskProfile, DiskProfileListModel>>(){}).in(Singleton.class);
+        bind(new TypeLiteral<SearchableDetailModelProvider<Permission, DiskProfileListModel, PermissionListModel<DiskProfile>>>() { })
+            .to(new TypeLiteral<PermissionModelProvider<DiskProfile, DiskProfileListModel>>() { }).in(Singleton.class);
     }
 
 }

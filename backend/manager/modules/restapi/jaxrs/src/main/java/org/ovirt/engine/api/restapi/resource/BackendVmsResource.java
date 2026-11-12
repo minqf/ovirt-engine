@@ -6,6 +6,7 @@
 package org.ovirt.engine.api.restapi.resource;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -13,6 +14,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -20,14 +22,19 @@ import java.util.stream.Collectors;
 import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.core.Response;
 
+import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.api.common.util.DetailHelper;
+import org.ovirt.engine.api.model.ActionableResource;
+import org.ovirt.engine.api.model.AutoPinningPolicy;
 import org.ovirt.engine.api.model.Configuration;
 import org.ovirt.engine.api.model.ConfigurationType;
 import org.ovirt.engine.api.model.Disk;
 import org.ovirt.engine.api.model.DiskAttachment;
 import org.ovirt.engine.api.model.DiskAttachments;
 import org.ovirt.engine.api.model.Disks;
+import org.ovirt.engine.api.model.GraphicsConsoles;
 import org.ovirt.engine.api.model.Host;
+import org.ovirt.engine.api.model.HostDevices;
 import org.ovirt.engine.api.model.Initialization;
 import org.ovirt.engine.api.model.Payload;
 import org.ovirt.engine.api.model.Snapshot;
@@ -40,6 +47,7 @@ import org.ovirt.engine.api.model.Vms;
 import org.ovirt.engine.api.resource.VmResource;
 import org.ovirt.engine.api.resource.VmsResource;
 import org.ovirt.engine.api.restapi.logging.Messages;
+import org.ovirt.engine.api.restapi.resource.utils.LinksTreeNode;
 import org.ovirt.engine.api.restapi.types.DiskMapper;
 import org.ovirt.engine.api.restapi.types.RngDeviceMapper;
 import org.ovirt.engine.api.restapi.types.VmMapper;
@@ -54,8 +62,11 @@ import org.ovirt.engine.core.common.action.AddVmParameters;
 import org.ovirt.engine.core.common.action.ImportVmFromConfParameters;
 import org.ovirt.engine.core.common.action.VmManagementParametersBase;
 import org.ovirt.engine.core.common.businessentities.Cluster;
+import org.ovirt.engine.core.common.businessentities.CpuPinningPolicy;
 import org.ovirt.engine.core.common.businessentities.Entities;
 import org.ovirt.engine.core.common.businessentities.GraphicsDevice;
+import org.ovirt.engine.core.common.businessentities.GraphicsInfo;
+import org.ovirt.engine.core.common.businessentities.GraphicsType;
 import org.ovirt.engine.core.common.businessentities.InstanceType;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VmDevice;
@@ -65,6 +76,7 @@ import org.ovirt.engine.core.common.businessentities.VmPayload;
 import org.ovirt.engine.core.common.businessentities.VmRngDevice;
 import org.ovirt.engine.core.common.businessentities.VmStatic;
 import org.ovirt.engine.core.common.businessentities.VmTemplate;
+import org.ovirt.engine.core.common.businessentities.VmWatchdog;
 import org.ovirt.engine.core.common.businessentities.storage.BaseDisk;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.interfaces.SearchType;
@@ -80,7 +92,6 @@ import org.ovirt.engine.core.common.queries.QueryParametersBase;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
 import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.core.common.utils.CompatibilityVersionUtils;
-import org.ovirt.engine.core.common.utils.SimpleDependencyInjector;
 import org.ovirt.engine.core.common.utils.VmCommonUtils;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.Version;
@@ -92,8 +103,19 @@ public class BackendVmsResource extends
 
     public static final String CLONE = "clone";
     public static final String CLONE_PERMISSIONS = "clone_permissions";
+    public static final String SEAL = "seal";
+    public static final String OVF_AS_OVA = "ovf_as_ova";
+    public static final String AUTO_PINNING_POLICY = "auto_pinning_policy";
     private static final String LEGAL_CLUSTER_COMPATIBILITY_VERSIONS =
             Version.ALL.stream().map(Version::toString).collect(Collectors.joining(", "));
+    private static final String CURRENT_GRAPHICS_CONSOLES = "current_graphics_consoles";
+    private static final String GRAPHICS_CONSOLES = "graphics_consoles";
+    private static final String CD_ROMS = "cdroms";
+    private static final String HOST_DEVICES = "host_devices";
+    private static final String WATCHDOGS = "watchdogs";
+    private static final String SNAPSHOTS = "snapshots";
+
+    private Map<String, VM> vmIdToVm = Collections.emptyMap();
 
     public BackendVmsResource() {
         super(Vm.class, org.ovirt.engine.core.common.businessentities.VM.class);
@@ -161,6 +183,7 @@ public class BackendVmsResource extends
         validateIconParameters(vm);
         // validate that the provided cluster-compatibility-version is legal
         validateClusterCompatibilityVersion(vm);
+        validateVirtioScsiMultiQueues(vm);
         Response response = null;
         if (vm.isSetInitialization() && vm.getInitialization().isSetConfiguration()) {
             validateParameters(vm, "initialization.configuration.type", "initialization.configuration.data");
@@ -169,7 +192,8 @@ public class BackendVmsResource extends
             validateParameters(vm, "name");
             if (isCreateFromSnapshot(vm)) {
                 validateSnapshotExistence(vm);
-                response = createVmFromSnapshot(vm);
+                Cluster cluster = getCluster(vm);
+                response = createVmFromSnapshot(vm, cluster);
             } else {
                 validateParameters(vm, "template.id|name");
                 Cluster cluster = getCluster(vm);
@@ -197,6 +221,7 @@ public class BackendVmsResource extends
                 }
 
                 updateMaxMemoryIfUnspecified(vm, staticVm);
+                updateMinAllocatedMemoryIfUnspecified(vm, staticVm, cluster);
 
                 if (Guid.Empty.equals(template.getId()) && !vm.isSetOs()) {
                     staticVm.setOsId(OsRepository.AUTO_SELECT_OS);
@@ -217,6 +242,8 @@ public class BackendVmsResource extends
                 if (!vm.isSetPlacementPolicy() && template.getId().equals(Guid.Empty)) {
                     staticVm.setMigrationSupport(null);
                 }
+
+                updateCpuPinningFields(staticVm);
 
                 Guid storageDomainId =
                         (vm.isSetStorageDomain() && vm.getStorageDomain().isSetId()) ? asGuid(vm.getStorageDomain()
@@ -258,6 +285,16 @@ public class BackendVmsResource extends
         }
     }
 
+    void validateVirtioScsiMultiQueues(Vm vm) {
+        if (vm.isSetVirtioScsiMultiQueues() && vm.isSetVirtioScsiMultiQueuesEnabled()
+                && !vm.isVirtioScsiMultiQueuesEnabled()) {
+            throw new WebFaultException(null,
+                    localize(Messages.INVALID_VIRTIO_SCSI_MULTI_QUEUE_REASON),
+                    localize(Messages.INVALID_VIRTIO_SCSI_MULTI_QUEUE_DETAIL),
+                    Response.Status.BAD_REQUEST);
+        }
+    }
+
     private boolean isLegalClusterCompatibilityVersion(int major, int minor) {
         return Version.ALL.contains(new Version(major, minor));
     }
@@ -265,6 +302,14 @@ public class BackendVmsResource extends
     private void updateMaxMemoryIfUnspecified(Vm vm, VmStatic vmStatic) {
         if (!(vm.isSetMemoryPolicy() && vm.getMemoryPolicy().isSetMax()) && vm.isSetMemory()) {
             vmStatic.setMaxMemorySizeMb(VmCommonUtils.getMaxMemorySizeDefault(vmStatic.getMemSizeMb()));
+        }
+    }
+
+    private void updateMinAllocatedMemoryIfUnspecified(Vm vm, VmStatic vmStatic, Cluster cluster) {
+        if (!(vm.isSetMemoryPolicy() && vm.getMemoryPolicy().isSetGuaranteed()) && vm.isSetMemory()) {
+            int minMemory = VmCommonUtils.calcMinMemory(
+                    vmStatic.getMemSizeMb(), cluster.getMaxVdsMemoryOverCommit());
+            vmStatic.setMinAllocatedMem(minMemory);
         }
     }
 
@@ -292,12 +337,13 @@ public class BackendVmsResource extends
         validateParameters(snapshot, "id");
     }
 
-    private Response createVmFromSnapshot(Vm vm) {
+    private Response createVmFromSnapshot(Vm vm, Cluster cluster) {
         // If Vm has snapshots collection - this is a clone vm from snapshot operation
         String snapshotId = getSnapshotId(vm.getSnapshots());
         org.ovirt.engine.core.common.businessentities.VM vmConfiguration = getVmConfiguration(snapshotId);
         getMapper(Vm.class, VmStatic.class).map(vm, vmConfiguration.getStaticData());
         updateMaxMemoryIfUnspecified(vm, vmConfiguration.getStaticData());
+        updateMinAllocatedMemoryIfUnspecified(vm, vmConfiguration.getStaticData(), cluster);
         // If vm passed in the call has disks attached on them,
         // merge their data with the data of the disks on the configuration
         // The parameters to AddVmFromSnapshot hold an array list of Disks
@@ -351,7 +397,14 @@ public class BackendVmsResource extends
         }
         return performCreate(ActionType.ImportVmFromConfiguration,
                 parameters,
-                new QueryIdResolver<Guid>(QueryType.GetVmByVmId, IdQueryParameters.class));
+                new QueryIdResolver<Guid>(QueryType.GetVmByVmId, IdQueryParameters.class),
+                PollingType.JOB,
+                // we don't normally to this but in case of ImportVmFromConfiguration it makes some sense to execute it as a blocking
+                // (sync) operation as it doesn't involve disk operations and it may only have an async operation related to vm lease
+                // which is relatively quick. The main reason to do this is that some backup applications rely on getting 201-Created
+                // response and can't cope with 202-Accepted but it also makes to do that because it is often the case that clients
+                // attempt to start the VM right after the execution of ImportVmFromConfiguration is completed.
+                true);
     }
 
     protected org.ovirt.engine.core.common.businessentities.VM getVmConfiguration(String snapshotId) {
@@ -399,7 +452,7 @@ public class BackendVmsResource extends
         params.setMakeCreatorExplicitOwner(shouldMakeCreatorExplicitOwner());
         params.setVirtioScsiEnabled(vm.isSetVirtioScsi() && vm.getVirtioScsi().isSetEnabled() ?
                 vm.getVirtioScsi().isEnabled() : null);
-        if(vm.isSetSoundcardEnabled()) {
+        if (vm.isSetSoundcardEnabled()) {
             params.setSoundDeviceEnabled(vm.isSoundcardEnabled());
         } else {
             params.setSoundDeviceEnabled(isVMDeviceTypeExist(configVm.getManagedVmDeviceMap(), VmDeviceGeneralType.SOUND));
@@ -413,8 +466,12 @@ public class BackendVmsResource extends
             params.setUpdateRngDevice(true);
             params.setRngDevice(RngDeviceMapper.map(vm.getRngDevice(), null));
         }
+        if (vm.isSetTpmEnabled()) {
+            params.setTpmEnabled(vm.isTpmEnabled());
+        }
 
         DisplayHelper.setGraphicsToParams(vm.getDisplay(), params);
+        setupSealing(params);
 
         return performCreate(ActionType.AddVmFromSnapshot,
                                 params,
@@ -430,8 +487,10 @@ public class BackendVmsResource extends
         IconHelper.setIconToParams(vm, params);
 
         params.setMakeCreatorExplicitOwner(shouldMakeCreatorExplicitOwner());
+        addAutoPinningPolicy(vm, params);
         setupCloneTemplatePermissions(params);
         DisplayHelper.setGraphicsToParams(vm.getDisplay(), params);
+        setupSealing(params);
 
         return performCreate(ActionType.AddVmFromTemplate,
                 params,
@@ -454,18 +513,10 @@ public class BackendVmsResource extends
             params.setVirtioScsiEnabled(instanceTypeId != null ? !VmHelper.getVirtioScsiControllersForEntity(this, instanceTypeId).isEmpty() : null);
         }
 
-        if(vm.isSetSoundcardEnabled()) {
+        if (vm.isSetSoundcardEnabled()) {
             params.setSoundDeviceEnabled(vm.isSoundcardEnabled());
         } else if (instanceTypeId != null || templateId != null) {
             params.setSoundDeviceEnabled(!VmHelper.getSoundDevicesForEntity(this, instanceTypeId != null ? instanceTypeId : templateId).isEmpty());
-        }
-
-        if (vm.isSetMemoryPolicy()) {
-            params.setBalloonEnabled(vm.getMemoryPolicy().isBallooning());
-        } else if (shouldCopyDevice(SimpleDependencyInjector.getInstance().get(OsRepository.class).isBalloonEnabled(
-                vmStatic.getOsId(), cluster.getCompatibilityVersion()), templateId, instanceTypeId)
-                && (instanceTypeId != null || templateId != null)) {
-            params.setBalloonEnabled(VmHelper.isMemoryBalloonEnabledForEntity(this, instanceTypeId != null ? instanceTypeId : templateId));
         }
 
         if (vm.isSetConsole()) {
@@ -479,6 +530,12 @@ public class BackendVmsResource extends
             params.setRngDevice(RngDeviceMapper.map(vm.getRngDevice(), null));
         } else if (instanceTypeId != null || templateId != null) {
             copyRngDeviceFromTemplateOrInstanceType(params, vmStatic, cluster, templateId, instanceTypeId);
+        }
+
+        if (vm.isSetTpmEnabled()) {
+            params.setTpmEnabled(vm.isTpmEnabled());
+        } else if (instanceTypeId != null || templateId != null) {
+            params.setTpmEnabled(!VmHelper.getTpmDevicesForEntity(this, instanceTypeId != null ? instanceTypeId : templateId).isEmpty());
         }
     }
 
@@ -526,7 +583,7 @@ public class BackendVmsResource extends
     private Map<Guid, DiskImage> getDisksToClone(DiskAttachments diskAttachments, Guid templateId) {
         Map<Guid, DiskImage> disksMap = new HashMap<>();
 
-        if (diskAttachments != null && diskAttachments.isSetDiskAttachments() && diskAttachments.getDiskAttachments().size() > 0){
+        if (diskAttachments != null && diskAttachments.isSetDiskAttachments() && diskAttachments.getDiskAttachments().size() > 0) {
             Map<Guid, DiskImage> templatesDisksMap = getTemplateDisks(templateId);
             for (DiskAttachment diskAttachment : diskAttachments.getDiskAttachments()) {
                 Disk disk = diskAttachment.getDisk();
@@ -563,7 +620,7 @@ public class BackendVmsResource extends
     }
 
     private DiskImage map(Disk entity, DiskImage template) {
-        return (DiskImage)getMapper(Disk.class, org.ovirt.engine.core.common.businessentities.storage.Disk.class).map(entity, template);
+        return (DiskImage) getMapper(Disk.class, org.ovirt.engine.core.common.businessentities.storage.Disk.class).map(entity, template);
     }
 
     protected Response addVm(VmStatic staticVm, Vm vm, Guid storageDomainId, VmTemplate template, InstanceType instanceType, Cluster cluster) {
@@ -572,10 +629,12 @@ public class BackendVmsResource extends
         params.setStorageDomainId(storageDomainId);
         params.setDiskInfoDestinationMap(getDisksToClone(vm.getDiskAttachments(), template.getId()));
         params.setMakeCreatorExplicitOwner(shouldMakeCreatorExplicitOwner());
+        addAutoPinningPolicy(vm, params);
         setupCloneTemplatePermissions(params);
         addDevicesToParams(params, vm, template, instanceType, staticVm, cluster);
         IconHelper.setIconToParams(vm, params);
         DisplayHelper.setGraphicsToParams(vm.getDisplay(), params);
+        setupSealing(params);
 
         return performCreate(ActionType.AddVm,
                                params,
@@ -589,13 +648,20 @@ public class BackendVmsResource extends
         }
     }
 
+    private void setupSealing(AddVmParameters params) {
+        Boolean seal = ParametersHelper.getBooleanParameter(httpHeaders, uriInfo, SEAL, Boolean.TRUE, null);
+        params.setSeal(seal);
+    }
+
     protected Response addVmFromScratch(VmStatic staticVm, Vm vm, InstanceType instanceType, Cluster cluster) {
         AddVmParameters params = new AddVmParameters(staticVm);
         params.setVmPayload(getPayload(vm));
         params.setMakeCreatorExplicitOwner(shouldMakeCreatorExplicitOwner());
+        addAutoPinningPolicy(vm, params);
         addDevicesToParams(params, vm, null, instanceType, staticVm, cluster);
         IconHelper.setIconToParams(vm, params);
         DisplayHelper.setGraphicsToParams(vm.getDisplay(), params);
+        setupSealing(params);
 
         return performCreate(ActionType.AddVmFromScratch,
                                params,
@@ -603,10 +669,27 @@ public class BackendVmsResource extends
     }
 
     public List<DiskImage> mapDisks(Disks disks) {
-        if (disks!=null && disks.isSetDisks()) {
-            return disks.getDisks().stream().map(d -> (DiskImage)DiskMapper.map(d, null)).collect(Collectors.toList());
+        if (disks != null && disks.isSetDisks()) {
+            return disks.getDisks().stream().map(d -> (DiskImage) DiskMapper.map(d, null)).collect(Collectors.toList());
         }
         return null;
+    }
+
+    private void addAutoPinningPolicy(Vm vm, VmManagementParametersBase params) {
+        if (vm.getAutoPinningPolicy() != null || vm.getCpuPinningPolicy() != null) {
+            return;
+        }
+        String autoPinningPolicy = ParametersHelper.getParameter(httpHeaders, uriInfo, AUTO_PINNING_POLICY);
+        if (autoPinningPolicy != null && !autoPinningPolicy.isEmpty()) {
+            if (vm.isSetCpu() && (vm.getCpu().isSetTopology() || vm.getCpu().isSetCpuTune())) {
+                throw new WebFaultException(null, localize(Messages.CPU_UPDATE_NOT_PERMITTED), Response.Status.CONFLICT);
+            }
+            try {
+                params.getVm().setCpuPinningPolicy(VmMapper.map(AutoPinningPolicy.fromValue(autoPinningPolicy)));
+            } catch (Exception e) {
+                throw new WebFaultException(null, localize(Messages.INVALID_ENUM_REASON), Response.Status.BAD_REQUEST);
+            }
+        }
     }
 
     private void addInlineStatistics(Vm vm) {
@@ -621,8 +704,14 @@ public class BackendVmsResource extends
         Set<String> details = DetailHelper.getDetails(httpHeaders, uriInfo);
         boolean includeData = details.contains(DetailHelper.MAIN);
         boolean includeSize = details.contains("size");
+        boolean includeCurrentGraphicsConsoles = details.contains(CURRENT_GRAPHICS_CONSOLES);
 
         List<Guid> vmIds = entities.stream().map(VM::getId).collect(Collectors.toList());
+        String followValue = ParametersHelper.getParameter(getHttpHeaders(), getUriInfo(), FOLLOW);
+        if (StringUtils.isNotEmpty(followValue)) {
+            vmIdToVm = entities.stream().collect(Collectors.toMap(vm -> vm.getId().toString(), vm -> vm));
+        }
+
         if (includeData) {
             // Fill VmInit for entities - the search query no join the VmInit to Vm
             IdsQueryParameters params = new IdsQueryParameters();
@@ -645,6 +734,13 @@ public class BackendVmsResource extends
 
             for (org.ovirt.engine.core.common.businessentities.VM entity : entities) {
                 Vm vm = map(entity);
+                if (includeCurrentGraphicsConsoles) {
+                    GraphicsConsoles consoles = new GraphicsConsoles();
+                    for (Map.Entry<GraphicsType, GraphicsInfo> entry : entity.getGraphicsInfos().entrySet()) {
+                        consoles.getGraphicsConsoles().add(VmMapper.map(entry, null));
+                    }
+                    vm.setGraphicsConsoles(consoles);
+                }
                 DisplayHelper.adjustDisplayData(this, vm, vmsGraphicsDevices, false);
                 DisplayHelper.addDisplayCertificate(this, vm);
                 removeRestrictedInfo(vm);
@@ -655,6 +751,109 @@ public class BackendVmsResource extends
             collection.setSize((long) entities.size());
         }
         return collection;
+    }
+
+    @Override
+    public void follow(ActionableResource entity, LinksTreeNode linksTree) {
+        super.follow(entity, linksTree);
+        if (DetailHelper.getDetails(httpHeaders, uriInfo).contains(CURRENT_GRAPHICS_CONSOLES)) {
+            // "?detail=current_graphics_consoles" provides the same output as
+            // "?current&follow=graphics_consoles" and similar as "current" flag will
+            // overwrite the default output of "?follow=graphics_consoles"
+            findGraphicsConsoles(linksTree).ifPresent(node -> node.setFollowed(true));
+        }
+        findCdroms(linksTree).ifPresent(node -> {
+            Vms vms = (Vms) entity;
+            vms.getVms().forEach(this::setCdroms);
+            node.setFollowed(true);
+        });
+        findHostDevices(linksTree).ifPresent(node -> {
+            Vms vms = (Vms) entity;
+            boolean nonePinned = vms.getVms().stream()
+                    .map(vm -> vmIdToVm.get(vm.getId()))
+                    .map(VM::getDedicatedVmForVdsList)
+                    .allMatch(List::isEmpty);
+            if (nonePinned) {
+                vms.getVms().forEach(this::setEmptyHostDevices);
+                node.setFollowed(true);
+            }
+        });
+        findWatchdogs(linksTree).ifPresent(node -> {
+            Vms vms = (Vms) entity;
+            List<VmWatchdog> watchdogs = getWatchdogs(vms);
+            vms.getVms().forEach(vm -> {
+                Guid vmId = asGuid(vm.getId());
+                setWatchdogs(vm, watchdogs.stream()
+                        .filter(w -> vmId.equals(w.getVmId()))
+                        .collect(Collectors.toList()));
+            });
+            node.setFollowed(true);
+        });
+        findSnapshots(linksTree).ifPresent(node -> {
+            Vms vms = (Vms) entity;
+            vms.getVms().forEach(this::setSnapshots);
+            node.setFollowed(true);
+        });
+    }
+
+    private List<VmWatchdog> getWatchdogs(Vms vms) {
+        List<Guid> vmIds = vms.getVms().stream().map(Vm::getId).map(this::asGuid).collect(Collectors.toList());
+        return getEntity(List.class,
+                QueryType.GetWatchdogs,
+                new IdsQueryParameters(vmIds),
+                "GetWatchdogs", true);
+    }
+
+    private void setWatchdogs(Vm vm, List<VmWatchdog> watchdogs) {
+        vm.setWatchdogs(getBackendVmWatchdogsResource(vm.getId(), watchdogs).list());
+    }
+
+    private void setEmptyHostDevices(Vm vm) {
+        vm.setHostDevices(new HostDevices());
+    }
+
+    private void setCdroms(Vm vm) {
+        vm.setCdroms(getBackendVmCdromsResource(vmIdToVm.get(vm.getId())).list());
+    }
+
+    private BackendVmCdromsResource getBackendVmCdromsResource(VM vm) {
+        return inject(new BackendVmCdromsResource(vm));
+    }
+
+    private BackendVmWatchdogsResource getBackendVmWatchdogsResource(String vmId, List<VmWatchdog> watchdogs) {
+        return inject(new BackendVmWatchdogsResource(asGuid(vmId), watchdogs));
+    }
+
+    private void setSnapshots(Vm vm) {
+        vm.setSnapshots(getBackendSnapshotsResource(vm.getId()).list());
+    }
+
+    private BackendSnapshotsResource getBackendSnapshotsResource(String vmId) {
+        return inject(new BackendSnapshotsResource(asGuid(vmId), false));
+    }
+
+    /**
+     * This is a special case of searching the the links tree: we know that graphics_consoles must be the direct child
+     * of the root.
+     */
+    private Optional<LinksTreeNode> findGraphicsConsoles(LinksTreeNode linksTree) {
+        return findNode(linksTree, GRAPHICS_CONSOLES);
+    }
+
+    private Optional<LinksTreeNode> findCdroms(LinksTreeNode linksTree) {
+        return findNode(linksTree, CD_ROMS);
+    }
+
+    private Optional<LinksTreeNode> findHostDevices(LinksTreeNode linksTree) {
+        return findNode(linksTree, HOST_DEVICES);
+    }
+
+    private Optional<LinksTreeNode> findWatchdogs(LinksTreeNode linksTree) {
+        return findNode(linksTree, WATCHDOGS);
+    }
+
+    private Optional<LinksTreeNode> findSnapshots(LinksTreeNode linksTree) {
+        return findNode(linksTree, SNAPSHOTS);
     }
 
     protected InstanceType lookupInstance(Template template) {
@@ -704,7 +903,8 @@ public class BackendVmsResource extends
     protected Vm setVmOvfConfiguration (Vm model, org.ovirt.engine.core.common.businessentities.VM entity) {
         QueryReturnValue queryReturnValue =
                 runQuery(QueryType.GetVmOvfByVmId,
-                        new GetVmOvfByVmIdParameters(entity.getId(), entity.getDbGeneration()));
+                        new GetVmOvfByVmIdParameters(entity.getId(), entity.getDbGeneration(),
+                                ParametersHelper.getBooleanParameter(httpHeaders, uriInfo, OVF_AS_OVA, true, false)));
 
         if (queryReturnValue.getSucceeded() && queryReturnValue.getReturnValue() != null) {
             String configuration = queryReturnValue.getReturnValue();
@@ -728,12 +928,12 @@ public class BackendVmsResource extends
     @Override
     protected Vm doPopulate(Vm model, org.ovirt.engine.core.common.businessentities.VM entity) {
         BackendVmDeviceHelper.setPayload(this, model);
-        MemoryPolicyHelper.setupMemoryBalloon(model, this);
         BackendVmDeviceHelper.setConsoleDevice(this, model);
         BackendVmDeviceHelper.setVirtioScsiController(this, model);
         BackendVmDeviceHelper.setSoundcard(this, model);
         BackendVmDeviceHelper.setCertificateInfo(this, model);
         BackendVmDeviceHelper.setRngDevice(this, model);
+        BackendVmDeviceHelper.setTpmDevice(this, model);
         setVmOvfConfiguration(model, entity);
         return model;
     }
@@ -768,7 +968,7 @@ public class BackendVmsResource extends
     }
 
     private void updateIdForSingleHost(Host host, Set<Guid> guidsSet) {
-        if (host.isSetName() && !host.isSetId()){
+        if (host.isSetName() && !host.isSetId()) {
             // find the corresponding host id
             Guid hostGuid = getHostId(host);
             if (hostGuid != null) {
@@ -776,8 +976,27 @@ public class BackendVmsResource extends
                 // add hostId element to host
                 host.setId(hostGuid.toString());
             }
-        } else if (host.isSetId()){
+        } else if (host.isSetId()) {
             guidsSet.add(Guid.createGuidFromString(host.getId()));
+        }
+    }
+
+    protected void updateCpuPinningFields(VmStatic staticVm) {
+        updateCpuPinningFields(staticVm, null);
+    }
+
+    protected void updateCpuPinningFields(VmStatic staticVm, CpuPinningPolicy previousPolicy) {
+        // specified cpu pinning string without MANUAL policy
+        if (!StringUtils.isEmpty(staticVm.getCpuPinning())
+                && staticVm.getCpuPinningPolicy() == CpuPinningPolicy.NONE) {
+            staticVm.setCpuPinningPolicy(CpuPinningPolicy.MANUAL);
+        }
+
+        // cpu pinning string removed
+        if (StringUtils.isEmpty(staticVm.getCpuPinning())
+                && staticVm.getCpuPinningPolicy() == CpuPinningPolicy.MANUAL
+                && previousPolicy == CpuPinningPolicy.MANUAL) {
+            staticVm.setCpuPinningPolicy(CpuPinningPolicy.NONE);
         }
     }
 }

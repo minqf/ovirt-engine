@@ -175,7 +175,7 @@ public class ExportVmTemplateCommand<T extends MoveOrCopyParameters> extends Mov
                 if (!validate(sdValidator.isDomainExistAndActive())
                         || !validate(sdValidator.isDomainWithinThresholds())
                         || !(getParameters().getForceOverride()
-                        || (!getParameters().isImagesExistOnTargetStorageDomain() && checkIfDisksExist(getTemplateDisks())))
+                        || !getParameters().isImagesExistOnTargetStorageDomain() && checkIfDisksExist(getTemplateDisks()))
                         || !validateFreeSpaceOnDestinationDomain(sdValidator, getTemplateDisks())) {
                     return false;
                 }
@@ -224,16 +224,16 @@ public class ExportVmTemplateCommand<T extends MoveOrCopyParameters> extends Mov
     @Override
     public AuditLogType getAuditLogTypeValue() {
         switch (getActionState()) {
-        case EXECUTE:
-            return getSucceeded() ? AuditLogType.IMPORTEXPORT_STARTING_EXPORT_TEMPLATE
-                    : AuditLogType.IMPORTEXPORT_EXPORT_TEMPLATE_FAILED;
+            case EXECUTE:
+                return getSucceeded() ? AuditLogType.IMPORTEXPORT_STARTING_EXPORT_TEMPLATE
+                        : AuditLogType.IMPORTEXPORT_EXPORT_TEMPLATE_FAILED;
 
-        case END_SUCCESS:
-            return getSucceeded() ? AuditLogType.IMPORTEXPORT_EXPORT_TEMPLATE
-                    : AuditLogType.IMPORTEXPORT_EXPORT_TEMPLATE_FAILED;
+            case END_SUCCESS:
+                return getSucceeded() ? AuditLogType.IMPORTEXPORT_EXPORT_TEMPLATE
+                        : AuditLogType.IMPORTEXPORT_EXPORT_TEMPLATE_FAILED;
 
-        default:
-            return AuditLogType.IMPORTEXPORT_EXPORT_TEMPLATE_FAILED;
+            default:
+                return AuditLogType.IMPORTEXPORT_EXPORT_TEMPLATE_FAILED;
         }
     }
 

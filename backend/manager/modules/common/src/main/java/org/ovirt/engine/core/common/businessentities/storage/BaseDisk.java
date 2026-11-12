@@ -10,17 +10,20 @@ import java.util.stream.Collectors;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Size;
 
-import org.codehaus.jackson.annotate.JsonIgnore;
 import org.ovirt.engine.core.common.businessentities.BusinessEntitiesDefinitions;
 import org.ovirt.engine.core.common.businessentities.BusinessEntity;
 import org.ovirt.engine.core.common.businessentities.Nameable;
 import org.ovirt.engine.core.common.businessentities.ProgressEntity;
 import org.ovirt.engine.core.common.businessentities.Queryable;
+import org.ovirt.engine.core.common.config.Config;
+import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.validation.annotation.ValidDescription;
 import org.ovirt.engine.core.common.validation.annotation.ValidI18NName;
 import org.ovirt.engine.core.common.validation.group.CreateEntity;
 import org.ovirt.engine.core.common.validation.group.UpdateEntity;
 import org.ovirt.engine.core.compat.Guid;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 /**
  * The disk represents a drive in the VM/Template.<br>
@@ -85,7 +88,9 @@ public class BaseDisk implements Queryable, BusinessEntity<Guid>, ProgressEntity
     }
 
     public void setDiskVmElements(Collection<DiskVmElement> diskVmElements) {
-        diskVmElementsMap = diskVmElements.stream().collect(Collectors.toMap(d -> d.getId().getVmId(), Function.identity()));
+        diskVmElementsMap = diskVmElements.stream()
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(d -> d.getId().getVmId(), Function.identity()));
     }
 
     @JsonIgnore
@@ -105,9 +110,12 @@ public class BaseDisk implements Queryable, BusinessEntity<Guid>, ProgressEntity
 
     private ScsiGenericIO sgio;
 
+    @Deprecated
     private String cinderVolumeType;
 
     private DiskBackup backup;
+
+    private DiskBackupMode backupMode;
 
     public BaseDisk() {
         propagateErrors = PropagateErrors.Off;
@@ -147,6 +155,9 @@ public class BaseDisk implements Queryable, BusinessEntity<Guid>, ProgressEntity
     }
 
     public PropagateErrors getPropagateErrors() {
+        if ((Boolean) (Config.getValue(ConfigValues.PropagateDiskErrors))) {
+            return PropagateErrors.On;
+        }
         return propagateErrors;
     }
 
@@ -159,7 +170,7 @@ public class BaseDisk implements Queryable, BusinessEntity<Guid>, ProgressEntity
     }
 
     public void setDiskDescription(String diskDescription) {
-        this.diskDescription =  diskDescription == null ? "" : diskDescription;
+        this.diskDescription = diskDescription == null ? "" : diskDescription;
     }
 
     public String getDiskAlias() {
@@ -230,11 +241,26 @@ public class BaseDisk implements Queryable, BusinessEntity<Guid>, ProgressEntity
     }
 
     public DiskBackup getBackup() {
-        return backup;
+        if (backup != null) {
+            return backup;
+        }
+        return DiskBackup.None;
     }
 
     public void setBackup(DiskBackup backup) {
         this.backup = backup;
+    }
+
+    public boolean isIncrementalBackup() {
+        return getBackup() == DiskBackup.Incremental;
+    }
+
+    public DiskBackupMode getBackupMode() {
+        return backupMode;
+    }
+
+    public void setBackupMode(DiskBackupMode backupMode) {
+        this.backupMode = backupMode;
     }
 
     @Override
@@ -249,7 +275,8 @@ public class BaseDisk implements Queryable, BusinessEntity<Guid>, ProgressEntity
                 sgio,
                 cinderVolumeType,
                 contentType,
-                backup
+                backup,
+                backupMode
         );
     }
 
@@ -276,6 +303,7 @@ public class BaseDisk implements Queryable, BusinessEntity<Guid>, ProgressEntity
                 && sgio == other.sgio
                 && Objects.equals(cinderVolumeType, other.cinderVolumeType)
                 && contentType == other.contentType
-                && backup == other.backup;
+                && backup == other.backup
+                && backupMode == other.backupMode;
     }
 }

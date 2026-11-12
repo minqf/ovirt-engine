@@ -6,6 +6,7 @@ import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.bll.ValidationResult;
 import org.ovirt.engine.core.bll.hostedengine.HostedEngineHelper;
 import org.ovirt.engine.core.common.action.VdsOperationActionParameters.AuthenticationMethod;
+import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.ExternalComputeResource;
 import org.ovirt.engine.core.common.businessentities.ExternalHostGroup;
 import org.ovirt.engine.core.common.businessentities.HostedEngineDeployConfiguration;
@@ -161,16 +162,24 @@ public class HostValidator {
 
     public ValidationResult validateStatusForEnrollCertificate() {
         return ValidationResult.failWith(EngineMessage.CANNOT_ENROLL_CERTIFICATE_HOST_STATUS_ILLEGAL)
-                .unless(host.getStatus() == VDSStatus.Maintenance || host.getStatus() == VDSStatus.InstallFailed);
+                .unless(host.getStatus() == VDSStatus.Maintenance || host.getStatus() == VDSStatus.InstallFailed
+                        || host.getStatus() == VDSStatus.NonResponsive);
     }
 
-    public ValidationResult supportsDeployingHostedEngine(HostedEngineDeployConfiguration heConfig) {
-        if (heConfig == null) {
-            return ValidationResult.VALID;
+    public ValidationResult supportsDeployingHostedEngine(HostedEngineDeployConfiguration heConfig,
+            Cluster cluster,
+            boolean hostedEngineDeployed) {
+        boolean hostedEngineDeployRequested = heConfig != null
+                && heConfig.getDeployAction() == HostedEngineDeployConfiguration.Action.DEPLOY;
+        if (hostedEngineDeployRequested && !hostedEngineHelper.isVmManaged()) {
+            return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_UNMANAGED_HOSTED_ENGINE);
         }
 
-        return ValidationResult.failWith(EngineMessage.ACTION_TYPE_FAILED_UNMANAGED_HOSTED_ENGINE)
-                .when(heConfig.getDeployAction() == HostedEngineDeployConfiguration.Action.DEPLOY
-                        && !hostedEngineHelper.isVmManaged());
+        if ((hostedEngineDeployed || hostedEngineDeployRequested)
+                && !hostedEngineHelper.getStoragePoolId().equals(cluster.getStoragePoolId())) {
+            return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_HOSTED_ENGINE_HOST_IN_ANOTHER_DC);
+        }
+
+        return ValidationResult.VALID;
     }
 }

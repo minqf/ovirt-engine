@@ -150,6 +150,9 @@ public class MenuView extends AbstractView implements MenuPresenterWidget.ViewDe
     @WithElementId
     @UiField
     Anchor configureAnchor;
+    @WithElementId
+    @UiField
+    Anchor accountSettingsAnchor;
 
     private final Map<String, ListGroupItem> hrefToGroupLabelMap = new HashMap<>();
     private final List<Anchor> anchorList = new ArrayList<>();
@@ -196,32 +199,37 @@ public class MenuView extends AbstractView implements MenuPresenterWidget.ViewDe
 
     private void updateBasedonMode(ApplicationMode applicationMode) {
         switch (applicationMode) {
-        case VirtOnly:
-        case AllModes:
-            clustersStorageAnchor.setVisible(false);
-            break;
-        case GlusterOnly:
-            computeSecondaryHeader.setVisible(false);
-            computePrimaryHeader.setVisible(false);
-            vmsAnchor.setVisible(false);
-            templatesAnchor.setVisible(false);
-            poolsAnchor.setVisible(false);
-            hostsAnchor.setVisible(false);
-            dataCentersAnchor.setVisible(false);
-            clustersAnchor.setVisible(false);
-            disksAnchor.setVisible(false);
-            providersAnchor.setVisible(false);
-            quotasAnchor.setVisible(false);
-            break;
-        default:
-            // Do nothing, we have all we need.
-            break;
+            case VirtOnly:
+            case AllModes:
+                clustersStorageAnchor.setVisible(false);
+                break;
+            case GlusterOnly:
+                computeSecondaryHeader.setVisible(false);
+                computePrimaryHeader.setVisible(false);
+                vmsAnchor.setVisible(false);
+                templatesAnchor.setVisible(false);
+                poolsAnchor.setVisible(false);
+                hostsAnchor.setVisible(false);
+                dataCentersAnchor.setVisible(false);
+                clustersAnchor.setVisible(false);
+                disksAnchor.setVisible(false);
+                providersAnchor.setVisible(false);
+                quotasAnchor.setVisible(false);
+                break;
+            default:
+                // Do nothing, we have all we need.
+                break;
         }
     }
 
     @Override
     public HasClickHandlers getConfigureItem() {
         return configureAnchor;
+    }
+
+    @Override
+    public HasClickHandlers getAccountSettingsItem() {
+        return accountSettingsAnchor;
     }
 
     private String hashifyString(String original) {
@@ -355,9 +363,9 @@ public class MenuView extends AbstractView implements MenuPresenterWidget.ViewDe
             if (widget.asWidget() instanceof Anchor) {
                 // This is the anchor with the href, replace it with javascrip:;
                 Anchor labelAnchor = (Anchor) widget.asWidget();
-                for (int j= 0; j < labelAnchor.getWidgetCount(); j++) {
+                for (int j = 0; j < labelAnchor.getWidgetCount(); j++) {
                     if (labelAnchor.getWidget(j).getStyleName().contains(PatternflyStyles.LIST_GROUP_ITEM_VALUE)) {
-                        secondaryMenuHeaderLabel.setText(((Span)labelAnchor.getWidget(j)).getText());
+                        secondaryMenuHeaderLabel.setText(((Span) labelAnchor.getWidget(j)).getText());
                     }
                 }
             }
@@ -423,6 +431,7 @@ public class MenuView extends AbstractView implements MenuPresenterWidget.ViewDe
         anchorList.add(usersAnchor);
         anchorList.add(errataAnchor);
         anchorList.add(configureAnchor);
+        anchorList.add(accountSettingsAnchor);
 
     }
 

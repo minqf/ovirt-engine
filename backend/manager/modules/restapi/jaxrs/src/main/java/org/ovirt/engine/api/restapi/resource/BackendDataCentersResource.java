@@ -29,7 +29,7 @@ public class BackendDataCentersResource extends
     public DataCenters list() {
         if (isFiltered()) {
             return mapCollection(getBackendCollection(QueryType.GetAllStoragePools,
-                    new QueryParametersBase()));
+                    new QueryParametersBase(), SearchType.StoragePool));
         } else {
             return mapCollection(getBackendCollection(SearchType.StoragePool));
         }
@@ -43,7 +43,7 @@ public class BackendDataCentersResource extends
     @Override
     public Response add(DataCenter dataCenter) {
         validateParameters(dataCenter, "name");
-        if(!dataCenter.isSetLocal()) {
+        if (!dataCenter.isSetLocal()) {
             validateParameters(dataCenter, "local");
         }
         StoragePool entity = map(dataCenter);

@@ -25,7 +25,7 @@ import org.ovirt.engine.core.dao.StorageDomainStaticDao;
 import org.ovirt.engine.core.utils.ObjectIdentityChecker;
 
 public class UpdateStorageDomainCommand<T extends StorageDomainManagementParameter> extends
-        StorageDomainManagementCommandBase<T>  implements RenamedEntityInfoProvider {
+        StorageDomainManagementCommandBase<T> implements RenamedEntityInfoProvider {
 
     @Inject
     private StorageDomainStaticDao storageDomainStaticDao;
@@ -77,6 +77,7 @@ public class UpdateStorageDomainCommand<T extends StorageDomainManagementParamet
         props.remove("warningLowSpaceIndicator");
         props.remove("warningLowConfirmedSpaceIndicator");
         props.remove("criticalSpaceActionBlocker");
+        props.remove("blockSize");
         props.remove("backup");
         if (!props.isEmpty()) {
             log.warn("There was an attempt to update the following fields although they are not allowed to be updated: {}",

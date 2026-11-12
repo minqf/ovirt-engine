@@ -5,6 +5,8 @@
 
 package org.ovirt.engine.api.rsdl;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -20,9 +22,11 @@ import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.api.model.ObjectFactory;
 import org.ovirt.engine.api.model.Rsdl;
 import org.ovirt.engine.api.utils.ApiRootLinksCreator;
+import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
 import org.yaml.snakeyaml.constructor.CustomClassLoaderConstructor;
+import org.yaml.snakeyaml.inspector.TagInspector;
 
 public class RsdlManager {
 
@@ -86,16 +90,16 @@ public class RsdlManager {
     private static Rsdl buildRsdl(MetaData metadata, List<String> rels) throws IOException,
             ClassNotFoundException {
         RsdlBuilder builder = new RsdlBuilder(rels, metadata)
-        .description(RSDL_DESCRIPTION)
-        .rel(RSDL_REL)
+            .description(RSDL_DESCRIPTION)
+            .rel(RSDL_REL)
                 .href(QUERY_PARAMETER + RSDL_CONSTRAINT_PARAMETER)
-        .schema(new SchemaBuilder()
+            .schema(new SchemaBuilder()
             .rel(SCHEMA_REL)
             .href(QUERY_PARAMETER + SCHEMA_CONSTRAINT_PARAMETER)
             .name(SCHEMA_NAME)
             .description(SCHEMA_DESCRIPTION)
             .build())
-        .generalMetadata(new GeneralMetadataBuilder()
+            .generalMetadata(new GeneralMetadataBuilder()
             .rel(GENERAL_METADATA_REL)
             .href("*")
             .name(GENERAL_METADATA_NAME)
@@ -107,28 +111,45 @@ public class RsdlManager {
 
     private static MetaData loadMetaData() throws IOException {
         try (InputStream in = RsdlManager.class.getResourceAsStream(METADATA_FILE_NAME)) {
+            if (in == null) {
+                throw new IOException("YAML metadata resource not found: " + METADATA_FILE_NAME);
+            }
             return loadMetaData(in);
         }
     }
 
     private static MetaData loadMetaData(InputStream in) throws IOException {
-        Constructor constructor = new CustomClassLoaderConstructor(Thread.currentThread().getContextClassLoader());
-        MetaData metaData = (MetaData) new Yaml(constructor).load(in);
-        if (metaData == null) {
-            throw new IOException("Can't load metadata from input stream");
+        // Create a buffered copy to prevent premature stream closure
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        byte[] data = new byte[4096];
+        int bytesRead;
+        while ((bytesRead = in.read(data)) != -1) {
+            buffer.write(data, 0, bytesRead);
         }
 
-        // Make sure that the loaded metadata contains default values:
-        assignDefaults(metaData);
+        try (ByteArrayInputStream bufferedInput = new ByteArrayInputStream(buffer.toByteArray())) {
+            LoaderOptions loaderOptions = new LoaderOptions();
+            TagInspector tagInspector = tag -> tag.getClassName().equals(MetaData.class.getName());
+            loaderOptions.setTagInspector(tagInspector);
+            Constructor constructor = new CustomClassLoaderConstructor(Thread.currentThread().getContextClassLoader(), loaderOptions);
 
-        // Remove leading slashes from all the action names:
-        for (Action action : metaData.getActions()) {
-            String name = action.getName();
-            name = name.replaceAll("^/?", "");
-            action.setName(name);
+            MetaData metaData = (MetaData) new Yaml(constructor).load(bufferedInput);
+            if (metaData == null) {
+                throw new IOException("Can't load metadata from input stream - YAML parsing returned null");
+            }
+
+            // Make sure that the loaded metadata contains default values:
+            assignDefaults(metaData);
+
+            // Remove leading slashes from all the action names:
+            for (Action action : metaData.getActions()) {
+                String name = action.getName();
+                name = name.replaceAll("^/?", "");
+                action.setName(name);
+            }
+
+            return metaData;
         }
-
-        return metaData;
     }
 
     /**

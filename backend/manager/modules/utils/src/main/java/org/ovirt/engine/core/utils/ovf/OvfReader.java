@@ -1,5 +1,6 @@
 package org.ovirt.engine.core.utils.ovf;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -12,10 +13,12 @@ import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.BootSequence;
 import org.ovirt.engine.core.common.businessentities.ConsoleDisconnectAction;
+import org.ovirt.engine.core.common.businessentities.CpuPinningPolicy;
 import org.ovirt.engine.core.common.businessentities.DisplayType;
 import org.ovirt.engine.core.common.businessentities.GraphicsDevice;
 import org.ovirt.engine.core.common.businessentities.GraphicsType;
 import org.ovirt.engine.core.common.businessentities.MigrationSupport;
+import org.ovirt.engine.core.common.businessentities.NumaTuneMode;
 import org.ovirt.engine.core.common.businessentities.OriginType;
 import org.ovirt.engine.core.common.businessentities.SerialNumberPolicy;
 import org.ovirt.engine.core.common.businessentities.SsoMethod;
@@ -25,11 +28,13 @@ import org.ovirt.engine.core.common.businessentities.VmDevice;
 import org.ovirt.engine.core.common.businessentities.VmDeviceGeneralType;
 import org.ovirt.engine.core.common.businessentities.VmDeviceId;
 import org.ovirt.engine.core.common.businessentities.VmInit;
+import org.ovirt.engine.core.common.businessentities.VmNumaNode;
 import org.ovirt.engine.core.common.businessentities.VmResumeBehavior;
 import org.ovirt.engine.core.common.businessentities.VmType;
 import org.ovirt.engine.core.common.businessentities.network.VmInterfaceType;
 import org.ovirt.engine.core.common.businessentities.network.VmNetworkInterface;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
+import org.ovirt.engine.core.common.businessentities.storage.DiskBackup;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.DiskInterface;
 import org.ovirt.engine.core.common.businessentities.storage.DiskVmElement;
@@ -40,9 +45,11 @@ import org.ovirt.engine.core.common.businessentities.storage.VolumeType;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.osinfo.OsRepository;
+import org.ovirt.engine.core.common.utils.MDevTypesUtils;
 import org.ovirt.engine.core.common.utils.Pair;
 import org.ovirt.engine.core.common.utils.VmDeviceCommonUtils;
 import org.ovirt.engine.core.common.utils.VmDeviceType;
+import org.ovirt.engine.core.common.utils.customprop.SimpleCustomPropertiesUtil;
 import org.ovirt.engine.core.common.utils.customprop.VmPropertiesUtils;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.Version;
@@ -71,6 +78,7 @@ public abstract class OvfReader implements IOvfBuilder {
     private String version;
     private final VmBase vmBase;
     private String lastReadEntry = "";
+    private boolean hasBalloonDevice;
 
     public OvfReader(
             XmlDocument document,
@@ -143,26 +151,28 @@ public abstract class OvfReader implements IOvfBuilder {
             image.setVmSnapshotId(new Guid(node.attributes.get("ovf:vm_snapshot_id").getValue()));
         }
 
-        if (node.attributes.get("ovf:volume-format") != null) {
-            if (!StringUtils.isEmpty(node.attributes.get("ovf:volume-format").getValue())) {
-                image.setVolumeFormat(VolumeFormat.valueOf(node.attributes.get("ovf:volume-format")
+        if (node.attributes.get("ovf:volume-format") != null &&
+            !StringUtils.isEmpty(node.attributes.get("ovf:volume-format").getValue())) {
+            image.setVolumeFormat(VolumeFormat.valueOf(node.attributes.get("ovf:volume-format")
                         .getValue()));
-            } else {
-                image.setVolumeFormat(VolumeFormat.Unassigned);
-            }
         } else {
             image.setVolumeFormat(VolumeFormat.Unassigned);
         }
 
-        if (node.attributes.get("ovf:volume-type") != null) {
-            if (!StringUtils.isEmpty(node.attributes.get("ovf:volume-type").getValue())) {
-                image.setVolumeType(VolumeType.valueOf(node.attributes.get("ovf:volume-type").getValue()));
-            } else {
-                image.setVolumeType(VolumeType.Unassigned);
-            }
+        if (node.attributes.get("ovf:volume-type") != null &&
+            !StringUtils.isEmpty(node.attributes.get("ovf:volume-type").getValue())) {
+            image.setVolumeType(VolumeType.valueOf(node.attributes.get("ovf:volume-type").getValue()));
         } else {
-            image.setVolumeType(VolumeType.Unassigned);
+            image.setVolumeType(getDefaultVolumeType());
         }
+
+        if (node.attributes.get("ovf:incremental-backup") != null &&
+                Boolean.parseBoolean(node.attributes.get("ovf:incremental-backup").getValue())) {
+            image.setBackup(DiskBackup.Incremental);
+        } else {
+            image.setBackup(DiskBackup.None);
+        }
+
         if (node.attributes.get("ovf:wipe-after-delete") != null) {
             if (!StringUtils.isEmpty(node.attributes.get("ovf:wipe-after-delete").getValue())) {
                 image.setWipeAfterDelete(Boolean.parseBoolean(node.attributes.get("ovf:wipe-after-delete")
@@ -280,6 +290,9 @@ public abstract class OvfReader implements IOvfBuilder {
             int resourceType = getResourceType(node, VMD_RESOURCE_TYPE);
             vmDevice.setType(VmDeviceGeneralType.forValue(VmDeviceType.getoVirtDevice(resourceType)));
         }
+        if (vmDevice.getType() == VmDeviceGeneralType.BALLOON) {
+            hasBalloonDevice = true;
+        }
         if (selectSingleNode(node, VMD_DEVICE, _xmlNS) != null
                 && !StringUtils.isEmpty(selectSingleNode(node, VMD_DEVICE, _xmlNS).innerText)) {
             vmDevice.setDevice(String.valueOf(selectSingleNode(node, VMD_DEVICE, _xmlNS).innerText));
@@ -339,52 +352,55 @@ public abstract class OvfReader implements IOvfBuilder {
             String resourceType = selectSingleNode(item, "rasd:ResourceType", _xmlNS).innerText;
             resourceType = adjustHardwareResourceType(resourceType);
             switch (resourceType) {
-            case OvfHardware.CPU:
-                readCpuItem(item);
-                break;
+                case OvfHardware.CPU:
+                    readCpuItem(item);
+                    break;
 
-            case OvfHardware.Memory:
-                readMemoryItem(item);
-                break;
+                case OvfHardware.Memory:
+                    readMemoryItem(item);
+                    break;
 
-            case OvfHardware.DiskImage:
-                readDiskImageItem(item);
-                break;
+                case OvfHardware.DiskImage:
+                    readDiskImageItem(item);
+                    break;
 
-            case OvfHardware.Network:
-                /**
-                 *  If NIC items are found in the hardware section of the OVF, they are the real ones,
-                 *  so clear the NIC references found in the <NetworkSection> of the OVF which are used
-                 *  only to map networks, but should not be used to create NICs. Clear() is performed only
-                 *  upon finding the first NIC item.
-                 */
-                if (nicIdx == 0) {
-                    interfaces.clear();
-                }
-                readNetworkItem(item, ++nicIdx);
-                break;
+                case OvfHardware.Network:
+                    /**
+                     *  If NIC items are found in the hardware section of the OVF, they are the real ones,
+                     *  so clear the NIC references found in the <NetworkSection> of the OVF which are used
+                     *  only to map networks, but should not be used to create NICs. Clear() is performed only
+                     *  upon finding the first NIC item.
+                     */
+                    if (nicIdx == 0) {
+                        interfaces.clear();
+                    }
+                    readNetworkItem(item, ++nicIdx);
+                    break;
 
-            case OvfHardware.USB:
-                readUsbItem(item);
-                break;
+                case OvfHardware.USB:
+                    readUsbItem(item);
+                    break;
 
-            case OvfHardware.Monitor:
-                readMonitorItem(item);
-                break;
+                case OvfHardware.Monitor:
+                    readMonitorItem(item);
+                    break;
 
-            case OvfHardware.Graphics:
-                readManagedVmDevice(item, Guid.newGuid()); // so far graphics doesn't contain anything special
-                break;
+                case OvfHardware.Graphics:
+                    readManagedVmDevice(item, readDeviceId(item)); // so far graphics doesn't contain anything special
+                    break;
 
-            case OvfHardware.CD:
-                readCdItem(item);
-                break;
+                case OvfHardware.CD:
+                    readCdItem(item);
+                    break;
 
-            case OvfHardware.OTHER:
-                VmDevice vmDevice = readOtherHardwareItem(item);
-                readVirtioSerial = readVirtioSerial ||
-                        VmDeviceType.VIRTIOSERIAL.getName().equals(vmDevice.getDevice());
-                break;
+                case OvfHardware.OTHER:
+                    final VmDeviceGeneralType type = VmDeviceGeneralType
+                            .forValue(String.valueOf(selectSingleNode(item, VMD_TYPE, _xmlNS).innerText));
+                    final VmDevice vmDevice = type == VmDeviceGeneralType.TPM
+                            ? readManagedVmDevice(item, readDeviceId(item))
+                            : readOtherHardwareItem(item, type);
+                    readVirtioSerial = readVirtioSerial || VmDeviceType.VIRTIOSERIAL.getName().equals(vmDevice.getDevice());
+                    break;
             }
         }
 
@@ -455,11 +471,8 @@ public abstract class OvfReader implements IOvfBuilder {
     protected void readMonitorItem(XmlNode node) {
         vmBase.setNumOfMonitors(
                 Integer.parseInt(selectSingleNode(node, "rasd:VirtualQuantity", _xmlNS).innerText));
-        if (selectSingleNode(node, "rasd:SinglePciQxl", _xmlNS) != null) {
-            vmBase.setSingleQxlPci(Boolean.parseBoolean(selectSingleNode(node, "rasd:SinglePciQxl", _xmlNS).innerText));
-        }
 
-        readManagedVmDevice(node, Guid.newGuid());
+        readManagedVmDevice(node, readDeviceId(node));
     }
 
     protected void readCpuItem(XmlNode node) {
@@ -486,7 +499,7 @@ public abstract class OvfReader implements IOvfBuilder {
     }
 
     private void readCdItem(XmlNode node) {
-        readManagedVmDevice(node, Guid.newGuid());
+        readManagedVmDevice(node, readDeviceId(node));
     }
 
     private void readNetworkItem(XmlNode node, int nicIdx) {
@@ -500,21 +513,28 @@ public abstract class OvfReader implements IOvfBuilder {
         vmBase.setUsbPolicy(usbPolicy != null ? UsbPolicy.forStringValue(usbPolicy.innerText) : UsbPolicy.ENABLED_NATIVE);
     }
 
-    private VmDevice readOtherHardwareItem(XmlNode node) {
+    private VmDevice readOtherHardwareItem(XmlNode node, VmDeviceGeneralType type) {
         boolean managed = false;
         if (selectSingleNode(node, VMD_TYPE, _xmlNS) != null
                 && StringUtils.isNotEmpty(selectSingleNode(node, VMD_TYPE, _xmlNS).innerText)) {
-            VmDeviceGeneralType type = VmDeviceGeneralType
-                    .forValue(String.valueOf(selectSingleNode(node, VMD_TYPE, _xmlNS).innerText));
             String device = selectSingleNode(node, VMD_DEVICE, _xmlNS).innerText;
             // special devices are treated as managed devices but still have the OTHER OVF ResourceType
-            managed = VmDeviceCommonUtils.isSpecialDevice(device, type);
+            managed = OvfReaderWriterUtils.isSpecialDevice(device, type, true);
         }
 
-        return managed ? readManagedVmDevice(node, Guid.newGuid())
+        return managed ? readManagedVmDevice(node, readDeviceId(node))
                 : readUnmanagedVmDevice(node, Guid.newGuid());
     }
 
+    private Guid readDeviceId(XmlNode node) {
+        if (selectSingleNode(node, VMD_ID, _xmlNS) != null
+                && StringUtils.isNotEmpty(selectSingleNode(node, VMD_TYPE, _xmlNS).innerText)) {
+            return new Guid(String.valueOf(selectSingleNode(node, VMD_ID, _xmlNS).innerText));
+        }
+        return Guid.newGuid();
+    }
+
+    // must be called after readHardwareSection
     protected void readGeneralData(XmlNode content) {
         consumeReadProperty(content, DESCRIPTION, val -> vmBase.setDescription(val));
         consumeReadProperty(content, COMMENT, val -> vmBase.setComment(val));
@@ -547,8 +567,6 @@ public abstract class OvfReader implements IOvfBuilder {
         }
         vmBase.setClusterCompatibilityVersionOrigin(originVersion);
 
-        // Note: the fetching of 'default display type' should happen before reading
-        // the hardware section
         consumeReadProperty(content,
                 getDefaultDisplayTypeStringRepresentation(),
                 val -> vmBase.setDefaultDisplayType(DisplayType.forValue(Integer.parseInt(val))));
@@ -559,7 +577,7 @@ public abstract class OvfReader implements IOvfBuilder {
         fixDiskVmElements();
 
         // due to dependency on vmBase.getOsId() must be read AFTER readOsSection
-        consumeReadProperty(content, TIMEZONE, val -> vmBase.setTimeZone(val), () -> {
+        consumeReadProperty(content, TIMEZONE, val -> vmBase.setTimeZone(mapTimeZone(val)), () -> {
             if (osRepository.isWindows(vmBase.getOsId())) {
                 vmBase.setTimeZone(Config.getValue(ConfigValues.DefaultWindowsTimeZone));
             } else {
@@ -613,6 +631,9 @@ public abstract class OvfReader implements IOvfBuilder {
         consumeReadProperty(content,
                 CONSOLE_DISCONNECT_ACTION,
                 val -> vmBase.setConsoleDisconnectAction(ConsoleDisconnectAction.fromString(val)));
+        consumeReadProperty(content,
+                CONSOLE_DISCONNECT_ACTION_DELAY,
+                val -> vmBase.setConsoleDisconnectActionDelay(Integer.parseInt(val)));
         consumeReadProperty(content, IS_AUTO_CONVERGE, val -> vmBase.setAutoConverge(Boolean.parseBoolean(val)));
         consumeReadProperty(content,
                 IS_MIGRATE_COMPRESSED,
@@ -623,15 +644,12 @@ public abstract class OvfReader implements IOvfBuilder {
         consumeReadProperty(content,
                 MIGRATION_POLICY_ID,
                 val -> vmBase.setMigrationPolicyId(Guid.createGuidFromString(val)));
+        consumeReadProperty(content, PARALLEL_MIGRATIONS,
+                val -> vmBase.setParallelMigrations(Integer.parseInt(val)));
         consumeReadProperty(content, CUSTOM_EMULATED_MACHINE, val -> vmBase.setCustomEmulatedMachine(val));
-        // For compatibility with oVirt 4.3, use values of BiosType constants that existed before
-        // introduction of CLUSTER_DEFAULT:  0 == I440FX_SEA_BIOS and so on
-        consumeReadProperty(content,
-                BIOS_TYPE,
-                val -> vmBase.setBiosType(BiosType.forValue(Integer.parseInt(val) + 1)),
-                () -> vmBase.setBiosType(BiosType.CLUSTER_DEFAULT));
+        readBiosType(content);
         consumeReadProperty(content, CUSTOM_CPU_NAME, val -> vmBase.setCustomCpuName(val));
-        consumeReadProperty(content, PREDEFINED_PROPERTIES, val -> vmBase.setPredefinedProperties(val));
+        consumeReadProperty(content, PREDEFINED_PROPERTIES, val -> addPredefinedProperties(val));
         consumeReadProperty(content, USER_DEFINED_PROPERTIES, val -> vmBase.setUserDefinedProperties(val));
         consumeReadProperty(content, MAX_MEMORY_SIZE_MB, val -> vmBase.setMaxMemorySizeMb(Integer.parseInt(val)));
 
@@ -644,11 +662,38 @@ public abstract class OvfReader implements IOvfBuilder {
                 MULTI_QUEUES_ENABLED,
                 val -> vmBase.setMultiQueuesEnabled(Boolean.parseBoolean(val)));
 
+        readVirtioScsiMultiQueues(content);
+
         consumeReadProperty(content,
                 USE_HOST_CPU,
                 val -> vmBase.setUseHostCpuFlags(Boolean.parseBoolean(val)));
 
+        consumeReadProperty(content, BALLOON_ENABLED,
+                val -> vmBase.setBalloonEnabled(Boolean.parseBoolean(val)),
+                () -> vmBase.setBalloonEnabled(hasBalloonDevice));
+
+        consumeReadProperty(content,
+                CPU_PINNING_POLICY,
+                val -> vmBase.setCpuPinningPolicy(CpuPinningPolicy.forValue(Integer.parseInt(val))));
+
         readVmInit(content);
+    }
+
+    private String mapTimeZone(String timezone) {
+        // changes timezones mappings that:
+        // - existed before and valid only to non-windows, to mappings that is valid to both non-windows and windows
+        // - existed before but got removed because similar time zone exist, to mapping that exists
+        switch (timezone) {
+            case "America/Indianapolis":
+                return "America/New_York";
+            case "US Eastern Standard Time":
+                return "Eastern Standard Time";
+            case "Atlantic/Reykjavik":
+                return "Etc/GMT";
+            case "Iceland Standard Time":
+                return "Greenwich Standard Time";
+        }
+        return timezone;
     }
 
     protected void consumeReadProperty(XmlNode content, String propertyKey, Consumer<String> then) {
@@ -688,6 +733,45 @@ public abstract class OvfReader implements IOvfBuilder {
         }
     }
 
+    private void readBiosType(XmlNode content) {
+        XmlNode biosTypeNode = selectSingleNode(content, BIOS_TYPE);
+        // For compatibility with oVirt 4.3, use values of BiosType constants that existed before
+        // introduction of CLUSTER_DEFAULT:  0 == I440FX_SEA_BIOS and so on
+        acceptNode(
+                val -> {
+                    vmBase.setBiosType(BiosType.forValue(Integer.parseInt(val) + 1));
+                },
+                () -> {
+                    vmBase.setBiosType(BiosType.I440FX_SEA_BIOS);
+                },
+                biosTypeNode);
+    }
+
+    private String escapedNewLines(String value) {
+        return value.replaceAll("\\\\n", "\n");
+    }
+
+    private void readVirtioScsiMultiQueues(XmlNode content) {
+
+        XmlNode virtioScsiMultiQueuesNode = selectSingleNode(content, VIRTIO_SCSI_MULTI_QUEUES_ENABLED);
+        if (virtioScsiMultiQueuesNode == null) {
+            return;
+        }
+        boolean isVirtioMultiQueuesEnabled = Boolean.parseBoolean(virtioScsiMultiQueuesNode.innerText);
+        if (isVirtioMultiQueuesEnabled) {
+            XmlAttribute virtioScsiMultiQueuesNodeNumberAttribute =
+                    virtioScsiMultiQueuesNode.attributes.get("ovf:queues");
+            if (virtioScsiMultiQueuesNodeNumberAttribute == null) {
+                vmBase.setVirtioScsiMultiQueues(-1);
+            } else {
+                vmBase.setVirtioScsiMultiQueues(
+                        Integer.parseInt(virtioScsiMultiQueuesNodeNumberAttribute.getValue()));
+            }
+        } else {
+            vmBase.setVirtioScsiMultiQueues(0);
+        }
+    }
+
     private void readVmInit(XmlNode content) {
         XmlNode node = selectSingleNode(content, "VmInit");
         if (node != null) {
@@ -702,10 +786,10 @@ public abstract class OvfReader implements IOvfBuilder {
                 vmInit.setDomain(node.attributes.get("ovf:domain").getValue());
             }
             if (node.attributes.get("ovf:timeZone") != null) {
-                vmInit.setTimeZone(node.attributes.get("ovf:timeZone").getValue());
+                vmInit.setTimeZone(mapTimeZone(node.attributes.get("ovf:timeZone").getValue()));
             }
             if (node.attributes.get("ovf:authorizedKeys") != null) {
-                vmInit.setAuthorizedKeys(node.attributes.get("ovf:authorizedKeys").getValue());
+                vmInit.setAuthorizedKeys(escapedNewLines(node.attributes.get("ovf:authorizedKeys").getValue()));
             }
             if (node.attributes.get("ovf:regenerateKeys") != null) {
                 vmInit.setRegenerateKeys(Boolean.parseBoolean(node.attributes.get("ovf:regenerateKeys").getValue()));
@@ -726,7 +810,7 @@ public abstract class OvfReader implements IOvfBuilder {
                 vmInit.setRootPassword(node.attributes.get("ovf:rootPassword").getValue());
             }
             if (node.attributes.get("ovf:customScript") != null) {
-                vmInit.setCustomScript(node.attributes.get("ovf:customScript").getValue());
+                vmInit.setCustomScript(escapedNewLines(node.attributes.get("ovf:customScript").getValue()));
             }
         }
     }
@@ -762,7 +846,7 @@ public abstract class OvfReader implements IOvfBuilder {
         if (StringUtils.isNotEmpty(resourceSubType)) {
             try {
                 return Integer.parseInt(resourceSubType);
-            } catch(NumberFormatException ex) {
+            } catch (NumberFormatException ex) {
                 for (VmInterfaceType vmInterfaceType : VmInterfaceType.values()) {
                     if (vmInterfaceType.getInternalName().equalsIgnoreCase(resourceSubType)) {
                         return vmInterfaceType.getValue();
@@ -805,11 +889,11 @@ public abstract class OvfReader implements IOvfBuilder {
                             DisplayType firstDisplayType = supportedGraphicsAndDisplays.get(0).getSecond();
                             vmDevice.setDevice(firstDisplayType.getDefaultVmDeviceType().getName());
                         } else {
-                            vmDevice.setDevice(VmDeviceType.QXL.getName());
+                            vmDevice.setDevice(VmDeviceType.VGA.getName());
                         }
                     }
-                } else { // default to spice if quantity not found
-                    vmDevice.setDevice(VmDeviceType.QXL.getName());
+                } else { // default to VNC if quantity not found
+                    vmDevice.setDevice(VmDeviceType.VGA.getName());
                 }
             } else {
                 vmDevice.setDevice(VmDeviceType.getoVirtDevice(Integer.parseInt(resourceType)).getName());
@@ -825,6 +909,20 @@ public abstract class OvfReader implements IOvfBuilder {
         }
     }
 
+    private void addPredefinedProperties(String properties) {
+        if (properties != null) {
+            var simpleCustomPropertiesUtil = SimpleCustomPropertiesUtil.getInstance();
+            var customProperties = simpleCustomPropertiesUtil.convertProperties(properties);
+            String mdevTypes = customProperties.remove(MDevTypesUtils.DEPRECATED_CUSTOM_PROPERTY_NAME);
+            if (mdevTypes != null && !mdevTypes.trim().isEmpty()) {
+                var mdevDevices = MDevTypesUtils.convertDeprecatedCustomPropertyToVmDevices(mdevTypes, vmBase.getId());
+                mdevDevices.forEach(this::addManagedVmDevice);
+                properties = simpleCustomPropertiesUtil.convertProperties(customProperties);
+            }
+        }
+        vmBase.setPredefinedProperties(properties);
+    }
+
     private void addDefaultGraphicsDevice() {
         VmDevice device = VmDeviceCommonUtils.findVmDeviceByGeneralType(
                 vmBase.getManagedDeviceMap(), VmDeviceGeneralType.GRAPHICS);
@@ -832,10 +930,20 @@ public abstract class OvfReader implements IOvfBuilder {
             return;
         }
 
+        Version effectiveCompatibilityVersion = vmBase.getCustomCompatibilityVersion() != null ? vmBase.getCustomCompatibilityVersion() : vmBase.getClusterCompatibilityVersionOrigin();
         List<Pair<GraphicsType, DisplayType>> graphicsAndDisplays =
-                osRepository.getGraphicsAndDisplays(vmBase.getOsId(), new Version(getVersion()));
-        GraphicsType graphicsType =
-                vmBase.getDefaultDisplayType() == DisplayType.vga ? GraphicsType.VNC : GraphicsType.SPICE;
+                osRepository.getGraphicsAndDisplays(vmBase.getOsId(), effectiveCompatibilityVersion);
+
+        GraphicsType graphicsType;
+        switch (vmBase.getDefaultDisplayType()) {
+            case vga:
+            case bochs:
+                graphicsType = GraphicsType.VNC;
+                break;
+            default:
+                graphicsType = GraphicsType.SPICE;
+        }
+
         GraphicsType supportedGraphicsType = null;
         for (Pair<GraphicsType, DisplayType> pair : graphicsAndDisplays) {
             if (pair.getSecond() == vmBase.getDefaultDisplayType()) {
@@ -872,6 +980,44 @@ public abstract class OvfReader implements IOvfBuilder {
             lunDisk.getDiskVmElements().forEach(dve -> dve.setId(new VmDeviceId(lunDisk.getId(), vmBase.getId())));
             lunDisk.setDiskVmElements(lunDisk.getDiskVmElements());
         }
+    }
+
+    protected void readNumaNodeListSection(XmlNode section, boolean readNUMAPinning) {
+        XmlNodeList list = selectNodes(section, NUMA_NODE);
+        List<VmNumaNode> vmNumaNodes = new ArrayList<>();
+
+        for (XmlNode node : list) {
+            VmNumaNode vmNumaNode = new VmNumaNode();
+            XmlNode id = selectSingleNode(node, "id", _xmlNS);
+            if (id != null) {
+                vmNumaNode.setId(new Guid(id.innerText));
+            }
+            vmNumaNode.setIndex(Integer.valueOf(selectSingleNode(node, NUMA_INDEX, _xmlNS).innerText));
+            vmNumaNode.setCpuIds(readIntegerList(node, NUMA_CPU_ID_LIST));
+            vmNumaNode.setVdsNumaNodeList(readNUMAPinning ? readIntegerList(node, NUMA_VDS_NUMA_LIST) : new ArrayList<>());
+            vmNumaNode.setMemTotal(Long.valueOf(selectSingleNode(node, NUMA_TOTAL_MEMORY, _xmlNS).innerText));
+            XmlNode numaTuneMode = selectSingleNode(node, NUMA_TUNE_MODE, _xmlNS);
+            if (numaTuneMode != null) {
+                vmNumaNode.setNumaTuneMode(NumaTuneMode.forValue(numaTuneMode.innerText));
+            }
+            vmNumaNodes.add(vmNumaNode);
+        }
+        vmBase.setvNumaNodeList(vmNumaNodes);
+    }
+
+    private List<Integer> readIntegerList(XmlNode node, String label) {
+        List<Integer> integerList = new ArrayList<>();
+        XmlNode xmlNode = selectSingleNode(node, label, _xmlNS);
+        if (xmlNode != null) {
+            String valueList = xmlNode.innerText;
+            if (valueList != null && !valueList.isEmpty()) {
+                String[] values = valueList.split(",");
+                for (String value : values) {
+                    integerList.add(Integer.valueOf(value));
+                }
+            }
+        }
+        return integerList;
     }
 
     private static Map<String, Object> getMapNode(XmlNode node) {
@@ -952,5 +1098,9 @@ public abstract class OvfReader implements IOvfBuilder {
     @Override
     public String getStringRepresentation() {
         return _document.getOuterXml();
+    }
+
+    protected VolumeType getDefaultVolumeType() {
+        return VolumeType.Unassigned;
     }
 }

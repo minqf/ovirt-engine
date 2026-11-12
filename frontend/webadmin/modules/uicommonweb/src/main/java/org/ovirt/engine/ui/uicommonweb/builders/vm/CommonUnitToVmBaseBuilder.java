@@ -17,19 +17,20 @@ public class CommonUnitToVmBaseBuilder<T extends VmBase> extends CompositeSyncBu
         super(
                 new CoreUnitToVmBaseBuilder(),
                 new QuotaUnitToVmBaseBuilder<T>(),
-                new CpuProfileUnitToVmBaseBuilder<T>(),
                 new NumaUnitToVmBaseBuilder<T>()
+
         );
     }
 
     @Override
     protected void postBuild(UnitVmModel model, VmBase vm) {
-        vm.setAutoStartup(model.getIsHighlyAvailable().getEntity());
+        // General
         vm.setComment(model.getComment().getEntity());
         vm.setDescription(model.getDescription().getEntity());
-        vm.setPriority(model.getPriority().getSelectedItem().getEntity());
-        vm.setRunAndPause(model.getIsRunAndPause().getEntity());
         vm.setStateless(model.getIsStateless().getEntity());
+        vm.setRunAndPause(model.getIsRunAndPause().getEntity());
+        // High availability
+        vm.setPriority(model.getPriority().getSelectedItem().getEntity());
         StorageDomain leaseSd = model.getLease().getSelectedItem();
         vm.setLeaseStorageDomainId(leaseSd != null ? leaseSd.getId() : null);
     }

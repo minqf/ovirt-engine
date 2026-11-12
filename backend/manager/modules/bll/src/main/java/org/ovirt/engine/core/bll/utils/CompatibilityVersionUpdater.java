@@ -5,7 +5,6 @@ import java.util.Map;
 import java.util.Objects;
 
 import org.ovirt.engine.core.common.FeatureSupported;
-import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.DisplayType;
 import org.ovirt.engine.core.common.businessentities.MigrationSupport;
@@ -25,31 +24,11 @@ import org.ovirt.engine.core.common.utils.customprop.VmPropertiesUtils;
 import org.ovirt.engine.core.compat.Version;
 
 public class CompatibilityVersionUpdater {
-    public enum Update {
-        MEMORY("memory"),
-        CPU_TOPOLOGY("CPU topology"),
-        PROPERTIES("properties"),
-        MIGRATION_SUPPORT("migration support"),
-        MIGRATION_POLICY("migration policy"),
-        BIOS_TYPE("BIOS type"),
-        DEFAULT_DISPLAY_TYPE("default display type"),
-        RNG_DEVICE("RNG device");
-
-        private String displayName;
-
-        Update(String displayName) {
-            this.displayName = displayName;
-        }
-
-        public String getDisplayName() {
-            return displayName;
-        }
-    }
 
     /**
      * Update VM fields so that it is valid for specified compatibility version.
      */
-    public EnumSet<Update> updateVmCompatibilityVersion(VM vm, Version newVersion, Cluster cluster) {
+    public EnumSet<VmUpdateType> updateVmCompatibilityVersion(VM vm, Version newVersion, Cluster cluster) {
         vm.setClusterCompatibilityVersion(cluster.getCompatibilityVersion());
         return updateVmBaseCompatibilityVersion(vm.getStaticData(), newVersion, cluster);
     }
@@ -57,41 +36,39 @@ public class CompatibilityVersionUpdater {
     /**
      * Update VmTemplate fields so that it is valid for specified compatibility version.
      */
-    public EnumSet<Update> updateTemplateCompatibilityVersion(VmTemplate template, Version newVersion, Cluster cluster) {
+    public EnumSet<VmUpdateType> updateTemplateCompatibilityVersion(VmTemplate template, Version newVersion,
+                                                                    Cluster cluster) {
         template.setClusterCompatibilityVersion(cluster.getCompatibilityVersion());
         return updateVmBaseCompatibilityVersion(template, newVersion, cluster);
     }
 
-    public EnumSet<Update> updateVmBaseCompatibilityVersion(VmBase vmBase, Version newVersion, Cluster cluster) {
+    public EnumSet<VmUpdateType> updateVmBaseCompatibilityVersion(VmBase vmBase, Version newVersion, Cluster cluster) {
         if (newVersion.equals(getSourceVersion(vmBase))) {
-            return EnumSet.noneOf(Update.class);
+            return EnumSet.noneOf(VmUpdateType.class);
         }
 
-        EnumSet<Update> updates = EnumSet.noneOf(Update.class);
+        EnumSet<VmUpdateType> updates = EnumSet.noneOf(VmUpdateType.class);
 
         if (updateMemory(vmBase, newVersion)) {
-            updates.add(Update.MEMORY);
+            updates.add(VmUpdateType.MEMORY);
         }
         if (updateCpuTopology(vmBase, newVersion, cluster)) {
-            updates.add(Update.CPU_TOPOLOGY);
+            updates.add(VmUpdateType.CPU_TOPOLOGY);
         }
         if (updateProperties(vmBase, newVersion)) {
-            updates.add(Update.PROPERTIES);
+            updates.add(VmUpdateType.PROPERTIES);
         }
         if (updateMigrationSupport(vmBase, newVersion, cluster)) {
-            updates.add(Update.MIGRATION_SUPPORT);
+            updates.add(VmUpdateType.MIGRATION_SUPPORT);
         }
         if (updateMigrationPolicy(vmBase, newVersion, cluster)) {
-            updates.add(Update.MIGRATION_POLICY);
-        }
-        if (updateBiosType(vmBase, newVersion)) {
-            updates.add(Update.BIOS_TYPE);
+            updates.add(VmUpdateType.MIGRATION_POLICY);
         }
         if (updateDefaultDisplayType(vmBase, newVersion)) {
-            updates.add(Update.DEFAULT_DISPLAY_TYPE);
+            updates.add(VmUpdateType.DEFAULT_DISPLAY_TYPE);
         }
         if (updateRngDevice(vmBase, newVersion)) {
-            updates.add(Update.RNG_DEVICE);
+            updates.add(VmUpdateType.RNG_DEVICE);
         }
 
         // Update custom compatibility only if needed
@@ -120,9 +97,9 @@ public class CompatibilityVersionUpdater {
         vmBase.setMemSizeMb(Math.min(vmBase.getMemSizeMb(), maxMemoryFromConfig));
         vmBase.setMinAllocatedMem(Math.min(vmBase.getMinAllocatedMem(), maxMemoryFromConfig));
 
-        return vmBase.getMaxMemorySizeMb() != oldMaxMem ||
+        return vmBase.getMaxMemorySizeMb() != oldMaxMem && oldMaxMem != 0 ||
                 vmBase.getMemSizeMb() != oldMemSize ||
-                vmBase.getMinAllocatedMem() != oldMinMem;
+                vmBase.getMinAllocatedMem() != oldMinMem && oldMinMem != 0;
     }
 
     private boolean updateCpuTopology(VmBase vmBase, Version newVersion, Cluster cluster) {
@@ -210,18 +187,6 @@ public class CompatibilityVersionUpdater {
                 newVersion.greaterOrEquals(Version.v4_3)) {
             vmBase.setMigrationPolicyId(cluster.getMigrationPolicyId());
             return !Objects.equals(NoMigrationPolicy.ID, vmBase.getMigrationPolicyId());
-        }
-        return false;
-    }
-
-    private boolean updateBiosType(VmBase vmBase, Version newVersion) {
-        if (!FeatureSupported.isBiosTypeSupported(newVersion) &&
-                vmBase.getBiosType() != BiosType.CLUSTER_DEFAULT &&
-                vmBase.getBiosType() != BiosType.I440FX_SEA_BIOS) {
-            var oldBiosType = vmBase.getBiosType();
-            vmBase.setBiosType(BiosType.CLUSTER_DEFAULT);
-
-            return oldBiosType != BiosType.CLUSTER_DEFAULT;
         }
         return false;
     }

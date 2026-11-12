@@ -22,6 +22,7 @@ import org.ovirt.engine.core.bll.LockMessagesMatchUtil;
 import org.ovirt.engine.core.bll.NonTransactiveCommandAttribute;
 import org.ovirt.engine.core.bll.VmTemplateHandler;
 import org.ovirt.engine.core.bll.context.CommandContext;
+import org.ovirt.engine.core.bll.memory.MemoryDisks;
 import org.ovirt.engine.core.bll.memory.MemoryUtils;
 import org.ovirt.engine.core.bll.snapshots.SnapshotsValidator;
 import org.ovirt.engine.core.bll.storage.disk.image.DisksFilter;
@@ -74,6 +75,7 @@ import org.ovirt.engine.core.common.vdscommands.VDSCommandType;
 import org.ovirt.engine.core.common.vdscommands.VDSReturnValue;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.KeyValuePairCompat;
+import org.ovirt.engine.core.compat.Version;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dao.DiskDao;
 import org.ovirt.engine.core.dao.DiskImageDao;
@@ -250,11 +252,11 @@ public class ExportVmCommand<T extends MoveOrCopyParameters> extends MoveOrCopyT
         int numOfSnapshots = snapshotsWithMemory.size();
         long memorySize = numOfSnapshots * vmOverheadCalculator.getSnapshotMemorySizeInBytes(getVm());
         long metadataSize = numOfSnapshots * MemoryUtils.METADATA_SIZE_IN_BYTES;
-        List<DiskImage> memoryDisksList = MemoryUtils.createDiskDummies(memorySize, metadataSize);
+        MemoryDisks memoryDisks = MemoryUtils.createDiskDummies(memorySize, metadataSize);
 
         //Set target domain in memory disks
-        memoryDisksList.stream().forEach(d -> d.setStorageIds(Collections.singletonList(getStorageDomainId())));
-        return memoryDisksList;
+        memoryDisks.asList().forEach(d -> d.setStorageIds(Collections.singletonList(getStorageDomainId())));
+        return memoryDisks.asList();
     }
 
     private Collection<Snapshot> getSnapshotsToBeExportedWithMemory() {
@@ -310,23 +312,23 @@ public class ExportVmCommand<T extends MoveOrCopyParameters> extends MoveOrCopyT
 
         List<Guid> imageGroupIds = new ArrayList<>();
         for (Disk disk : getDisksBasedOnImage()) {
-                DiskImage diskImage = (DiskImage) disk;
-                diskImage.setParentId(VmTemplateHandler.BLANK_VM_TEMPLATE_ID);
-                diskImage.setImageTemplateId(VmTemplateHandler.BLANK_VM_TEMPLATE_ID);
-                diskImage.setStorageIds(new ArrayList<>(Collections.singletonList(storageDomainId)));
-                DiskImage diskForVolumeInfo = getDiskForVolumeInfo(diskImage);
-                diskImage.setVolumeFormat(diskForVolumeInfo.getVolumeFormat());
-                diskImage.setVolumeType(diskForVolumeInfo.getVolumeType());
-                VDSReturnValue vdsReturnValue = runVdsCommand(
-                                    VDSCommandType.GetImageInfo,
-                                    new GetImageInfoVDSCommandParameters(storagePoolId, storageDomainId, diskImage
-                                            .getId(), diskImage.getImageId()));
-                if (vdsReturnValue != null && vdsReturnValue.getSucceeded()) {
-                    DiskImage fromVdsm = (DiskImage) vdsReturnValue.getReturnValue();
-                    diskImage.setActualSizeInBytes(fromVdsm.getActualSizeInBytes());
-                }
-                vmImages.add(diskImage);
-                imageGroupIds.add(disk.getId());
+            DiskImage diskImage = (DiskImage) disk;
+            diskImage.setParentId(VmTemplateHandler.BLANK_VM_TEMPLATE_ID);
+            diskImage.setImageTemplateId(VmTemplateHandler.BLANK_VM_TEMPLATE_ID);
+            diskImage.setStorageIds(new ArrayList<>(Collections.singletonList(storageDomainId)));
+            DiskImage diskForVolumeInfo = getDiskForVolumeInfo(diskImage);
+            diskImage.setVolumeFormat(diskForVolumeInfo.getVolumeFormat());
+            diskImage.setVolumeType(diskForVolumeInfo.getVolumeType());
+            VDSReturnValue vdsReturnValue = runVdsCommand(
+                                VDSCommandType.GetImageInfo,
+                                new GetImageInfoVDSCommandParameters(storagePoolId, storageDomainId, diskImage
+                                    .getId(), diskImage.getImageId()));
+            if (vdsReturnValue != null && vdsReturnValue.getSucceeded()) {
+                DiskImage fromVdsm = (DiskImage) vdsReturnValue.getReturnValue();
+                diskImage.setActualSizeInBytes(fromVdsm.getActualSizeInBytes());
+            }
+            vmImages.add(diskImage);
+            imageGroupIds.add(disk.getId());
         }
 
         if (StringUtils.isEmpty(vm.getVmtName())) {
@@ -342,7 +344,8 @@ public class ExportVmCommand<T extends MoveOrCopyParameters> extends MoveOrCopyT
         fullEntityOvfData.setClusterName(vm.getClusterName());
         fullEntityOvfData.setDiskImages(vmImages);
         fullEntityOvfData.setLunDisks(lunDisks);
-        String vmMeta = ovfManager.exportVm(vm, fullEntityOvfData, clusterUtils.getCompatibilityVersion(vm));
+        Version compatibilityVersion = clusterUtils.getCompatibilityVersion(vm);
+        String vmMeta = ovfManager.exportVm(vm, fullEntityOvfData, compatibilityVersion);
 
         vmsAndMetaDictionary.put(vm.getId(), new KeyValuePairCompat<>(vmMeta, imageGroupIds));
         UpdateVMVDSCommandParameters tempVar = new UpdateVMVDSCommandParameters(storagePoolId, vmsAndMetaDictionary);
@@ -495,15 +498,15 @@ public class ExportVmCommand<T extends MoveOrCopyParameters> extends MoveOrCopyT
     @Override
     public AuditLogType getAuditLogTypeValue() {
         switch (getActionState()) {
-        case EXECUTE:
-            return getSucceeded() ? AuditLogType.IMPORTEXPORT_STARTING_EXPORT_VM
-                    : AuditLogType.IMPORTEXPORT_EXPORT_VM_FAILED;
+            case EXECUTE:
+                return getSucceeded() ? AuditLogType.IMPORTEXPORT_STARTING_EXPORT_VM
+                        : AuditLogType.IMPORTEXPORT_EXPORT_VM_FAILED;
 
-        case END_SUCCESS:
-            return getSucceeded() ? AuditLogType.IMPORTEXPORT_EXPORT_VM : AuditLogType.IMPORTEXPORT_EXPORT_VM_FAILED;
+            case END_SUCCESS:
+                return getSucceeded() ? AuditLogType.IMPORTEXPORT_EXPORT_VM : AuditLogType.IMPORTEXPORT_EXPORT_VM_FAILED;
 
-        default:
-            return AuditLogType.IMPORTEXPORT_EXPORT_VM_FAILED;
+            default:
+                return AuditLogType.IMPORTEXPORT_EXPORT_VM_FAILED;
         }
     }
 
@@ -555,7 +558,7 @@ public class ExportVmCommand<T extends MoveOrCopyParameters> extends MoveOrCopyT
             updateCopyVmInSpm(getVm().getStoragePoolId(),
                     vm, getParameters()
                             .getStorageDomainId());
-        } catch(EngineException e) {
+        } catch (EngineException e) {
             log.error("Updating VM OVF in export domain failed.", e);
             auditLogDirector.log(this, AuditLogType.IMPORTEXPORT_IMPORT_VM_FAILED_UPDATING_OVF);
         }

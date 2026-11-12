@@ -7,10 +7,13 @@ import java.util.Map;
 import javax.inject.Inject;
 
 import org.ovirt.engine.core.bll.context.CommandContext;
+import org.ovirt.engine.core.bll.memory.MemoryDisks;
 import org.ovirt.engine.core.bll.memory.MemoryStorageHandler;
 import org.ovirt.engine.core.bll.memory.MemoryUtils;
+import org.ovirt.engine.core.bll.snapshots.SnapshotsValidator;
 import org.ovirt.engine.core.bll.storage.disk.image.DisksFilter;
 import org.ovirt.engine.core.bll.tasks.CommandCoordinatorUtil;
+import org.ovirt.engine.core.bll.validator.VmValidator;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.FeatureSupported;
 import org.ovirt.engine.core.common.VdcObjectType;
@@ -25,6 +28,7 @@ import org.ovirt.engine.core.common.asynctasks.EntityInfo;
 import org.ovirt.engine.core.common.businessentities.Snapshot.SnapshotType;
 import org.ovirt.engine.core.common.businessentities.StorageDomain;
 import org.ovirt.engine.core.common.businessentities.VMStatus;
+import org.ovirt.engine.core.common.businessentities.storage.DiskContentType;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.errors.EngineException;
 import org.ovirt.engine.core.common.errors.EngineMessage;
@@ -57,6 +61,8 @@ public class HibernateVmCommand<T extends VmOperationParameterBase> extends VmOp
     private SnapshotDao snapshotDao;
     @Inject
     private CommandCoordinatorUtil commandCoordinatorUtil;
+    @Inject
+    protected SnapshotsValidator snapshotsValidator;
 
     /**
      * Constructor for command creation when compensation is applied on startup
@@ -91,12 +97,12 @@ public class HibernateVmCommand<T extends VmOperationParameterBase> extends VmOp
     @Override
     public Guid getStorageDomainId() {
         if (cachedStorageDomainId == null) {
-            List<DiskImage> diskDummiesForMemSize = MemoryUtils.createDiskDummies(
+            MemoryDisks diskDummiesForMemSize = MemoryUtils.createDiskDummies(
                     vmOverheadCalculator.getSnapshotMemorySizeInBytes(getVm()),
                     MemoryUtils.METADATA_SIZE_IN_BYTES);
             StorageDomain storageDomain = memoryStorageHandler.findStorageDomainForMemory(
                     getStoragePoolId(), diskDummiesForMemSize,
-                    DisksFilter.filterImageDisks(diskDao.getAllForVm(getVmId())), getVm());
+                    DisksFilter.filterImageDisks(diskDao.getAllForVm(getVmId())), getVm(), getUserId());
             if (storageDomain != null) {
                 cachedStorageDomainId = storageDomain.getId();
             }
@@ -155,17 +161,17 @@ public class HibernateVmCommand<T extends VmOperationParameterBase> extends VmOp
     @Override
     public AuditLogType getAuditLogTypeValue() {
         switch (getActionState()) {
-        case EXECUTE:
-            return getSucceeded() ? AuditLogType.USER_SUSPEND_VM : AuditLogType.USER_FAILED_SUSPEND_VM;
-        case END_SUCCESS:
-            if (getSucceeded()) {
-                // no event should be displayed if the command ended successfully, the monitoring will log it
-                return AuditLogType.UNASSIGNED;
-            }
-        case END_FAILURE:
-        default:
-            return hibernateVdsProblematic ? AuditLogType.USER_SUSPEND_VM_FINISH_FAILURE_WILL_TRY_AGAIN
-                    : AuditLogType.USER_SUSPEND_VM_FINISH_FAILURE;
+            case EXECUTE:
+                return getSucceeded() ? AuditLogType.USER_SUSPEND_VM : AuditLogType.USER_FAILED_SUSPEND_VM;
+            case END_SUCCESS:
+                if (getSucceeded()) {
+                    // no event should be displayed if the command ended successfully, the monitoring will log it
+                    return AuditLogType.UNASSIGNED;
+                }
+            case END_FAILURE:
+            default:
+                return hibernateVdsProblematic ? AuditLogType.USER_SUSPEND_VM_FINISH_FAILURE_WILL_TRY_AGAIN
+                        : AuditLogType.USER_SUSPEND_VM_FINISH_FAILURE;
         }
     }
 
@@ -182,7 +188,7 @@ public class HibernateVmCommand<T extends VmOperationParameterBase> extends VmOp
         }
 
         if (!canRunActionOnNonManagedVm()) {
-           return false;
+            return false;
         }
 
         VMStatus vmStatus = getVm().getStatus();
@@ -218,6 +224,20 @@ public class HibernateVmCommand<T extends VmOperationParameterBase> extends VmOp
 
         if (getStorageDomainId() == null) {
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_NO_SUITABLE_DOMAIN_FOUND);
+        }
+        VmValidator vmValidator = new VmValidator(getVm());
+        if (!validate(vmValidator.vmNotHavingScsiPassthroughDevices())) {
+            return false;
+        }
+
+        if (!validate(vmValidator.vmNotHavingNvdimmDevices())) {
+            return false;
+        }
+
+        // we block hibernating a vm in preview mode because there is a bug that
+        // would result in keeping the hibernation metadata volume
+        if (!validate(snapshotsValidator.vmNotInPreview(getVm().getId()))) {
+            return false;
         }
 
         return true;
@@ -269,7 +289,7 @@ public class HibernateVmCommand<T extends VmOperationParameterBase> extends VmOp
     private DiskImage getMemoryDumpDisk(List<ActionReturnValue> returnValues) {
         for (ActionReturnValue returnValue : returnValues) {
             DiskImage disk = returnValue.getActionReturnValue();
-            if (disk.getSize() != MemoryUtils.METADATA_SIZE_IN_BYTES) {
+            if (disk.getContentType() == DiskContentType.MEMORY_DUMP_VOLUME) {
                 return disk;
             }
         }
@@ -280,7 +300,7 @@ public class HibernateVmCommand<T extends VmOperationParameterBase> extends VmOp
     private DiskImage getMemoryMetadataDisk(List<ActionReturnValue> returnValues) {
         for (ActionReturnValue returnValue : returnValues) {
             DiskImage disk = returnValue.getActionReturnValue();
-            if (disk.getSize() == MemoryUtils.METADATA_SIZE_IN_BYTES) {
+            if (disk.getContentType() == DiskContentType.MEMORY_METADATA_VOLUME) {
                 return disk;
             }
         }

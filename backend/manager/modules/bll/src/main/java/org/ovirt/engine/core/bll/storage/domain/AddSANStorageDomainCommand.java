@@ -47,8 +47,8 @@ public class AddSANStorageDomainCommand<T extends AddSANStorageDomainParameters>
         // status to be locked
         getStorageDomain().setStorage("");
         addStorageDomainInDb();
-        if(StringUtils.isEmpty(storage)) {
-              storage = createVG();
+        if (StringUtils.isEmpty(storage)) {
+            storage = createVG();
         }
         getStorageDomain().setStorage(storage);
         if (StringUtils.isNotEmpty(getStorageDomain().getStorage()) && addStorageDomainInIrs()) {

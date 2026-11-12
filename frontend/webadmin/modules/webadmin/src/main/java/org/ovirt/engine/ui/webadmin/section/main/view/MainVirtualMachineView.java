@@ -192,7 +192,7 @@ public class MainVirtualMachineView extends AbstractMainWithDetailsTableView<VM,
         AbstractTextColumn<VM> graphicsColumn = new AbstractEnumColumn<VM, UnitVmModel.GraphicsTypes>() {
             @Override
             protected UnitVmModel.GraphicsTypes getRawValue(VM vm) {
-                if ((vm.getStatus() == VMStatus.Down) || (vm.getStatus() == VMStatus.ImageLocked)) {
+                if (vm.getStatus() == VMStatus.Down || vm.getStatus() == VMStatus.ImageLocked) {
                     return UnitVmModel.GraphicsTypes.NONE;
                 }
 
@@ -232,6 +232,28 @@ public class MainVirtualMachineView extends AbstractMainWithDetailsTableView<VM,
         };
         namespaceColumn.makeSortable(VmConditionFieldAutoCompleter.NAMESPACE);
         getTable().addColumn(namespaceColumn, constants.k8s_namespace(), "120px"); //$NON-NLS-1$
-        getTable().table.setColumnVisible(namespaceColumn, false);
+        getTable().hideColumnByDefault(namespaceColumn);
+
+        AbstractTextColumn<VM> vCpusColumn = new AbstractTextColumn<VM>() {
+            @Override
+            public String getValue(VM object) {
+                return Integer.toString(object.getNumOfCpus());
+            }
+        };
+        getTable().addColumn(vCpusColumn, constants.vcpus(), "80px"); //$NON-NLS-1$
+        vCpusColumn.makeSortable(VmConditionFieldAutoCompleter.VCPUS);
+        getTable().hideColumnByDefault(vCpusColumn);
+
+        AbstractTextColumn<VM> definedMemoryColumn = new AbstractTextColumn<VM>() {
+            @Override
+            public String getValue(VM object) {
+                return object.getMemSizeMb() + " MB"; //$NON-NLS-1$
+            }
+        };
+        // 'defined memory (MB)' would be too long for a header
+        getTable().addColumn(definedMemoryColumn, constants.memoryVmMB(), "100px"); //$NON-NLS-1$
+        definedMemoryColumn.makeSortable(VmConditionFieldAutoCompleter.MEMORY);
+        getTable().hideColumnByDefault(definedMemoryColumn);
+
     }
 }

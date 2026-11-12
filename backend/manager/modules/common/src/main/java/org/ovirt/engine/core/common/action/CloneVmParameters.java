@@ -1,5 +1,6 @@
 package org.ovirt.engine.core.common.action;
 
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -16,9 +17,14 @@ public class CloneVmParameters extends AddVmParameters {
     private String newName;
     private Map<Guid, Map<Guid, DiskImage>> srcToDstChainMap = new HashMap<>();
     private Guid destStorageDomainId;
-    private CloneVmStage stage = CloneVmStage.COPY_DISKS;
+    private CloneVmStage stage = CloneVmStage.CREATE_VM_SNAPSHOT;
+    private Guid sourceSnapshotId;
+    private Collection<VmInterfacesModifyParameters.VnicWithProfile> vnicsWithProfiles;
 
     private boolean edited;
+
+    // For internal use only
+    private VM editedVm;
 
     public CloneVmParameters() {
 
@@ -59,6 +65,17 @@ public class CloneVmParameters extends AddVmParameters {
         this.edited = edited;
     }
 
+    public VM getEditedVm() {
+        return editedVm;
+    }
+
+    /**
+     * This method is for internal use only, disregard in API.
+     */
+    public void setEditedVm(VM editedVm) {
+        this.editedVm = editedVm;
+    }
+
     public Guid getDestStorageDomainId() {
         return destStorageDomainId;
     }
@@ -71,7 +88,7 @@ public class CloneVmParameters extends AddVmParameters {
         return srcToDstChainMap;
     }
 
-    public void setSrcToDstChainMap(Map<Guid, Map<Guid, DiskImage>>  srcToDstChainMap) {
+    public void setSrcToDstChainMap(Map<Guid, Map<Guid, DiskImage>> srcToDstChainMap) {
         this.srcToDstChainMap = srcToDstChainMap;
     }
 
@@ -83,8 +100,28 @@ public class CloneVmParameters extends AddVmParameters {
         this.stage = stage;
     }
 
+    public Guid getSourceSnapshotId() {
+        return sourceSnapshotId;
+    }
+
+    public void setSourceSnapshotId(Guid sourceSnapshotId) {
+        this.sourceSnapshotId = sourceSnapshotId;
+    }
+
+    public Collection<VmInterfacesModifyParameters.VnicWithProfile> getVnicsWithProfiles() {
+        return vnicsWithProfiles;
+    }
+
+    public void setVnicsWithProfiles(Collection<VmInterfacesModifyParameters.VnicWithProfile> vnicsWithProfiles) {
+        this.vnicsWithProfiles = vnicsWithProfiles;
+    }
+
     public enum CloneVmStage {
+        CREATE_VM_SNAPSHOT,
         COPY_DISKS,
-        CREATE_SNAPSHOTS
+        CLONE_VM,
+        CREATE_SNAPSHOTS,
+        REMOVE_VM_SNAPSHOT,
+        MODIFY_VM_INTERFACES
     }
 }

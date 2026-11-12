@@ -4,56 +4,63 @@ import org.ovirt.engine.core.common.businessentities.SerialNumberPolicy;
 import org.ovirt.engine.core.common.businessentities.VmBase;
 import org.ovirt.engine.core.common.businessentities.VmResumeBehavior;
 import org.ovirt.engine.core.compat.Guid;
+import org.ovirt.engine.ui.uicommonweb.builders.MigrationsModelToEntityBuilder;
 import org.ovirt.engine.ui.uicommonweb.dataprovider.AsyncDataProvider;
 import org.ovirt.engine.ui.uicommonweb.models.vms.IconCache;
 import org.ovirt.engine.ui.uicommonweb.models.vms.UnitVmModel;
 
 /**
- * Builder which maps VmBase properties (VM or Template) that are to be persisted on all VM operations - even in
- * {@link org.ovirt.engine.ui.uicommonweb.models.pools.PoolListModel#buildVmOnSave}
+ * Builder which maps VmBase properties (VM or Template) that are to be persisted on all VM operations -
+ * New/Edit of VMs, Templates and Pools.
  * If you are adding Yet Another VmBase Field, in most cases this will be the place to add the mapping.
  * If you are adding a more specific property you may need to add it instead to {@link CommonUnitToVmBaseBuilder} or
  * {@link FullUnitToVmBaseBuilder}
  *
- * This is not shared with the instance types. If you are adding a field which is supposed to be used also by instance types,
- * please add it to {@link HwOnlyCoreUnitToVmBaseBuilder}
+ * This is not shared with the instance types. Fields used also by the instance types are
+ * in {@link HwOnlyCoreUnitToVmBaseBuilder}. However, since the instance types are deprecated,
+ * no new fields should be added there.
  */
 public class CoreUnitToVmBaseBuilder extends HwOnlyCoreUnitToVmBaseBuilder {
 
+    public CoreUnitToVmBaseBuilder() {
+        // the policy is copied for VMs and Templates in MigrationOptionsUnitToVmBaseBuilder
+        super(
+                new MigrationsModelToEntityBuilder<UnitVmModel, VmBase>(false),
+                new CpuPinningUnitToVmBaseBuilder());
+    }
+
     @Override
-    protected void build(UnitVmModel model, VmBase vm) {
-        super.build(model, vm);
-        vm.setAllowConsoleReconnect(model.getAllowConsoleReconnect().getEntity());
-        vm.setVmType(model.getVmType().getSelectedItem());
+    protected void postBuild(UnitVmModel model, VmBase vm) {
+        super.postBuild(model, vm);
+        // Header
         vm.setClusterId(model.getSelectedCluster() != null ? model.getSelectedCluster().getId() : null);
+        vm.setVmType(model.getVmType().getSelectedItem());
+        vm.setOsId(model.getOSType().getSelectedItem());
+        vm.setBiosType(model.getBiosType().getSelectedItem());
+        // General
+        vm.setDeleteProtected(model.getIsDeleteProtected().getEntity());
+        // System
+        vm.setCustomCompatibilityVersion(model.getCustomCompatibilityVersion().getSelectedItem());
         vm.setTimeZone(model.getTimeZone().getIsAvailable() && model.getTimeZone().getSelectedItem() != null ? model.getTimeZone()
                 .getSelectedItem().getTimeZoneKey() : ""); //$NON-NLS-1$
-        vm.setIsoPath(model.getCdImage().getIsChangable() && model.getCdImage().getSelectedItem() != null ?
-                model.getCdImage().getSelectedItem().getRepoImageId() : ""); //$NON-NLS-1$
-        vm.setDeleteProtected(model.getIsDeleteProtected().getEntity());
-        vm.setOsId(model.getOSType().getSelectedItem());
-        Guid largeIconId = IconCache.getInstance().getId(model.getIcon().getEntity().getIcon());
-        vm.setLargeIconId(largeIconId);
-        vm.setSmallIconId(model.getIcon().getEntity().getSmallIconId() != null
-                ? model.getIcon().getEntity().getSmallIconId()
-                : AsyncDataProvider.getInstance().isCustomIconId(largeIconId)
-                        ? null
-                        : AsyncDataProvider.getInstance().getSmallByLargeOsDefaultIconId(largeIconId));
-        vm.setVncKeyboardLayout(model.getVncKeyboardLayout().getSelectedItem());
         vm.setSerialNumberPolicy(model.getSerialNumberPolicy().getSelectedItem());
         if (SerialNumberPolicy.CUSTOM.equals(model.getSerialNumberPolicy().getSelectedItem())) {
             vm.setCustomSerialNumber(model.getCustomSerialNumber().getEntity());
         } else {
             vm.setCustomSerialNumber(null);
         }
-        vm.setBootMenuEnabled(model.getBootMenuEnabled().getEntity());
+        // Console
+        vm.setSsoMethod(model.extractSelectedSsoMethod());
+        vm.setVncKeyboardLayout(model.getVncKeyboardLayout().getSelectedItem());
+        vm.setConsoleDisconnectAction(model.getConsoleDisconnectAction().getSelectedItem());
+        vm.setConsoleDisconnectActionDelay(model.getConsoleDisconnectActionDelay().getEntity());
         vm.setSpiceFileTransferEnabled(Boolean.TRUE.equals(model.getSpiceFileTransferEnabled().getEntity()));
         vm.setSpiceCopyPasteEnabled(Boolean.TRUE.equals(model.getSpiceCopyPasteEnabled().getEntity()));
-        vm.setAutoConverge(model.getAutoConverge().getSelectedItem());
-        vm.setMigrateCompressed(model.getMigrateCompressed().getSelectedItem());
-        vm.setMigrateEncrypted(model.getMigrateEncrypted().getSelectedItem());
-        vm.setCustomProperties(model.getCustomPropertySheet().serialize());
-        vm.setConsoleDisconnectAction(model.getConsoleDisconnectAction().getSelectedItem());
+        vm.setAllowConsoleReconnect(model.getAllowConsoleReconnect().getEntity());
+        // Host
+        vm.setUseHostCpuFlags(model.getHostCpu().getEntity());
+        vm.setUseTscFrequency(model.getTscFrequency().getEntity());
+        // High availability
         VmResumeBehavior selectedResumeBehavior = model.getResumeBehavior().getSelectedItem();
         if (selectedResumeBehavior == null) {
             // the default
@@ -61,11 +68,27 @@ public class CoreUnitToVmBaseBuilder extends HwOnlyCoreUnitToVmBaseBuilder {
         } else {
             vm.setResumeBehavior(selectedResumeBehavior);
         }
+        // Resource allocation
+        if (model.getCpuProfiles().getSelectedItem() != null) {
+            vm.setCpuProfileId(model.getCpuProfiles().getSelectedItem().getId());
+        }
         if (model.getCpuSharesAmount().getIsAvailable() && model.getCpuSharesAmount().getEntity() != null) {
             vm.setCpuShares(model.getCpuSharesAmount().getEntity());
         }
-        vm.setCustomCompatibilityVersion(model.getCustomCompatibilityVersion().getSelectedItem());
-        vm.setUseHostCpuFlags(model.getHostCpu().getEntity());
-        vm.setUseTscFrequency(model.getTscFrequency().getEntity());
+        vm.setMultiQueuesEnabled(model.getMultiQueues().getEntity());
+        // Boot
+        vm.setIsoPath(model.getCdImage().getIsChangable() && model.getCdImage().getSelectedItem() != null ?
+                model.getCdImage().getSelectedItem().getRepoImageId() : ""); //$NON-NLS-1$
+        vm.setBootMenuEnabled(model.getBootMenuEnabled().getEntity());
+        // Icons
+        Guid largeIconId = IconCache.getInstance().getId(model.getIcon().getEntity().getIcon());
+        vm.setLargeIconId(largeIconId);
+        vm.setSmallIconId(model.getIcon().getEntity().getSmallIconId() != null
+                ? model.getIcon().getEntity().getSmallIconId()
+                : AsyncDataProvider.getInstance().isCustomIconId(largeIconId)
+                        ? null
+                        : AsyncDataProvider.getInstance().getSmallByLargeOsDefaultIconId(largeIconId));
+        // Custom Properties
+        vm.setCustomProperties(model.getCustomPropertySheet().serialize());
     }
 }

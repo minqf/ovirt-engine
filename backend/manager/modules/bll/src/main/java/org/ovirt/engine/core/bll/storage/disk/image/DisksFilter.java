@@ -81,6 +81,11 @@ public class DisksFilter {
     public static final Predicate<Disk> ONLY_PLUGGED = Disk::getPlugged;
 
     /**
+     * Filters out all disk snapshots
+     */
+    public static final Predicate<Disk> ONLY_DISK_SNAPSHOT = Disk::isDiskSnapshot;
+
+    /**
      * This method filters a list of disks retaining only disk images and continues to filter the list by the
      * specified predicates.
      *
@@ -143,7 +148,7 @@ public class DisksFilter {
      */
     @SafeVarargs
     private static <T extends Disk> List<T> filterDisksByStorageType
-        (Collection<? extends Disk> disks, DiskStorageTypePredicate<T> storageTypePredicate, Predicate<Disk>... predicates) {
+    (Collection<? extends Disk> disks, DiskStorageTypePredicate<T> storageTypePredicate, Predicate<Disk>... predicates) {
         Predicate<Disk> chain = Stream.concat(Stream.of(storageTypePredicate), Arrays.stream(predicates)).reduce(Predicate::and).orElse(p -> true);
 
         return disks.stream().filter(chain)

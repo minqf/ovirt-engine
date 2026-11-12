@@ -42,26 +42,26 @@ public class UriTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-            WWW_REDHAT_COM,
-            WWW_REDHAT_COM_S,
-            WWW_REDHAT_COM_MAIN,
-            WWW_REDHAT_COM_MAIN_S,
-            WWW_REDHAT_COM_MAIN_INDEX_HTML,
-            HTTP_WWW_REDHAT_COM,
-            HTTP_WWW_REDHAT_COM_S,
-            HTTP_WWW_REDHAT_COM_MAIN,
-            HTTP_WWW_REDHAT_COM_MAIN1,
-            HTTP_WWW_REDHAT_COM_MAIN_INDEX_HTML,
-            WWW_REDHAT_COM_80,
-            WWW_REDHAT_COM_80_S,
-            WWW_REDHAT_COM_80_MAIN,
-            WWW_REDHAT_COM_80_MAIN_S,
-            WWW_REDHAT_COM_80_MAIN_INDEX_HTML,
-            HTTP_WWW_REDHAT_COM_80,
-            HTTP_WWW_REDHAT_COM_80_S,
-            HTTP_WWW_REDHAT_COM_80_MAIN,
-            HTTP_WWW_REDHAT_COM_80_MAIN_S,
-            HTTP_WWW_REDHAT_COM_80_MAIN_INDEX_HTML
+        WWW_REDHAT_COM,
+        WWW_REDHAT_COM_S,
+        WWW_REDHAT_COM_MAIN,
+        WWW_REDHAT_COM_MAIN_S,
+        WWW_REDHAT_COM_MAIN_INDEX_HTML,
+        HTTP_WWW_REDHAT_COM,
+        HTTP_WWW_REDHAT_COM_S,
+        HTTP_WWW_REDHAT_COM_MAIN,
+        HTTP_WWW_REDHAT_COM_MAIN1,
+        HTTP_WWW_REDHAT_COM_MAIN_INDEX_HTML,
+        WWW_REDHAT_COM_80,
+        WWW_REDHAT_COM_80_S,
+        WWW_REDHAT_COM_80_MAIN,
+        WWW_REDHAT_COM_80_MAIN_S,
+        WWW_REDHAT_COM_80_MAIN_INDEX_HTML,
+        HTTP_WWW_REDHAT_COM_80,
+        HTTP_WWW_REDHAT_COM_80_S,
+        HTTP_WWW_REDHAT_COM_80_MAIN,
+        HTTP_WWW_REDHAT_COM_80_MAIN_S,
+        HTTP_WWW_REDHAT_COM_80_MAIN_INDEX_HTML
     })
     public void createByCandidate(String uriCandidate) {
         Uri uri = new Uri(uriCandidate);
@@ -90,7 +90,7 @@ public class UriTest {
                 Arguments.of(HTTPS, WWW_REDHAT_COM_80, SLASH, "https://www.redhat.com:80/"), //$NON-NLS-1$
                 Arguments.of(HTTP, WWW_REDHAT_COM_80, MAIN, HTTP_WWW_REDHAT_COM_80_MAIN),
                 Arguments.of(HTTP, WWW_REDHAT_COM_80, MAIN_S, HTTP_WWW_REDHAT_COM_80_MAIN_S),
-                Arguments.of(null,  WWW_REDHAT_COM, MAIN_INDEX_HTML, WWW_REDHAT_COM_MAIN_INDEX_HTML),
+                Arguments.of(null, WWW_REDHAT_COM, MAIN_INDEX_HTML, WWW_REDHAT_COM_MAIN_INDEX_HTML),
                 Arguments.of(HTTP, null, MAIN_INDEX_HTML, null),
                 Arguments.of(HTTP, "www.redhat:80.com", MAIN_INDEX_HTML, null), //$NON-NLS-1$
                 Arguments.of(HTTP, WWW_REDHAT_COM, null, HTTP_WWW_REDHAT_COM)

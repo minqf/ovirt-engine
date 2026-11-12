@@ -37,7 +37,7 @@ public abstract class AbstractBackendStorageDomainContentsResource<C extends Bas
     }
 
     public Guid getStoragePoolId(Action action) {
-        if(action.getStorageDomain().isSetId()){
+        if (action.getStorageDomain().isSetId()) {
             return getDataCenterId(Guid.createGuidFromStringDefaultEmpty(action.getStorageDomain().getId()));
         } else {
             return getDataCenterId(lookupStorageDomainIdByName(action.getStorageDomain().getName()));
@@ -89,15 +89,15 @@ public abstract class AbstractBackendStorageDomainContentsResource<C extends Bas
         Collection<Q> entities = new ArrayList<>();
 
         switch (storageDomainType) {
-        case Data:
-        case Master:
-            entities = getEntitiesFromDataDomain();
-            break;
-        case ImportExport:
-            entities = getEntitiesFromExportDomain();
-            break;
-        case ISO:
-        case Unknown:
+            case Data:
+            case Master:
+                entities = getEntitiesFromDataDomain();
+                break;
+            case ImportExport:
+                entities = getEntitiesFromExportDomain();
+                break;
+            case ISO:
+            case Unknown:
         }
 
         List<R> collection = new ArrayList<>();

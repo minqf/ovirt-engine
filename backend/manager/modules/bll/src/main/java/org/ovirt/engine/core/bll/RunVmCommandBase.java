@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
+import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 
@@ -35,6 +36,7 @@ import org.ovirt.engine.core.common.businessentities.StorageServerConnections;
 import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VMStatus;
+import org.ovirt.engine.core.common.businessentities.VdsCpuUnit;
 import org.ovirt.engine.core.common.businessentities.VmDeviceId;
 import org.ovirt.engine.core.common.businessentities.VmStatic;
 import org.ovirt.engine.core.common.businessentities.network.Network;
@@ -49,6 +51,7 @@ import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.job.Job;
 import org.ovirt.engine.core.common.job.JobExecutionStatus;
 import org.ovirt.engine.core.common.locks.LockingGroup;
+import org.ovirt.engine.core.common.utils.CpuPinningHelper;
 import org.ovirt.engine.core.common.utils.Pair;
 import org.ovirt.engine.core.common.vdscommands.StorageServerConnectionManagementVDSParameters;
 import org.ovirt.engine.core.common.vdscommands.VDSCommandType;
@@ -60,6 +63,7 @@ import org.ovirt.engine.core.dao.provider.HostProviderBindingDao;
 import org.ovirt.engine.core.dao.provider.ProviderDao;
 import org.ovirt.engine.core.utils.threadpool.ThreadPoolUtil;
 import org.ovirt.engine.core.vdsbroker.ResourceManager;
+import org.ovirt.engine.core.vdsbroker.VdsManager;
 import org.ovirt.engine.core.vdsbroker.VdsMonitor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -83,7 +87,7 @@ public abstract class RunVmCommandBase<T extends VmOperationParameterBase> exten
     @Inject
     protected SchedulingManager schedulingManager;
     @Inject
-    private ResourceManager resourceManager;
+    protected ResourceManager resourceManager;
     @Inject
     protected JobRepository jobRepository;
     @Inject
@@ -191,6 +195,8 @@ public abstract class RunVmCommandBase<T extends VmOperationParameterBase> exten
                 jobRepository.closeCompletedJobSteps(job.getId(), JobExecutionStatus.FAILED);
             }
         }
+        // Re-initiate the VM configuration in order to persist it on re-run attempts.
+        init();
         executeAction();
     }
 
@@ -213,7 +219,7 @@ public abstract class RunVmCommandBase<T extends VmOperationParameterBase> exten
     protected void processVmOnDown() {
         ThreadPoolUtil.execute(() -> runInternalActionWithTasksContext(
                 ActionType.ProcessDownVm,
-                new ProcessDownVmParameters(getVm().getId())
+                new ProcessDownVmParameters(getVm().getId(), getVdsId())
         ));
     }
 
@@ -259,13 +265,13 @@ public abstract class RunVmCommandBase<T extends VmOperationParameterBase> exten
     protected void endExecutionMonitoring() {
         ExecutionContext executionContext = getExecutionContext();
         switch (executionContext.getExecutionMethod()) {
-        case AsJob:
-            executionHandler.endJob(executionContext, false);
-            break;
-        case AsStep:
-            executionHandler.endStep(executionContext, executionContext.getStep(), false);
-            break;
-        default:
+            case AsJob:
+                executionHandler.endJob(executionContext, false);
+                break;
+            case AsStep:
+                executionHandler.endStep(executionContext, executionContext.getStep(), false);
+                break;
+            default:
         }
     }
 
@@ -395,4 +401,27 @@ public abstract class RunVmCommandBase<T extends VmOperationParameterBase> exten
             }
         }
     }
+
+    protected void addNumaPinningForDedicated(Guid vdsId) {
+        String numaPinningString = vmHandler.createNumaPinningForExclusiveCpuPinning(getVm(), vdsId);
+        getVm().setCurrentNumaPinning(numaPinningString);
+    }
+
+    protected void setExclusiveCpuPinning(VdsManager vdsManager) {
+        if (!getVm().getCpuPinningPolicy().isExclusive()) {
+            return;
+        }
+        getVm().setCurrentCpuPinning(getExclusiveCpuPinning(vdsManager));
+    }
+
+    protected String getExclusiveCpuPinning(VdsManager vdsManager) {
+        List<VdsCpuUnit> vdsCpuUnits = vdsManager.getCpuTopology().stream()
+                .filter(cpu -> cpu.getVmIds().contains(getVmId())).sorted().collect(Collectors.toList());
+        return CpuPinningHelper.createCpuPinningString(vdsCpuUnits, getVm().getCpuPinningPolicy());
+    }
+
+    protected VdsManager getVdsManager() {
+        return resourceManager.getVdsManager(getVdsId());
+    }
+
 }

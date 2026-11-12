@@ -176,21 +176,45 @@ class FileLocations(object):
         OVIRT_ENGINE_PKIDIR,
         '.truststore',
     )
-    OVIRT_ENGINE_PKI_CA_TEMPLATE = os.path.join(
+    OVIRT_ENGINE_PKI_CA_TEMPLATE_IN = os.path.join(
         OVIRT_ENGINE_PKIDIR,
         'cacert.template.in',
     )
-    OVIRT_ENGINE_PKI_CERT_TEMPLATE = os.path.join(
+    OVIRT_ENGINE_PKI_CERT_TEMPLATE_IN = os.path.join(
         OVIRT_ENGINE_PKIDIR,
         'cert.template.in',
+    )
+    OVIRT_ENGINE_PKI_CA_TEMPLATE = os.path.join(
+        OVIRT_ENGINE_PKIDIR,
+        'cacert.template',
+    )
+    OVIRT_ENGINE_PKI_QEMU_CA_TEMPLATE = os.path.join(
+        OVIRT_ENGINE_PKIDIR,
+        'qemu-cacert.template',
+    )
+    OVIRT_ENGINE_PKI_CERT_TEMPLATE = os.path.join(
+        OVIRT_ENGINE_PKIDIR,
+        'cert.template',
+    )
+    OVIRT_ENGINE_PKI_QEMU_CERT_TEMPLATE = os.path.join(
+        OVIRT_ENGINE_PKIDIR,
+        'qemu-cert.template',
     )
     OVIRT_ENGINE_PKI_CA_CERT_CONF = os.path.join(
         OVIRT_ENGINE_PKIDIR,
         'cacert.conf',
     )
+    OVIRT_ENGINE_PKI_QEMU_CA_CERT_CONF = os.path.join(
+        OVIRT_ENGINE_PKIDIR,
+        'qemu-cacert.conf',
+    )
     OVIRT_ENGINE_PKI_CERT_CONF = os.path.join(
         OVIRT_ENGINE_PKIDIR,
         'cert.conf',
+    )
+    OVIRT_ENGINE_PKI_QEMU_CERT_CONF = os.path.join(
+        OVIRT_ENGINE_PKIDIR,
+        'qemu-cert.conf',
     )
     OVIRT_ENGINE_PKI_ENGINE_CA_KEY = os.path.join(
         OVIRT_ENGINE_PKIPRIVATEDIR,
@@ -204,53 +228,10 @@ class FileLocations(object):
         OVIRT_ENGINE_BINDIR,
         'ovirt-engine-crypto-tool.sh',
     )
-
-    NFS_RHEL_CONFIG = os.path.join(
-        SYSCONFDIR,
-        'sysconfig',
-        'nfs',
-    )
-    NFS_EXPORT_FILE = os.path.join(
-        SYSCONFDIR,
-        'exports',
-    )
-    NFS_EXPORT_DIR = os.path.join(
-        SYSCONFDIR,
-        'exports.d',
-    )
-
     NSS_DB_DIR = os.path.join(
         SYSCONFDIR,
         'pki',
         'nssdb',
-    )
-
-    OVIRT_NFS_EXPORT_FILE = os.path.join(
-        NFS_EXPORT_DIR,
-        'ovirt-engine-iso-domain.exports'
-    )
-
-    ISO_DOMAIN_DEFAULT_NFS_MOUNT_POINT = os.path.join(
-        LOCALSTATEDIR,
-        'lib',
-        'exports',
-        'iso',
-    )
-
-    ANSIBLE_RUNNER_SERVICE_SELINUX = os.path.join(
-        OVIRT_ENGINE_DATADIR,
-        'selinux',
-    )
-
-    ANSIBLE_RUNNER_SERVICE_CONF = os.path.join(
-        SYSCONFDIR,
-        'ansible-runner-service',
-        'config.yaml',
-    )
-
-    ANSIBLE_RUNNER_SERVICE_PROJECT = os.path.join(
-        OVIRT_ENGINE_DATADIR,
-        'ansible-runner-service-project',
     )
 
     DIR_HTTPD = os.path.join(
@@ -261,12 +242,6 @@ class FileLocations(object):
     DIR_WWW = os.path.join(
         LOCALSTATEDIR,
         'www',
-    )
-
-    HTTPD_RUNNER_WSGI_SCRIPT = os.path.join(
-        DIR_WWW,
-        'runnner',
-        'runner.wsgi',
     )
 
     HTTPD_CONF_ANSIBLE_RUNNER_SERVICE = os.path.join(
@@ -313,6 +288,12 @@ class FileLocations(object):
     OVIRT_ENGINE_SERVICE_CONFIG_SSO = os.path.join(
         OVIRT_ENGINE_SERVICE_CONFIGD,
         '11-setup-sso.conf',
+    )
+    # TODO: Make ovirt-engine-keycloak use
+    # OVIRT_ENGINE_SERVICE_CONFIG_KEYCLOAK from here instead of its own copy.
+    OVIRT_ENGINE_SERVICE_CONFIG_KEYCLOAK = os.path.join(
+        OVIRT_ENGINE_SERVICE_CONFIGD,
+        '12-setup-keycloak.conf'
     )
 
     OVIRT_ENGINE_NOTIFIER_SERVICE_CONFIGD = (
@@ -365,14 +346,10 @@ class Defaults(object):
     DEFAULT_SYSTEM_MEMCHECK_RECOMMENDED_MB = 16384
     DEFAULT_SYSTEM_MEMCHECK_THRESHOLD = 90
 
-    DEFAULT_CONFIG_APPLICATION_MODE = 'Both'
+    DEFAULT_CONFIG_APPLICATION_MODE = 'Virt'
     DEFAULT_CONFIG_STORAGE_IS_LOCAL = False
 
-    DEFAULT_ISO_DOMAIN_NAME = 'ISO_DOMAIN'
-
     DEFAULT_CLEAR_TASKS_WAIT_PERIOD = 20
-
-    DEFAULT_ANSIBLE_RUNNER_SERVICE_PORT = '50001'
 
     DEFAULT_DB_HOST = 'localhost'
     DEFAULT_DB_PORT = 5432
@@ -403,20 +380,19 @@ class Defaults(object):
 @util.export
 class Stages(object):
 
-    SYSTEM_NFS_CONFIG_AVAILABLE = 'osetup.system.nfs.available'
+    CONFIG_EXTENSIONS_UPGRADE = 'osetup.config.extensions.upgrade'
 
-    CONFIG_ISO_DOMAIN_AVAILABLE = 'osetup.config.iso_domain.available'
     CONFIG_AAA_ADMIN_USER_SETUP = 'osetup.config.aaa.adminuser.setup'
 
     CORE_ENABLE = 'osetup.engine.core.enable'
 
     MEMORY_CHECK = 'osetup.memory.check'
 
+    CA_UPGRADE = 'osetup.pki.ca.upgrade'
     CA_AVAILABLE = 'osetup.pki.ca.available'
     QEMU_CA_AVAILABLE = 'osetup.pki.qemu.ca.available'
 
     POSTGRES_PROVISIONING_ALLOWED = 'osetup.engine.provisioning.pgsql.allow'
-    NFS_CONFIG_ALLOWED = 'osetup.engine.system.nfs.allow'
     APPMODE_ALLOWED = 'osetup.engine.config.appmode.allow'
     KDUMP_ALLOW = 'osetup.engine.kdump.allow'
     CONNECTION_ALLOW = 'osetup.engine.db.connection.allow'
@@ -426,6 +402,7 @@ class Stages(object):
     OVN_SERVICES_RESTART = 'osetup.ovn.services.restart'
     OVN_PROVIDER_SERVICE_RESTART = 'osetup.ovn.provider.service.restart'
     OVN_PROVIDER_OVN_DB = 'osetup.ovn.provider.db'
+    OVN_PROVIDER_CREDENTIALS_CUSTOMIZATION = 'osetup.ovn.provider.credentials'
 
     MAC_POOL_DB = 'osetup.macpool.db'
 
@@ -451,8 +428,6 @@ class Const(object):
     FENCE_KDUMP_LISTENER_SERVICE_NAME = 'ovirt-fence-kdump-listener'
 
     PKI_PASSWORD = 'mypass'
-    MINIMUM_SPACE_ISODOMAIN_MB = 350
-    ISO_DOMAIN_IMAGE_UID = '11111111-1111-1111-1111-111111111111'
 
     ENGINE_URI = '/ovirt-engine'
     ENGINE_PKI_CA_URI = _pki_ca_uri(ENGINE_URI, 'ca-certificate')
@@ -480,6 +455,7 @@ class Const(object):
             DEK.FILTER: EngineDBEnv.FILTER,
             DEK.RESTORE_JOBS: EngineDBEnv.RESTORE_JOBS,
             DEK.INVALID_CONFIG_ITEMS: EngineDBEnv.INVALID_CONFIG_ITEMS,
+            DEK.CREDS_Q_NAME_FUNC: engine_question_name,
         }
 
     @classproperty
@@ -496,6 +472,10 @@ class Const(object):
             DEK.FILTER: Defaults.DEFAULT_DB_FILTER,
             DEK.RESTORE_JOBS: Defaults.DEFAULT_DB_RESTORE_JOBS,
         }
+
+
+def engine_question_name(what):
+    return f'OVESETUP_ENGINE_DB_{what.upper()}'
 
 
 @util.export
@@ -557,6 +537,7 @@ class EngineDBEnv(object):
             oengcommcons.ProvisioningEnv.POSTGRES_PROVISIONING_ENABLED
         ),
         is_secret=True,
+        asked_on=(engine_question_name(DEK.PASSWORD),),
     )
     def PASSWORD(self):
         return 'OVESETUP_DB/password'
@@ -647,34 +628,6 @@ class SystemEnv(object):
     MEMCHECK_RECOMMENDED_MB = 'OVESETUP_SYSTEM/memCheckRecommendedMB'
     MEMCHECK_THRESHOLD = 'OVESETUP_SYSTEM/memCheckThreshold'
 
-    NFS_SERVICE_NAME = 'OVESETUP_SYSTEM/nfsServiceName'
-
-    @osetupattrs(
-        answerfile=True,
-        summary=True,
-        description=_('NFS setup'),
-        summary_condition=lambda env: env.get(
-            SystemEnv.NFS_CONFIG_ENABLED
-        ),
-    )
-    def NFS_CONFIG_ENABLED(self):
-        return 'OVESETUP_SYSTEM/nfsConfigEnabled'
-
-    #
-    # In 3.3/3.4.0 the NFS_CONFIG_ENABLED was in postinstall file
-    # and now removed.
-    # At first upgrade from these versions we should not consider
-    # its value from environment.
-    # This variable will not be available at these versions, and
-    # will set to False in future runs to allow us to
-    # consider the value of NFS_CONFIG_ENABLED in later setups.
-    #
-    @osetupattrs(
-        postinstallfile=True,
-    )
-    def NFS_CONFIG_ENABLED_LEGACY_IN_POSTINSTALL(self):
-        return 'OVESETUP_SYSTEM/nfsConfigEnabled_legacyInPostInstall'
-
 
 @util.export
 @util.codegen
@@ -682,6 +635,7 @@ class SystemEnv(object):
 class PKIEnv(object):
     @osetupattrs(
         is_secret=True,
+        asked_on=(),
     )
     def STORE_PASS(self):
         return 'OVESETUP_PKI/storePassword'
@@ -720,52 +674,8 @@ class PKIEnv(object):
 class ConfigEnv(object):
 
     @osetupattrs(
-        postinstallfile=True,
-    )
-    def ISO_DOMAIN_EXISTS(self):
-        return 'OVESETUP_CONFIG/isoDomainExists'
-
-    @osetupattrs(
-        postinstallfile=True,
-    )
-    def ISO_DOMAIN_SD_UUID(self):
-        return 'OVESETUP_CONFIG/isoDomainSdUuid'
-
-    @osetupattrs(
-        postinstallfile=True,
-    )
-    def ISO_DOMAIN_STORAGE_DIR(self):
-        return 'OVESETUP_CONFIG/isoDomainStorageDir'
-
-    @osetupattrs(
         answerfile=True,
-        summary=True,
-        description=_('NFS mount point'),
         postinstallfile=True,
-    )
-    def ISO_DOMAIN_NFS_MOUNT_POINT(self):
-        return 'OVESETUP_CONFIG/isoDomainMountPoint'
-
-    @osetupattrs(
-        answerfile=True,
-        summary=True,
-        description=_('NFS export ACL'),
-    )
-    def ISO_DOMAIN_NFS_ACL(self):
-        return 'OVESETUP_CONFIG/isoDomainACL'
-
-    @osetupattrs(
-        answerfile=True,
-        postinstallfile=True
-    )
-    def ISO_DOMAIN_NAME(self):
-        return 'OVESETUP_CONFIG/isoDomainName'
-
-    ISO_DOMAIN_DEFAULT_NFS_MOUNT_POINT = \
-        'OVESETUP_CONFIG/isoDomainDefaultMountPoint'
-
-    @osetupattrs(
-        answerfile=True,
         summary=True,
         description=_('Engine Host FQDN'),
         summary_condition=lambda env: not env.get(
@@ -826,6 +736,7 @@ class ConfigEnv(object):
     @osetupattrs(
         answerfile=True,
         is_secret=True,
+        asked_on=('OVESETUP_CONFIG_ADMIN_SETUP',),
     )
     def ADMIN_PASSWORD(self):
         return 'OVESETUP_CONFIG/adminPassword'
@@ -925,6 +836,7 @@ class OvnEnv(object):
         answerfile=True,
         description=_('oVirt OVN provider password'),
         is_secret=True,
+        asked_on=('ovirt-provider-ovn-password',),
     )
     def OVIRT_PROVIDER_OVN_PASSWORD(self):
         return 'OVESETUP_OVN/ovirtProviderOvnPassword'
@@ -945,6 +857,9 @@ class OvnEnv(object):
 
     @osetupattrs(
         is_secret=True,
+        asked_on=(),
+        answerfile=True,
+        postinstallfile=True,
     )
     def OVIRT_PROVIDER_OVN_SECRET(self):
         return 'OVESETUP_OVN/ovirtProviderOvnSecret'

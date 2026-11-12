@@ -25,6 +25,7 @@ import org.ovirt.engine.api.model.ApiSummary;
 import org.ovirt.engine.api.model.ApiSummaryItem;
 import org.ovirt.engine.api.model.BaseResource;
 import org.ovirt.engine.api.model.DetailedLink;
+import org.ovirt.engine.api.model.EngineBackupInfo;
 import org.ovirt.engine.api.model.ProductInfo;
 import org.ovirt.engine.api.model.Rsdl;
 import org.ovirt.engine.api.model.SpecialObjects;
@@ -41,6 +42,7 @@ import org.ovirt.engine.api.resource.DataCentersResource;
 import org.ovirt.engine.api.resource.DiskProfilesResource;
 import org.ovirt.engine.api.resource.DisksResource;
 import org.ovirt.engine.api.resource.EventsResource;
+import org.ovirt.engine.api.resource.ExternalTemplateImportsResource;
 import org.ovirt.engine.api.resource.ExternalVmImportsResource;
 import org.ovirt.engine.api.resource.HostsResource;
 import org.ovirt.engine.api.resource.IconsResource;
@@ -94,10 +96,13 @@ import org.ovirt.engine.api.utils.LinkCreator;
 import org.ovirt.engine.core.branding.BrandingManager;
 import org.ovirt.engine.core.common.action.ActionParametersBase;
 import org.ovirt.engine.core.common.action.ActionType;
+import org.ovirt.engine.core.common.businessentities.EngineBackupLog;
+import org.ovirt.engine.core.common.businessentities.EngineBackupScope;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.constants.QueryConstants;
 import org.ovirt.engine.core.common.mode.ApplicationMode;
+import org.ovirt.engine.core.common.queries.GetLastEngineBackupParameters;
 import org.ovirt.engine.core.common.queries.GetSystemStatisticsQueryParameters;
 import org.ovirt.engine.core.common.queries.QueryParametersBase;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
@@ -167,7 +172,7 @@ public class BackendApiResource
         Template template = new Template();
         String id = "00000000-0000-0000-0000-000000000000";
         template.setId(id);
-        template.setHref(getAbsolutePath( "templates", id));
+        template.setHref(getAbsolutePath("templates", id));
         return template;
     }
 
@@ -244,7 +249,7 @@ public class BackendApiResource
     public Response head() {
         appMode = getCurrent().getApplicationMode();
         Api api;
-        if(appMode == ApplicationMode.GlusterOnly) {
+        if (appMode == ApplicationMode.GlusterOnly) {
             api = getGlusterApi();
         } else {
             api = getApi();
@@ -281,11 +286,48 @@ public class BackendApiResource
                 //(https://bugzilla.redhat.com/1612124)
                 if (!isFiltered()) {
                     addSummary(api);
+                    // Backup info also admin-only
+                    EngineBackupInfo lastEngineBackupInfo = getLastEngineBackup();
+                    api.setEngineBackup(lastEngineBackupInfo);
                 }
             }
             setAuthenticatedUser(api);
             return getResponseBuilder(api).entity(api).build();
         }
+    }
+
+    private EngineBackupInfo getLastEngineBackup() {
+        EngineBackupInfo backupInfo = new EngineBackupInfo();
+        for (EngineBackupScope backupScope : EngineBackupScope.values()) {
+            QueryReturnValue lastBackupQuery = runQuery(QueryType.GetLastEngineBackup,
+                                                        new GetLastEngineBackupParameters(backupScope));
+            EngineBackupLog backupLog = lastBackupQuery.getReturnValue();
+            if (backupLog != null) {
+                switch (backupScope) {
+                    case DB:
+                        backupInfo.setLastDbBackup(DateMapper.map(backupLog.getDoneAt(), null));
+                        break;
+                    case DWH:
+                        backupInfo.setLastDwhBackup(DateMapper.map(backupLog.getDoneAt(), null));
+                        break;
+                    case CINDER:
+                        backupInfo.setLastCinderBackup(DateMapper.map(backupLog.getDoneAt(), null));
+                        break;
+                    case KEYCLOAK:
+                        backupInfo.setLastKeycloakBackup(DateMapper.map(backupLog.getDoneAt(), null));
+                        break;
+                    case GRAFANA:
+                        backupInfo.setLastGrafanaBackup(DateMapper.map(backupLog.getDoneAt(), null));
+                        break;
+                    case FILES:
+                        backupInfo.setLastEngineBackup(DateMapper.map(backupLog.getDoneAt(), null));
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+        return backupInfo;
     }
 
     /**
@@ -296,7 +338,7 @@ public class BackendApiResource
      */
     private void setAuthenticatedUser(Api api) {
         QueryReturnValue returnValue = runQuery(QueryType.GetUserBySessionId, new QueryParametersBase());
-        DbUser authenticatedUser = (DbUser)returnValue.getReturnValue();
+        DbUser authenticatedUser = (DbUser) returnValue.getReturnValue();
         User user = new User();
         user.setId(authenticatedUser.getId().toString());
         LinkHelper.addLinks(user);
@@ -311,7 +353,7 @@ public class BackendApiResource
         String version = getCurrent().getVersion();
         String resourcePath = String.format("/v%s/%s", version, API_SCHEMA);
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
-             InputStream is = Thread.currentThread().getContextClassLoader().getResourceAsStream(resourcePath);){
+             InputStream is = Thread.currentThread().getContextClassLoader().getResourceAsStream(resourcePath);) {
             int count;
             while ((count = is.read(buffer)) != -1) {
                 baos.write(buffer, 0, count);
@@ -342,11 +384,13 @@ public class BackendApiResource
 
     private Api addSystemVersion(Api api) {
         String productVersion = getConfigurationValueDefault(ConfigValues.ProductRPMVersion);
+        String instanceId = getConfigurationValueDefault(ConfigValues.InstanceId);
         if (productVersion != null) {
             BrandingManager obrand = BrandingManager.getInstance();
             ProductInfo productInfo = new ProductInfo();
             productInfo.setName(obrand.getMessage("obrand.backend.product"));
             productInfo.setVendor(obrand.getMessage("obrand.backend.vendor"));
+            productInfo.setInstanceId(instanceId);
             Version version = getVersion();
             version.setFullVersion(productVersion);
             productInfo.setVersion(version);
@@ -368,7 +412,7 @@ public class BackendApiResource
 
     @SuppressWarnings("unchecked")
     private Map<String, Integer> asStatisticsMap(Object result) {
-        return (Map<String, Integer>)result;
+        return (Map<String, Integer>) result;
     }
 
     private Api addSummary(Api api) {
@@ -513,6 +557,11 @@ public class BackendApiResource
     }
 
     @Override
+    public ExternalTemplateImportsResource getExternalTemplateImportsResource() {
+        return inject(new BackendExternalTemplateImportsResource());
+    }
+
+    @Override
     public GroupsResource getGroupsResource() {
         return inject(new BackendGroupsResource());
     }
@@ -563,6 +612,7 @@ public class BackendApiResource
     }
 
     @Override
+    @Deprecated
     public OpenstackVolumeProvidersResource getOpenstackVolumeProvidersResource() {
         return inject(new BackendOpenStackVolumeProvidersResource());
     }

@@ -64,9 +64,9 @@ public class BackendStepsResource extends AbstractBackendCollectionResource<Step
     }
 
     public Step injectParent(Step step) {
-        if (step.getParentStep() !=null) {
+        if (step.getParentStep() != null) {
             step.getParentStep()
-            .setHref(step.getHref()
+                .setHref(step.getHref()
                     .replace(step.getId(), step.getParentStep().getId()));
         }
         return step;

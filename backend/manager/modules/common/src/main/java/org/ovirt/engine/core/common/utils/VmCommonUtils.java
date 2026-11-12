@@ -20,6 +20,11 @@ public class VmCommonUtils {
      * @return true, if any CPUs are to be hotplugged, false otherwise
      */
     public static boolean isCpusToBeHotpluggedOrUnplugged(VM source, VM destination) {
+        return cpuSocketsChanged(source, destination)
+                && !source.getCpuPinningPolicy().isExclusive();
+    }
+
+    private static boolean cpuSocketsChanged(VM source, VM destination) {
         return source.getCpuPerSocket() == destination.getCpuPerSocket()
                 && source.getNumOfSockets() != destination.getNumOfSockets()
                 && source.getThreadsPerCpu() == destination.getThreadsPerCpu();
@@ -34,7 +39,23 @@ public class VmCommonUtils {
      * @return true, if memory is to be hotplugged, false otherwise
      */
     public static boolean isMemoryToBeHotplugged(VM source, VM destination) {
-        return source.getMemSizeMb() < destination.getMemSizeMb();
+        if (source.getMemSizeMb() >= destination.getMemSizeMb()) {
+            return false;
+        }
+        ArchitectureType clusterArch = destination.getClusterArch();
+        if (clusterArch == null) {
+            clusterArch = source.getClusterArch();
+        }
+        if (clusterArch == null) {
+            // Nothing known about the architecture, let's assume it's valid.
+            // If it is not, it will fail later in VM update validation.
+            return true;
+        }
+        final int hotplugMemorySizeFactor = clusterArch.getHotplugMemorySizeFactorMb();
+        if ((destination.getMemSizeMb() - source.getMemSizeMb()) % hotplugMemorySizeFactor == 0) {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -76,16 +97,21 @@ public class VmCommonUtils {
     }
 
     private static ConfigValues getMaxMemConfigValueByOsId(int osId) {
-         OsRepository osRepository = SimpleDependencyInjector.getInstance().get(OsRepository.class);
-         return osRepository.get64bitOss().contains(osId)
+        OsRepository osRepository = SimpleDependencyInjector.getInstance().get(OsRepository.class);
+        return osRepository.get64bitOss().contains(osId)
                  ? (osRepository.getOsArchitectures().get(osId).getFamily() == ArchitectureType.ppc
                         ? ConfigValues.VMPpc64BitMaxMemorySizeInMB
                         : ConfigValues.VM64BitMaxMemorySizeInMB)
                  : ConfigValues.VM32BitMaxMemorySizeInMB;
-     }
+    }
 
-     public static int getMaxMemorySizeDefault(int memorySize) {
+    public static int getMaxMemorySizeDefault(int memorySize) {
         final int maxMemoryDefaultRatio = 4;
         return maxMemoryDefaultRatio * memorySize;
-     }
+    }
+
+    public static int calcMinMemory(int memory, int overcommit) {
+        double overCommitFactor = 100.0 / overcommit;
+        return (int) (memory * overCommitFactor);
+    }
 }

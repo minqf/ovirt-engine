@@ -74,8 +74,8 @@ public class BackendAssignedPermissionsResource
     }
 
     private List<org.ovirt.engine.core.common.businessentities.Permission> getInheritedPermissions() {
-        ((GetPermissionsForObjectParameters)queryParams).setVdcObjectType(objectType);
-        ((GetPermissionsForObjectParameters)queryParams).setDirectOnly(false);
+        ((GetPermissionsForObjectParameters) queryParams).setVdcObjectType(objectType);
+        ((GetPermissionsForObjectParameters) queryParams).setDirectOnly(false);
         List<org.ovirt.engine.core.common.businessentities.Permission> inheritedPermissions =
                 getBackendCollection(queryType, queryParams);
         for (org.ovirt.engine.core.common.businessentities.Permission entity : inheritedPermissions) {
@@ -109,9 +109,9 @@ public class BackendAssignedPermissionsResource
     protected Permissions mapCollection(Set<org.ovirt.engine.core.common.businessentities.Permission> entities) {
         Permissions collection = new Permissions();
         for (org.ovirt.engine.core.common.businessentities.Permission entity : entities) {
-             castEveryonePermissionsToUser(entity);
-             Permission permission = map(entity, getUserById(entity.getAdElementId()));
-             collection.getPermissions().add(addLinks(permission, permission.getUser() != null ? suggestedParentType : Group.class));
+            castEveryonePermissionsToUser(entity);
+            Permission permission = map(entity, getUserById(entity.getAdElementId()));
+            collection.getPermissions().add(addLinks(permission, permission.getUser() != null ? suggestedParentType : Group.class));
         }
         return collection;
     }

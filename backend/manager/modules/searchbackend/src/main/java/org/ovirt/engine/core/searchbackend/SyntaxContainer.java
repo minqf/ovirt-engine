@@ -18,20 +18,26 @@ public class SyntaxContainer implements Iterable<SyntaxObject> {
     private final int[] errorPos = new int[2];
     private int privateMaxCount;
     private long searchFrom = 0;
-    private boolean caseSensitive=true;
+    private boolean caseSensitive = true;
 
     /**
      * Some of the searches needs to combine view table which holds tags.
      * For a search on users it is even more than tags, it is also VMs, because the view contains
      * also a foreign vm_guid that belongs to a user. This is to support searching for both tags and/or vms
      * on a certain user. Infact the name vdc_users_with_tags is a bit misleading.
-     * @return
      */
     public boolean isSearchUsingTags() {
         return origText.contains("tag")
                 || isUserSearchUsingTags()
                 || getCrossRefObjList().contains(SearchObjects.VDC_STORAGE_POOL_OBJ_NAME)
-                || getCrossRefObjList().contains(SearchObjects.VDC_STORAGE_DOMAIN_OBJ_NAME);
+                || getCrossRefObjList().contains(SearchObjects.VDC_STORAGE_DOMAIN_OBJ_NAME)
+                // use tags in searches like : Vms: Cluster.<property>=<value> <and/or> Host.<property>=<value>
+                // TODO : try to generalize those cases
+                || origText.toLowerCase().startsWith(SearchObjects.VM_OBJ_NAME.toLowerCase())
+                    && origText.toLowerCase().contains(SearchObjects.VDC_CLUSTER_OBJ_NAME.toLowerCase())
+                    && getCrossRefObjList().contains(SearchObjects.VDS_OBJ_NAME)
+                || origText.toLowerCase().startsWith(SearchObjects.AUDIT_OBJ_NAME.toLowerCase())
+                    && origText.toLowerCase().contains(SearchObjects.TEMPLATE_OBJ_NAME.toLowerCase());
     }
 
     public int getMaxCount() {
@@ -130,7 +136,7 @@ public class SyntaxContainer implements Iterable<SyntaxObject> {
             }
         }
         if ("".equals(retval)
-                && ((type == SyntaxObjectType.CROSS_REF_OBJ) || (type == SyntaxObjectType.SEARCH_OBJECT))) {
+                && (type == SyntaxObjectType.CROSS_REF_OBJ || type == SyntaxObjectType.SEARCH_OBJECT)) {
             retval = objList.getFirst().getBody();
         }
         return retval;
@@ -216,6 +222,8 @@ public class SyntaxContainer implements Iterable<SyntaxObject> {
             retval = SearchObjects.SESSION_OBJ_NAME;
         } else if (SearchObjects.JOB_OBJ_NAME.equals(obj) || SearchObjects.JOB_PLU_OBJ_NAME.equals(obj)) {
             retval = SearchObjects.JOB_OBJ_NAME;
+        } else if (SearchObjects.VNIC_PROFILE_OBJ_NAME.equals(obj) || SearchObjects.VNIC_PROFILE_PLU_OBJ_NAME.equals(obj)) {
+            retval = SearchObjects.VNIC_PROFILE_OBJ_NAME;
         } else {
             retval = obj;
 
@@ -253,7 +261,7 @@ public class SyntaxContainer implements Iterable<SyntaxObject> {
     public boolean contains(SyntaxObjectType type, String val) {
         boolean retval = false;
         for (SyntaxObject obj : objList) {
-            if ((obj.getType() == type) && val.equalsIgnoreCase(obj.getBody())) {
+            if (obj.getType() == type && val.equalsIgnoreCase(obj.getBody())) {
                 retval = true;
                 break;
             }

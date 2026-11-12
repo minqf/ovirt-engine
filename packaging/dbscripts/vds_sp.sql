@@ -5,15 +5,14 @@
 -- [vds_statistics] Table
 --
 CREATE OR REPLACE FUNCTION InsertVdsStatistics (
-    v_cpu_idle DECIMAL(18, 0),
-    v_cpu_load DECIMAL(18, 0),
-    v_cpu_sys DECIMAL(18, 0),
-    v_cpu_user DECIMAL(18, 0),
+    v_cpu_idle DECIMAL(18,0),
+    v_cpu_load DECIMAL(18,0),
+    v_cpu_sys DECIMAL(18,0),
+    v_cpu_user DECIMAL(18,0),
     v_usage_cpu_percent INT,
     v_usage_mem_percent INT,
     v_usage_network_percent INT,
     v_vds_id UUID,
-    v_mem_available BIGINT,
     v_mem_free BIGINT,
     v_mem_shared BIGINT,
     v_swap_free BIGINT,
@@ -31,7 +30,7 @@ CREATE OR REPLACE FUNCTION InsertVdsStatistics (
     v_cpu_over_commit_time_stamp TIMESTAMP WITH TIME ZONE,
     v_hugepages TEXT
     )
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     BEGIN
         INSERT INTO vds_statistics (
@@ -43,7 +42,6 @@ BEGIN
             usage_mem_percent,
             usage_network_percent,
             vds_id,
-            mem_available,
             mem_free,
             mem_shared,
             swap_free,
@@ -70,7 +68,6 @@ BEGIN
             v_usage_mem_percent,
             v_usage_network_percent,
             v_vds_id,
-            v_mem_available,
             v_mem_free,
             v_mem_shared,
             v_swap_free,
@@ -91,19 +88,18 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION UpdateVdsStatistics (
-    v_cpu_idle DECIMAL(18, 0),
-    v_cpu_load DECIMAL(18, 0),
-    v_cpu_sys DECIMAL(18, 0),
-    v_cpu_user DECIMAL(18, 0),
+    v_cpu_idle DECIMAL(18,0),
+    v_cpu_load DECIMAL(18,0),
+    v_cpu_sys DECIMAL(18,0),
+    v_cpu_user DECIMAL(18,0),
     v_usage_cpu_percent INT,
     v_usage_mem_percent INT,
     v_usage_network_percent INT,
     v_vds_id UUID,
-    v_mem_available BIGINT,
     v_mem_free BIGINT,
     v_mem_shared BIGINT,
     v_swap_free BIGINT,
@@ -123,7 +119,7 @@ CREATE OR REPLACE FUNCTION UpdateVdsStatistics (
     )
 RETURNS VOID
     --The [vds_dynamic] table doesn't have a timestamp column. Optimistic concurrency logic cannot be generated
-    AS $PROCEDURE$
+    AS $FUNCTION$
 BEGIN
     BEGIN
         UPDATE vds_statistics
@@ -134,7 +130,6 @@ BEGIN
             usage_cpu_percent = v_usage_cpu_percent,
             usage_mem_percent = v_usage_mem_percent,
             usage_network_percent = v_usage_network_percent,
-            mem_available = v_mem_available,
             mem_free = v_mem_free,
             mem_shared = v_mem_shared,
             swap_free = v_swap_free,
@@ -156,11 +151,11 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION DeleteVdsStatistics (v_vds_id UUID)
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     BEGIN
         DELETE
@@ -169,11 +164,11 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetAllFromVdsStatistics ()
-RETURNS SETOF vds_statistics STABLE AS $PROCEDURE$
+RETURNS SETOF vds_statistics STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -183,11 +178,11 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsStatisticsByVdsId (v_vds_id UUID)
-RETURNS SETOF vds_statistics STABLE AS $PROCEDURE$
+RETURNS SETOF vds_statistics STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -198,7 +193,7 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 ----------------------------------------------------------------
@@ -208,7 +203,7 @@ CREATE OR REPLACE FUNCTION InsertVdsDynamic (
     v_cpu_cores INT,
     v_cpu_threads INT,
     v_cpu_model VARCHAR(255),
-    v_cpu_speed_mh DECIMAL(18, 0),
+    v_cpu_speed_mh DECIMAL(18,0),
     v_if_total_speed VARCHAR(40),
     v_kvm_enabled BOOLEAN,
     v_mem_commited INT,
@@ -223,12 +218,12 @@ CREATE OR REPLACE FUNCTION InsertVdsDynamic (
     v_outgoing_migrations INT,
     v_reserved_mem INT,
     v_guest_overhead INT,
-    v_rpm_version VARCHAR(255),
+    v_rpm_version VARCHAR(256),
     v_software_version VARCHAR(40),
     v_version_name VARCHAR(40),
     v_build_name VARCHAR(40),
     v_previous_status INT,
-    v_cpu_flags VARCHAR(4000),
+    v_cpu_flags TEXT,
     v_pending_vcpus_count INT,
     v_pending_vmem_size INT,
     v_cpu_sockets INT,
@@ -237,12 +232,12 @@ CREATE OR REPLACE FUNCTION InsertVdsDynamic (
     v_supported_engines VARCHAR(40),
     v_host_os VARCHAR(4000),
     v_kvm_version VARCHAR(4000),
-    v_libvirt_version VARCHAR(4000),
+    v_libvirt_version VARCHAR(256),
     v_spice_version VARCHAR(4000),
     v_gluster_version VARCHAR(4000),
     v_librbd1_version VARCHAR(4000),
     v_glusterfs_cli_version VARCHAR(4000),
-    v_openvswitch_version VARCHAR(40000),
+    v_openvswitch_version VARCHAR(4000),
     v_kernel_version VARCHAR(4000),
     v_iscsi_initiator_name VARCHAR(4000),
     v_transparent_hugepages_state INT,
@@ -271,14 +266,20 @@ CREATE OR REPLACE FUNCTION InsertVdsDynamic (
     v_vnc_encryption_enabled BOOLEAN,
     v_connector_info JSONB,
     v_backup_enabled BOOLEAN,
+    v_cold_backup_enabled BOOLEAN,
+    v_clear_bitmaps_enabled BOOLEAN,
     v_supported_domain_versions VARCHAR(256),
     v_supported_block_size JSONB,
     v_tsc_frequency VARCHAR(10),
     v_tsc_scaling BOOLEAN,
     v_fips_enabled BOOLEAN,
-    v_boot_uuid VARCHAR(64)
+    v_boot_uuid VARCHAR(64),
+    v_cd_change_pdiv BOOLEAN,
+    v_ovn_configured BOOLEAN,
+    v_cpu_topology JSONB,
+    v_vdsm_cpus_affinity VARCHAR(256)
     )
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     BEGIN
         INSERT INTO vds_dynamic (
@@ -348,12 +349,18 @@ BEGIN
             vnc_encryption_enabled,
             connector_info,
             backup_enabled,
+            cold_backup_enabled,
+            clear_bitmaps_enabled,
             supported_domain_versions,
             supported_block_size,
             tsc_frequency,
             tsc_scaling,
             fips_enabled,
-            boot_uuid
+            boot_uuid,
+            cd_change_pdiv,
+            ovn_configured,
+            cpu_topology,
+            vdsm_cpus_affinity
             )
         VALUES (
             v_cpu_cores,
@@ -422,24 +429,30 @@ BEGIN
             v_vnc_encryption_enabled,
             v_connector_info,
             v_backup_enabled,
+            v_cold_backup_enabled,
+            v_clear_bitmaps_enabled,
             v_supported_domain_versions,
             v_supported_block_size,
             v_tsc_frequency,
             v_tsc_scaling,
             v_fips_enabled,
-            v_boot_uuid
+            v_boot_uuid,
+            v_cd_change_pdiv,
+            v_ovn_configured,
+            v_cpu_topology,
+            v_vdsm_cpus_affinity
             );
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION UpdateVdsDynamicPowerManagementPolicyFlag (
     v_vds_id UUID,
     v_controlled_by_pm_policy BOOLEAN
     )
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     BEGIN
         UPDATE vds_dynamic
@@ -448,14 +461,14 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION UpdateVdsDynamic (
     v_cpu_cores INT,
     v_cpu_threads INT,
     v_cpu_model VARCHAR(255),
-    v_cpu_speed_mh DECIMAL(18, 0),
+    v_cpu_speed_mh DECIMAL(18,0),
     v_if_total_speed VARCHAR(40),
     v_kvm_enabled BOOLEAN,
     v_mem_commited INT,
@@ -470,12 +483,12 @@ CREATE OR REPLACE FUNCTION UpdateVdsDynamic (
     v_outgoing_migrations INT,
     v_reserved_mem INT,
     v_guest_overhead INT,
-    v_rpm_version VARCHAR(255),
+    v_rpm_version VARCHAR(256),
     v_software_version VARCHAR(40),
     v_version_name VARCHAR(40),
     v_build_name VARCHAR(40),
     v_previous_status INT,
-    v_cpu_flags VARCHAR(4000),
+    v_cpu_flags TEXT,
     v_pending_vcpus_count INT,
     v_pending_vmem_size INT,
     v_cpu_sockets INT,
@@ -484,13 +497,14 @@ CREATE OR REPLACE FUNCTION UpdateVdsDynamic (
     v_supported_engines VARCHAR(40),
     v_host_os VARCHAR(4000),
     v_kvm_version VARCHAR(4000),
-    v_libvirt_version VARCHAR(4000),
+    v_libvirt_version VARCHAR(256),
     v_spice_version VARCHAR(4000),
     v_gluster_version VARCHAR(4000),
     v_librbd1_version VARCHAR(4000),
     v_glusterfs_cli_version VARCHAR(4000),
-    v_openvswitch_version VARCHAR(40000),
+    v_openvswitch_version VARCHAR(4000),
     v_kernel_version VARCHAR(4000),
+    v_nmstate_version VARCHAR(4000),
     v_iscsi_initiator_name VARCHAR(4000),
     v_transparent_hugepages_state INT,
     v_hooks TEXT,
@@ -520,16 +534,22 @@ CREATE OR REPLACE FUNCTION UpdateVdsDynamic (
     v_vnc_encryption_enabled BOOLEAN,
     v_connector_info JSONB,
     v_backup_enabled BOOLEAN,
+    v_cold_backup_enabled BOOLEAN,
+    v_clear_bitmaps_enabled BOOLEAN,
     v_supported_domain_versions VARCHAR(256),
     v_supported_block_size JSONB,
     v_tsc_frequency VARCHAR(10),
     v_tsc_scaling BOOLEAN,
     v_fips_enabled BOOLEAN,
-    v_boot_uuid VARCHAR(64)
+    v_boot_uuid VARCHAR(64),
+    v_cd_change_pdiv BOOLEAN,
+    v_ovn_configured BOOLEAN,
+    v_cpu_topology JSONB,
+    v_vdsm_cpus_affinity VARCHAR(256)
     )
 RETURNS VOID
     --The [vds_dynamic] table doesn't have a timestamp column. Optimistic concurrency logic cannot be generated
-    AS $PROCEDURE$
+    AS $FUNCTION$
 BEGIN
     BEGIN
         UPDATE vds_dynamic
@@ -571,6 +591,7 @@ BEGIN
             glusterfs_cli_version = v_glusterfs_cli_version,
             openvswitch_version = v_openvswitch_version,
             kernel_version = v_kernel_version,
+            nmstate_version = v_nmstate_version,
             iscsi_initiator_name = v_iscsi_initiator_name,
             transparent_hugepages_state = v_transparent_hugepages_state,
             hooks = v_hooks,
@@ -601,21 +622,27 @@ BEGIN
             vnc_encryption_enabled = v_vnc_encryption_enabled,
             connector_info = v_connector_info,
             backup_enabled = v_backup_enabled,
+            cold_backup_enabled = v_cold_backup_enabled,
+            clear_bitmaps_enabled = v_clear_bitmaps_enabled,
             supported_domain_versions = v_supported_domain_versions,
             supported_block_size = v_supported_block_size,
             tsc_frequency = v_tsc_frequency,
             tsc_scaling = v_tsc_scaling,
             fips_enabled = v_fips_enabled,
-            boot_uuid = v_boot_uuid
+            boot_uuid = v_boot_uuid,
+            cd_change_pdiv = v_cd_change_pdiv,
+            ovn_configured = v_ovn_configured,
+            cpu_topology = v_cpu_topology,
+            vdsm_cpus_affinity = v_vdsm_cpus_affinity
         WHERE vds_id = v_vds_id;
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION DeleteVdsDynamic (v_vds_id UUID)
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     BEGIN
         DELETE
@@ -624,11 +651,11 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetAllFromVdsDynamic ()
-RETURNS SETOF vds_dynamic STABLE AS $PROCEDURE$
+RETURNS SETOF vds_dynamic STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -638,11 +665,11 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsDynamicByVdsId (v_vds_id UUID)
-RETURNS SETOF vds_dynamic STABLE AS $PROCEDURE$
+RETURNS SETOF vds_dynamic STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -653,7 +680,7 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 ----------------------------------------------------------------
@@ -672,19 +699,19 @@ CREATE OR REPLACE FUNCTION InsertVdsStatic (
     v_pm_enabled BOOLEAN,
     v_pm_proxy_preferences VARCHAR(255),
     v_pm_detect_kdump BOOLEAN,
-    v_vds_spm_priority INT,
-    v_sshKeyFingerprint VARCHAR(128),
+    v_vds_spm_priority SMALLINT,
+    v_sshKeyFingerprint VARCHAR(1024),
+    v_ssh_public_key VARCHAR(8192),
     v_console_address VARCHAR(255),
     v_ssh_port INT,
     v_ssh_username VARCHAR(255),
     v_disable_auto_pm BOOLEAN,
     v_host_provider_id UUID,
-    v_openstack_network_provider_id UUID,
     v_kernel_cmdline TEXT,
     v_last_stored_kernel_cmdline TEXT,
     v_vgpu_placement INT
     )
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     IF v_vds_unique_id IS NULL
         OR NOT EXISTS (
@@ -708,12 +735,12 @@ BEGIN
             pm_detect_kdump,
             vds_spm_priority,
             sshKeyFingerprint,
+            ssh_public_key,
             console_address,
             ssh_port,
             ssh_username,
             disable_auto_pm,
             host_provider_id,
-            openstack_network_provider_id,
             kernel_cmdline,
             last_stored_kernel_cmdline,
             vgpu_placement
@@ -733,12 +760,12 @@ BEGIN
             v_pm_detect_kdump,
             v_vds_spm_priority,
             v_sshKeyFingerprint,
+            v_ssh_public_key,
             v_console_address,
             v_ssh_port,
             v_ssh_username,
             v_disable_auto_pm,
             v_host_provider_id,
-            v_openstack_network_provider_id,
             v_kernel_cmdline,
             v_last_stored_kernel_cmdline,
             v_vgpu_placement
@@ -747,7 +774,7 @@ BEGIN
 END IF;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION UpdateVdsStaticLastStoredKernelCmdline (
@@ -756,7 +783,7 @@ CREATE OR REPLACE FUNCTION UpdateVdsStaticLastStoredKernelCmdline (
     )
 RETURNS VOID
     --The [vds_static] table doesn't have a timestamp column. Optimistic concurrency logic cannot be generated
-    AS $PROCEDURE$
+    AS $FUNCTION$
 BEGIN
     BEGIN
         UPDATE vds_static
@@ -765,7 +792,7 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION UpdateVdsStaticKernelCmdlines (
@@ -774,7 +801,7 @@ CREATE OR REPLACE FUNCTION UpdateVdsStaticKernelCmdlines (
     )
 RETURNS VOID
     --The [vds_static] table doesn't have a timestamp column. Optimistic concurrency logic cannot be generated
-    AS $PROCEDURE$
+    AS $FUNCTION$
 BEGIN
     BEGIN
         UPDATE vds_static
@@ -784,7 +811,7 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION UpdateVdsReinstallRequired (
@@ -792,7 +819,7 @@ CREATE OR REPLACE FUNCTION UpdateVdsReinstallRequired (
     v_reinstall_required BOOLEAN
     )
 RETURNS VOID
-    AS $PROCEDURE$
+    AS $FUNCTION$
 BEGIN
     BEGIN
         UPDATE vds_static
@@ -801,7 +828,7 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION UpdateVdsStatic (
@@ -818,21 +845,21 @@ CREATE OR REPLACE FUNCTION UpdateVdsStatic (
     v_pm_proxy_preferences VARCHAR(255),
     v_pm_detect_kdump BOOLEAN,
     v_otp_validity BIGINT,
-    v_vds_spm_priority INT,
-    v_sshKeyFingerprint VARCHAR(128),
+    v_vds_spm_priority SMALLINT,
+    v_sshKeyFingerprint VARCHAR(1024),
+    v_ssh_public_key VARCHAR(8192),
     v_console_address VARCHAR(255),
     v_ssh_port INT,
     v_ssh_username VARCHAR(255),
     v_disable_auto_pm BOOLEAN,
     v_host_provider_id UUID,
-    v_openstack_network_provider_id UUID,
     v_kernel_cmdline TEXT,
     v_reinstall_required BOOLEAN,
     v_vgpu_placement INTEGER
 )
     RETURNS VOID
     --The [vds_static] table doesn't have a timestamp column. Optimistic concurrency logic cannot be generated
-AS $PROCEDURE$
+AS $FUNCTION$
 BEGIN
     BEGIN
         UPDATE vds_static
@@ -851,8 +878,8 @@ BEGIN
             otp_validity = v_otp_validity,
             vds_spm_priority = v_vds_spm_priority,
             sshKeyFingerprint = v_sshKeyFingerprint,
+            ssh_public_key = v_ssh_public_key,
             host_provider_id = v_host_provider_id,
-            openstack_network_provider_id = v_openstack_network_provider_id,
             console_address = v_console_address,
             ssh_port = v_ssh_port,
             ssh_username = v_ssh_username,
@@ -864,11 +891,11 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION DeleteVdsStatic (v_vds_id UUID)
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     BEGIN
         DELETE
@@ -887,11 +914,11 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetAllFromVdsStatic ()
-RETURNS SETOF vds_static STABLE AS $PROCEDURE$
+RETURNS SETOF vds_static STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
@@ -899,11 +926,11 @@ BEGIN
     FROM vds_static;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsStaticByIp (v_ip VARCHAR(40))
-RETURNS SETOF vds_static STABLE AS $PROCEDURE$
+RETURNS SETOF vds_static STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -916,11 +943,11 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsStaticByHostName (v_host_name VARCHAR(255))
-RETURNS SETOF vds_static STABLE AS $PROCEDURE$
+RETURNS SETOF vds_static STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
@@ -929,11 +956,11 @@ BEGIN
     WHERE host_name = v_host_name;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsStaticByVdsId (v_vds_id UUID)
-RETURNS SETOF vds_static STABLE AS $PROCEDURE$
+RETURNS SETOF vds_static STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
@@ -942,11 +969,11 @@ BEGIN
     WHERE vds_id = v_vds_id;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsStaticByVdsIds (v_vds_ids UUID[])
-RETURNS SETOF vds_static STABLE AS $PROCEDURE$
+RETURNS SETOF vds_static STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
@@ -955,11 +982,11 @@ BEGIN
     WHERE vds_id = ANY(v_vds_ids);
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsStaticByVdsName (v_host_name VARCHAR(255))
-RETURNS SETOF vds_static STABLE AS $PROCEDURE$
+RETURNS SETOF vds_static STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
@@ -968,11 +995,11 @@ BEGIN
     WHERE vds_name = v_host_name;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsByUniqueID (v_vds_unique_id VARCHAR(128))
-RETURNS SETOF vds STABLE AS $PROCEDURE$
+RETURNS SETOF vds STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -983,11 +1010,11 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsStaticByClusterId (v_cluster_id UUID)
-RETURNS SETOF vds_static STABLE AS $PROCEDURE$
+RETURNS SETOF vds_static STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -998,14 +1025,14 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 ---------------------------------------------------------------------------------------------------
 --    [vds] - view
 ---------------------------------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION GetUpAndPrioritizedVds (v_storage_pool_id UUID)
-RETURNS SETOF vds STABLE AS $PROCEDURE$
+RETURNS SETOF vds STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -1025,14 +1052,14 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetAllFromVds (
     v_user_id UUID,
     v_is_filtered BOOLEAN
     )
-RETURNS SETOF vds STABLE AS $PROCEDURE$
+RETURNS SETOF vds STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -1051,7 +1078,7 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsByVdsId (
@@ -1059,7 +1086,7 @@ CREATE OR REPLACE FUNCTION GetVdsByVdsId (
     v_user_id UUID,
     v_is_filtered BOOLEAN
     )
-RETURNS SETOF vds STABLE AS $PROCEDURE$
+RETURNS SETOF vds STABLE AS $FUNCTION$
 DECLARE v_columns TEXT [];
 
 BEGIN
@@ -1087,11 +1114,11 @@ BEGIN
 
     END;
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsWithoutMigratingVmsByClusterId (v_cluster_id UUID)
-RETURNS SETOF vds STABLE AS $PROCEDURE$
+RETURNS SETOF vds STABLE AS $FUNCTION$
 BEGIN
     -- this sp returns all vds in given cluster that have no pending vms and no vms in migration states
     BEGIN
@@ -1115,11 +1142,11 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION DeleteVds (v_vds_id UUID)
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     BEGIN
         DELETE
@@ -1145,11 +1172,11 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsByType (v_vds_type INT)
-RETURNS SETOF vds STABLE AS $PROCEDURE$
+RETURNS SETOF vds STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -1160,11 +1187,11 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsByName (v_vds_name VARCHAR(255))
-RETURNS SETOF vds STABLE AS $PROCEDURE$
+RETURNS SETOF vds STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -1175,11 +1202,11 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsByNameAndClusterId (v_vds_name VARCHAR(255), v_cluster_id UUID)
-RETURNS SETOF vds STABLE AS $PROCEDURE$
+RETURNS SETOF vds STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -1191,11 +1218,11 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsByHostNameAndClusterId (v_host_name VARCHAR(255), v_cluster_id UUID)
-RETURNS SETOF vds STABLE AS $PROCEDURE$
+RETURNS SETOF vds STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -1207,11 +1234,11 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsByHostName (v_host_name VARCHAR(255))
-RETURNS SETOF vds STABLE AS $PROCEDURE$
+RETURNS SETOF vds STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -1222,7 +1249,7 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsByClusterId (
@@ -1230,7 +1257,7 @@ CREATE OR REPLACE FUNCTION GetVdsByClusterId (
     v_user_id UUID,
     v_is_filtered boolean
     )
-RETURNS SETOF vds STABLE AS $PROCEDURE$
+RETURNS SETOF vds STABLE AS $FUNCTION$
 BEGIN
     -- this sp returns all vds for a given cluster
     BEGIN
@@ -1256,7 +1283,7 @@ BEGIN
 
     END;
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsByStoragePoolId (
@@ -1264,7 +1291,7 @@ CREATE OR REPLACE FUNCTION GetVdsByStoragePoolId (
     v_user_id UUID,
     v_is_filtered boolean
     )
-RETURNS SETOF vds STABLE AS $PROCEDURE$
+RETURNS SETOF vds STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -1284,7 +1311,7 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- Returns all VDS for a given cluster and having given status
@@ -1292,7 +1319,7 @@ CREATE OR REPLACE FUNCTION getVdsForClusterWithStatus (
     v_cluster_id UUID,
     v_status INT
     )
-RETURNS SETOF vds STABLE AS $PROCEDURE$
+RETURNS SETOF vds STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -1305,7 +1332,7 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- Returns all gluster VDS for a given cluster and having given status, peer status
@@ -1314,7 +1341,7 @@ CREATE OR REPLACE FUNCTION getVdsForClusterWithPeerStatus (
     v_status INT,
     v_peer_status VARCHAR(50)
     )
-RETURNS SETOF vds STABLE AS $PROCEDURE$
+RETURNS SETOF vds STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -1330,7 +1357,7 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- Returns all VDS for a given pool with one of the given statuses or in any status in case v_statuses is NULL.
@@ -1338,7 +1365,7 @@ CREATE OR REPLACE FUNCTION getVdsByStoragePoolIdWithStatuses(
     v_storage_pool_id UUID,
     v_statuses VARCHAR(150))
 RETURNS SETOF vds STABLE
-    AS $procedure$
+    AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -1354,14 +1381,14 @@ BEGIN
             AND cluster.virt_service = true;
     END;
     RETURN;
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION getHostsForStorageOperation (
     v_storage_pool_id UUID,
     v_local_fs_only BOOLEAN
     )
-RETURNS SETOF vds STABLE AS $PROCEDURE$
+RETURNS SETOF vds STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -1384,23 +1411,24 @@ BEGIN
             AND (
                 v_storage_pool_id IS NOT NULL
                 OR vds.status = 3
-                );-- if DC is unspecified return only hosts with status = UP
+                )-- if DC is unspecified return only hosts with status = UP
+       ORDER BY vds.vds_name;
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION UpdateVdsDynamicStatus (
     v_vds_guid UUID,
     v_status INT
     )
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     UPDATE vds_dynamic
     SET status = v_status
     WHERE vds_id = v_vds_guid;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION UpdateVdsDynamicStatusAndReasons (
@@ -1409,54 +1437,54 @@ CREATE OR REPLACE FUNCTION UpdateVdsDynamicStatusAndReasons (
     v_non_operational_reason INT,
     v_maintenance_reason TEXT
     )
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     UPDATE vds_dynamic
     SET status = v_status,
         non_operational_reason = v_non_operational_reason,
         maintenance_reason = v_maintenance_reason
     WHERE vds_id = v_vds_guid;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION UpdateHostExternalStatus (
     v_vds_guid UUID,
     v_external_status INT
     )
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     UPDATE vds_dynamic
     SET external_status = v_external_status
     WHERE vds_id = v_vds_guid;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION UpdateVdsDynamicNetConfigDirty (
     v_vds_guid UUID,
     v_net_config_dirty BOOLEAN
     )
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     UPDATE vds_dynamic
     SET net_config_dirty = v_net_config_dirty
     WHERE vds_id = v_vds_guid;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION UpdateVdsDynamicIsUpdateAvailable (
     v_vds_guid UUID,
     v_is_update_available BOOLEAN
     )
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     UPDATE vds_dynamic
     SET is_update_available = v_is_update_available
     WHERE vds_id = v_vds_guid;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsByNetworkId (v_network_id UUID)
-RETURNS SETOF vds STABLE AS $PROCEDURE$
+RETURNS SETOF vds STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
@@ -1473,11 +1501,11 @@ BEGIN
                 AND vds.cluster_id = network_cluster.cluster_id
                 AND vds_interface.vds_id = vds.vds_id
             );
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVdsWithoutNetwork (v_network_id UUID)
-RETURNS SETOF vds STABLE AS $PROCEDURE$
+RETURNS SETOF vds STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
@@ -1497,34 +1525,34 @@ BEGIN
                 AND vds.cluster_id = network_cluster.cluster_id
                 AND vds_interface.vds_id = vds.vds_id
             );
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION UpdateCpuFlags (
     v_vds_id UUID,
-    v_cpu_flags VARCHAR(4000)
+    v_cpu_flags TEXT
     )
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     UPDATE vds_dynamic
     SET cpu_flags = v_cpu_flags
     WHERE vds_id = v_vds_id;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetIdsOfHostsWithStatus (v_status INT)
-RETURNS SETOF UUID STABLE AS $PROCEDURE$
+RETURNS SETOF UUID STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
     SELECT vds_id
     FROM vds_dynamic
     WHERE status = v_status;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION getFirstUpRhelForClusterId (v_cluster_id UUID)
-RETURNS SETOF vds STABLE AS $PROCEDURE$
+RETURNS SETOF vds STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         -- both centos and RHEL return RHEL as host_os
@@ -1542,12 +1570,12 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- Get host names dedicated to vm
 CREATE OR REPLACE FUNCTION GetNamesOfHostsDedicatedToVm (v_vm_guid UUID)
-RETURNS SETOF VARCHAR STABLE AS $PROCEDURE$
+RETURNS SETOF VARCHAR STABLE AS $FUNCTION$
 BEGIN
     BEGIN
         RETURN QUERY
@@ -1558,15 +1586,15 @@ BEGIN
     END;
 
     RETURN;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION CheckIfExistsHostThatMissesNetworkInCluster(
-    v_cluster_id   UUID,
-    v_network_name VARCHAR(50),
-    v_host_status  INT
+    v_cluster_id UUID,
+    v_network_name VARCHAR(256),
+    v_host_status INT
     )
-RETURNS BOOLEAN STABLE AS $PROCEDURE$
+RETURNS BOOLEAN STABLE AS $FUNCTION$
 BEGIN
     RETURN EXISTS (
         SELECT 1
@@ -1579,14 +1607,14 @@ BEGIN
                        WHERE vds_static.vds_id = vds_interface.vds_id
                        AND vds_interface.network_name = v_network_name)
     );
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION CheckIfExistsHostWithStatusInCluster(
     v_cluster_id   UUID,
     v_host_status  INT
     )
-RETURNS BOOLEAN STABLE AS $PROCEDURE$
+RETURNS BOOLEAN STABLE AS $FUNCTION$
 BEGIN
     RETURN EXISTS (
         SELECT 1
@@ -1595,5 +1623,5 @@ BEGIN
         WHERE vds_static.cluster_id = v_cluster_id
         AND vds_dynamic.status = v_host_status
     );
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;

@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Map;
 
 import org.ovirt.engine.core.common.AuditLogType;
+import org.ovirt.engine.core.common.action.ActionReturnValue;
+import org.ovirt.engine.core.common.action.SaveVmExternalDataParameters;
 import org.ovirt.engine.core.common.errors.EngineError;
 import org.ovirt.engine.core.common.eventqueue.EventResult;
 import org.ovirt.engine.core.common.utils.Pair;
@@ -78,11 +80,15 @@ public interface IVdsEventListener {
      */
     void updateSlaPolicies(List<Guid> vmIds, Guid vdsId);
 
-    void refreshHostIfAnyVmHasHostDevices(List<Guid> vmIds, Guid hostId);
+    void refreshHostIfAnyVmHasHostDevices(List<Guid> succeededToRunVms, List<Guid> movedToDownVms, Guid hostId);
 
     void refreshHostCapabilities(Guid hostId);
 
-    void restartVmsWithLease(List<Guid> vmIds);
+    void restartVmsWithLease(List<Guid> vmIds, Guid hostId);
+
+    void refreshIsoCache(Guid storagePoolId);
 
     Map<String, Pair<String, String>> getVdsPoolAndStorageConnectionsLock(Guid vdsId);
+
+    ActionReturnValue saveExternalData(SaveVmExternalDataParameters parameters);
 }

@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import javax.ws.rs.core.UriInfo;
 
@@ -26,6 +27,7 @@ import org.ovirt.engine.api.model.Disk;
 import org.ovirt.engine.core.common.businessentities.StorageDomainType;
 import org.ovirt.engine.core.common.businessentities.VmTemplate;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
+import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.queries.GetAllFromExportDomainQueryParameters;
 import org.ovirt.engine.core.common.queries.GetVmTemplateParameters;
 import org.ovirt.engine.core.common.queries.IdQueryParameters;
@@ -33,15 +35,21 @@ import org.ovirt.engine.core.common.queries.QueryParametersBase;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
 import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.core.compat.Guid;
+import org.ovirt.engine.core.utils.MockConfigDescriptor;
+import org.ovirt.engine.core.utils.MockedConfig;
 
 @MockitoSettings(strictness = Strictness.LENIENT)
 public class BackendExportDomainDiskResourceTest
-   extends AbstractBackendSubResourceTest<Disk, org.ovirt.engine.core.common.businessentities.storage.Disk, BackendExportDomainDiskResource> {
+    extends AbstractBackendSubResourceTest<Disk, org.ovirt.engine.core.common.businessentities.storage.Disk, BackendExportDomainDiskResource> {
 
     private static final Guid TEMPLATE_ID = GUIDS[1];
     private static final Guid DISK_ID = GUIDS[2];
     private static final Guid DATA_CENTER_ID = GUIDS[0];
-    private static final Guid STORAGE_DOMAIN_ID = GUIDS[GUIDS.length-1];
+    private static final Guid STORAGE_DOMAIN_ID = GUIDS[GUIDS.length - 1];
+
+    public static Stream<MockConfigDescriptor<?>> mockConfiguration() {
+        return Stream.of(MockConfigDescriptor.of(ConfigValues.PropagateDiskErrors, false));
+    }
 
     public BackendExportDomainDiskResourceTest() {
         super(new BackendExportDomainDiskResource(DISK_ID.toString(),
@@ -73,6 +81,7 @@ public class BackendExportDomainDiskResourceTest
     }
 
     @Test
+    @MockedConfig("mockConfiguration")
     public void testGet() {
         setUpGetStorageDomainExpectations(StorageDomainType.ImportExport);
         setUpGetEntityExpectations(StorageDomainType.ImportExport, STORAGE_DOMAIN_ID);
@@ -96,27 +105,27 @@ public class BackendExportDomainDiskResourceTest
 
     protected void setUpGetEntityExpectations(StorageDomainType domainType, Guid getStoragePoolsByStorageDomainId, boolean notFound) {
         switch (domainType) {
-        case Data:
-            setUpEntityQueryExpectations(QueryType.GetVmTemplate,
-                                         GetVmTemplateParameters.class,
-                                         new String[] { "Id" },
-                                         new Object[] { TEMPLATE_ID },
-                                         notFound ? null : getEntity(1));
-            break;
-        case ImportExport:
-            setUpEntityQueryExpectations(QueryType.GetStoragePoolsByStorageDomainId,
-                                         IdQueryParameters.class,
-                                         new String[] { "Id" },
-                                         new Object[] { getStoragePoolsByStorageDomainId },
-                                         setUpStoragePool());
-            setUpEntityQueryExpectations(QueryType.GetTemplatesFromExportDomain,
-                                         GetAllFromExportDomainQueryParameters.class,
-                                         new String[] { "StoragePoolId", "StorageDomainId" },
-                                         new Object[] { DATA_CENTER_ID, STORAGE_DOMAIN_ID },
-                                         setUpTemplates(notFound));
-            break;
-        default:
-            break;
+            case Data:
+                setUpEntityQueryExpectations(QueryType.GetVmTemplate,
+                                            GetVmTemplateParameters.class,
+                                            new String[] { "Id" },
+                                            new Object[] { TEMPLATE_ID },
+                                            notFound ? null : getEntity(1));
+                break;
+            case ImportExport:
+                setUpEntityQueryExpectations(QueryType.GetStoragePoolsByStorageDomainId,
+                                            IdQueryParameters.class,
+                                            new String[] { "Id" },
+                                            new Object[] { getStoragePoolsByStorageDomainId },
+                                            setUpStoragePool());
+                setUpEntityQueryExpectations(QueryType.GetTemplatesFromExportDomain,
+                                            GetAllFromExportDomainQueryParameters.class,
+                                            new String[] { "StoragePoolId", "StorageDomainId" },
+                                            new Object[] { DATA_CENTER_ID, STORAGE_DOMAIN_ID },
+                                            setUpTemplates(notFound));
+                break;
+            default:
+                break;
         }
     }
 

@@ -23,6 +23,7 @@ import time
 
 import daemon
 
+
 from dateutil import tz
 
 from . import base
@@ -167,7 +168,7 @@ class PidFile(base.Base):
                 self._file,
                 os.getpid()
             )
-            with open(self._file, 'w') as f:
+            with open(self._file, 'w', encoding='utf-8') as f:
                 f.write('%s\n' % os.getpid())
 
     def __exit__(self, exc_type, exc_value, traceback):
@@ -179,7 +180,7 @@ class PidFile(base.Base):
                 # we may not have permissions to delete pid
                 # so just try to empty it
                 try:
-                    with open(self._file, 'w'):
+                    with open(self._file, 'w', encoding='utf-8'):
                         pass
                 except IOError as e:
                     self.logger.error(
@@ -292,6 +293,29 @@ class Daemon(base.Base):
                     )
                 )
 
+    def _tryGracefulShutdown(self, p, gracefulStopTime, stopInterval):
+        try:
+            shutdown_requested = self.externalProcessGracefulShutdown(p)
+        except Exception as e:
+            self.logger.warning(
+                _('custom graceful shutdown failed: {error}').format(
+                    error=e,
+                )
+            )
+            self.logger.debug('exception', exc_info=True)
+            return False
+
+        if not shutdown_requested:
+            self.logger.debug('graceful shutdown not requested')
+            return False
+
+        if self._awaitTermination(gracefulStopTime, stopInterval, p):
+            self.logger.debug('graceful shutdown completed')
+            return True
+        else:
+            self.logger.debug('graceful shutdown timed out')
+            return False
+
     def daemonAsExternalProcess(
         self,
         executable,
@@ -299,6 +323,7 @@ class Daemon(base.Base):
         env,
         stopTime=30,
         stopInterval=1,
+        gracefulStopTime=15,
     ):
         self.logger.debug(
             'executing daemon: exe=%s, args=%s, env=%s',
@@ -344,18 +369,14 @@ class Daemon(base.Base):
             for sig in (signal.SIGTERM, signal.SIGINT):
                 signal.signal(sig, signal.SIG_IGN)
 
+            if self._tryGracefulShutdown(p, gracefulStopTime, stopInterval):
+                raise
+
             try:
                 self.logger.debug('terminating pid=%s', p.pid)
                 p.terminate()
-                for i in range(stopTime // stopInterval):
-                    if p.poll() is not None:
-                        self.logger.debug('terminated pid=%s', p.pid)
-                        break
-                    self.logger.debug(
-                        'waiting for termination of pid=%s',
-                        p.pid,
-                    )
-                    time.sleep(stopInterval)
+                self._awaitTermination(stopTime, stopInterval, p)
+
             except OSError as e:
                 self.logger.warning(
                     _('Cannot terminate pid {pid}: {error}').format(
@@ -373,7 +394,7 @@ class Daemon(base.Base):
                         _('Had to kill process {pid}').format(
                             pid=p.pid
                         )
-                    )
+                    ) from self.TerminateException
             except OSError as e:
                 self.logger.warning(
                     _('Cannot kill pid {pid}: {error}').format(
@@ -385,6 +406,17 @@ class Daemon(base.Base):
                 raise
 
             raise
+
+    def _awaitTermination(self, stopTime, stopInterval, p):
+        for i in range(stopTime // stopInterval):
+            if p.poll() is not None:
+                self.logger.debug('terminated pid=%s', p.pid)
+                return True
+            self.logger.debug(
+                'waiting for termination of pid=%s',
+                p.pid,)
+            time.sleep(stopInterval)
+        return False
 
     def _setLimits(self):
         self.logger.debug('Setting rlimits')
@@ -407,10 +439,6 @@ class Daemon(base.Base):
             s.connect(e)
             s.sendall(b'READY=1')
 
-    def _daemonReady(self):
-        if self._options.systemd == 'notify':
-            self._sd_notify_ready()
-
     def _daemon(self):
 
         self.logger.debug('daemon entry pid=%s', os.getpid())
@@ -418,9 +446,10 @@ class Daemon(base.Base):
 
         os.umask(0o022)
 
-        self.daemonSetup()
+        if self._options.systemd == 'notify':
+            self._sd_notify_ready()
 
-        self._daemonReady()
+        self.daemonSetup()
 
         stdout, stderr = (sys.stdout, sys.stderr)
         if self._options.redirectOutput:
@@ -434,9 +463,9 @@ class Daemon(base.Base):
         # bit undocumented.
         #
         handles = []
-        for l in logging.getLogger('ovirt').handlers:
-            if hasattr(l, 'socket'):
-                handles.append(l.socket)
+        for handler in logging.getLogger('ovirt').handlers:
+            if hasattr(handler, 'socket'):
+                handles.append(handler.socket)
 
         with daemon.DaemonContext(
             detach_process=self._options.background,
@@ -556,9 +585,25 @@ class Daemon(base.Base):
         """
         pass
 
+    def externalProcessGracefulShutdown(self, process):
+        """Custom graceful shutdown logic
+
+        Override this method to implement custom shutdown logic for the
+        external process managed by the daemon.
+        Exceptions raised here will be logged and then the regular signal-based
+        termination will proceed.
+
+        Args:
+            process: The subprocess.Popen object
+
+        Returns:
+            True if graceful shutdown successfully initiated, False otherwise
+        """
+        return False
+
     def daemonStdHandles(self):
         """Return handles for daemon context"""
-        null = open(os.devnull, 'w')
+        null = open(os.devnull, 'w', encoding='utf-8')
         return (null, null)
 
     def daemonContext(self):

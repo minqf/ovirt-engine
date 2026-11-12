@@ -22,7 +22,10 @@ import uuid
 
 from collections import namedtuple
 
-from M2Crypto import RSA
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import padding
 
 from otopi import constants as otopicons
 from otopi import filetransaction
@@ -57,8 +60,6 @@ OvnDbConfig = namedtuple(
         'command',
         'key_file',
         'cert_file',
-        'ssl_protocol',
-        'ciphers'
     ]
 )
 
@@ -69,9 +70,6 @@ class Plugin(plugin.PluginBase):
 
     CONNECTION_TCP = 'tcp'
     CONNECTION_SSL = 'ssl'
-    SSL_PROTOCOLS = 'TLSv1.2'
-    ALLOWED_CIPHERS = 'kRSA:-aDSS:-3DES:!DES:!RC4:!RC2:!IDEA:-SEED:!eNULL:' \
-                      '!aNULL:!MD5:-SHA384:-CAMELLIA:-ARIA:-AESCCM8'
 
     PROVIDER_NAME = 'ovirt-provider-ovn'
 
@@ -82,8 +80,6 @@ class Plugin(plugin.PluginBase):
         'ovn-nbctl',
         oenginecons.OvnFileLocations.OVIRT_PROVIDER_OVN_NDB_KEY,
         oenginecons.OvnFileLocations.OVIRT_PROVIDER_OVN_NDB_CERT,
-        None,
-        None
     )
 
     OVN_SOUTH_DB_CONFIG = OvnDbConfig(
@@ -93,8 +89,6 @@ class Plugin(plugin.PluginBase):
         'ovn-sbctl',
         oenginecons.OvnFileLocations.OVIRT_PROVIDER_OVN_SDB_KEY,
         oenginecons.OvnFileLocations.OVIRT_PROVIDER_OVN_SDB_CERT,
-        SSL_PROTOCOLS,
-        ALLOWED_CIPHERS,
     )
 
     def __init__(self, context):
@@ -118,6 +112,22 @@ class Plugin(plugin.PluginBase):
         self.environment.setdefault(
             OvnEnv.OVN_FIREWALLD_SERVICES,
             Defaults.DEFAULT_OVN_FIREWALLD_SERVICES
+        )
+        self.environment.setdefault(
+            oengcommcons.KeycloakEnv.KEYCLOAK_OVIRT_ADMIN_USER_WITH_PROFILE,
+            None
+        )
+        self.environment.setdefault(
+            oengcommcons.KeycloakEnv.ADMIN_PASSWORD,
+            None
+        )
+        self.environment.setdefault(
+            oengcommcons.KeycloakEnv.ENABLE,
+            False
+        )
+        self.environment.setdefault(
+            oengcommcons.KeycloakEnv.CONFIGURED,
+            False
         )
 
     def _check_provider_exists(self):
@@ -277,6 +287,7 @@ class Plugin(plugin.PluginBase):
                     %(callback_prefix)s,
                     %(description)s,
                     %(email)s,
+                    %(encrypted_userinfo)s,
                     %(trusted)s,
                     %(notification_callback)s,
                     %(notification_callback_host_protocol)s,
@@ -301,6 +312,7 @@ class Plugin(plugin.PluginBase):
                 callback_prefix='',
                 description='ovirt-provider-ovn',
                 email='',
+                encrypted_userinfo=True,
                 trusted=True,
                 notification_callback='',
                 notification_callback_host_protocol='TLS',
@@ -376,23 +388,30 @@ class Plugin(plugin.PluginBase):
                 ),
                 logStreams=False,
             )
-            return RSA.load_key_string(
-                '\n'.join(stdout).encode()
-                )
+            return serialization.load_pem_private_key(
+                '\n'.join(stdout).encode(),
+                password=None,
+                backend=default_backend(),
+            )
 
-        encrypted_password = _getRSA().public_encrypt(
-            data=password.encode(),
-            padding=RSA.pkcs1_padding,
+        encrypted_password = _getRSA().public_key().encrypt(
+            password.encode(),
+            padding=padding.OAEP(
+                padding.MGF1(hashes.SHA256()), hashes.SHA256(), None
+            ),
         )
-        return base64.b64encode(encrypted_password)
+        return b'$' + base64.b64encode(encrypted_password)
 
     def _query_install_ovn(self):
         return dialog.queryBoolean(
             dialog=self.dialog,
             name='ovirt-provider-ovn',
             note=_(
-                'Configure ovirt-provider-ovn '
-                '(@VALUES@) [@DEFAULT@]: '
+                '\nConfiguring ovirt-provider-ovn also sets the Default '
+                'cluster\'s default network provider to ovirt-provider-ovn.\n'
+                'Non-Default clusters may be configured with an OVN after '
+                'installation.\n'
+                'Configure ovirt-provider-ovn (@VALUES@) [@DEFAULT@]: '
             ),
             prompt=True,
             default=True
@@ -442,13 +461,39 @@ class Plugin(plugin.PluginBase):
         if user:
             return user, password
 
-        use_default_credentials = False
+        keycloak_enabled = self.environment.get(
+            oengcommcons.KeycloakEnv.ENABLE
+        )
+        keycloak_configured = self.environment.get(
+            oengcommcons.KeycloakEnv.CONFIGURED
+        )
+        if keycloak_enabled and not keycloak_configured:
+            self.logger.debug(
+                'Setting up OVN provider credentials '
+                'for Keycloak based authentication'
+            )
+            user = self.environment[
+                oengcommcons.KeycloakEnv.KEYCLOAK_OVIRT_ADMIN_USER_WITH_PROFILE
+            ]
+            password = self.environment[
+                oengcommcons.KeycloakEnv.ADMIN_PASSWORD
+            ]
+            self.environment[
+                OvnEnv.OVIRT_PROVIDER_OVN_USER
+            ] = user
+            self.environment[
+                OvnEnv.OVIRT_PROVIDER_OVN_PASSWORD
+            ] = password
+            return user, password
+
         user = self.environment[
             oenginecons.ConfigEnv.ADMIN_USER
         ]
         password = self.environment[
             oenginecons.ConfigEnv.ADMIN_PASSWORD
         ]
+
+        use_default_credentials = False
 
         if user is not None and password is not None:
             use_default_credentials = self._query_default_credentials(user)
@@ -465,7 +510,7 @@ class Plugin(plugin.PluginBase):
 
         return user, password
 
-    def _generate_pki(self):
+    def _add_ovn_pki_entities(self):
         self.environment[oenginecons.PKIEnv.ENTITIES].extend(
             (
                 {
@@ -474,6 +519,7 @@ class Plugin(plugin.PluginBase):
                     'extract': True,
                     'user': oengcommcons.SystemEnv.USER_ROOT,
                     'keepKey': False,
+                    'shortLife': False,
                 },
                 {
                     'name':
@@ -481,6 +527,7 @@ class Plugin(plugin.PluginBase):
                     'extract': True,
                     'user': oengcommcons.SystemEnv.USER_ROOT,
                     'keepKey': False,
+                    'shortLife': False,
                 },
                 {
                     'name':
@@ -488,6 +535,7 @@ class Plugin(plugin.PluginBase):
                     'extract': True,
                     'user': oengcommcons.SystemEnv.USER_ROOT,
                     'keepKey': False,
+                    'shortLife': False,
                 }
             )
         )
@@ -536,8 +584,6 @@ class Plugin(plugin.PluginBase):
                     ovn_db_config.key_file,
                     ovn_db_config.cert_file,
                     oenginecons.FileLocations.OVIRT_ENGINE_PKI_ENGINE_CA_CERT,
-                    ovn_db_config.ssl_protocol or 'TLSv1.2',
-                    ovn_db_config.ciphers or 'HIGH',
                 ),
                 _(
                     'Failed to configure {name} with SSL'
@@ -559,17 +605,22 @@ class Plugin(plugin.PluginBase):
             )
         )
 
-    def _sanitize_ovn_key_file_permissions(self, file_path, enable_logging):
+    def _set_file_permissions(
+            self,
+            file_path,
+            enable_logging,
+            desired_permissions
+    ):
         current_permissions = stat.S_IMODE(
             os.lstat(
                 file_path
             ).st_mode
         )
-        desired_permissions = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP
         if desired_permissions != current_permissions:
             if enable_logging:
                 self.logger.info(_(
-                    'Setting permissions on {file} to enable OVN to read it.'
+                    'Setting permissions on {file} '
+                    'to enable OVN and engine to read it.'
                 ).format(
                     file=file_path
                 ))
@@ -581,7 +632,14 @@ class Plugin(plugin.PluginBase):
                 desired_permissions
             )
 
-        desired_gid = grp.getgrnam('hugetlbfs').gr_gid
+    def _sanitize_ovn_key_file_permissions(self, file_path, enable_logging):
+        desired_permissions = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP
+        self._set_file_permissions(
+            file_path,
+            enable_logging,
+            desired_permissions
+        )
+        desired_gid = grp.getgrnam('openvswitch').gr_gid
         current_gid = os.stat(file_path).st_gid
         if desired_gid != current_gid:
             if enable_logging:
@@ -715,6 +773,23 @@ class Plugin(plugin.PluginBase):
                 'port-security-enabled-default': True
             }
         }
+
+        keycloak_enabled = self.environment.get(
+            oengcommcons.KeycloakEnv.ENABLE
+        )
+        if keycloak_enabled:
+            keycloak_admin = self.environment[
+                oengcommcons.KeycloakEnv.KEYCLOAK_OVIRT_ADMIN_USER_WITH_PROFILE
+            ]
+
+            self.logger.debug(
+                'Setting up ovirt OVN provider service '
+                'for Keycloak based authentication '
+                ' with user %s',
+                keycloak_admin
+            )
+            parameters['[OVIRT]']['ovirt-admin-user-name'] = keycloak_admin
+
         return self._format_config_file_content(parameters)
 
     def _configure_ovirt_provider_ovn(self):
@@ -761,8 +836,12 @@ class Plugin(plugin.PluginBase):
         truststore_password = config.get(
             'ENGINE_EXTERNAL_PROVIDERS_TRUST_STORE_PASSWORD'
         )
+
+        # We need to disable FIPS configuration of OpenJDK to be able to work
+        # with file system keystores and interoperability with openssl
         command = (
             'keytool',
+            '-J-Dcom.redhat.fips=false',
             '-import',
             '-alias',
             OvnEnv.PROVIDER_NAME,
@@ -798,6 +877,12 @@ class Plugin(plugin.PluginBase):
                 'pass': truststore_password,
             },
         )
+        if not self.environment[osetupcons.CoreEnv.DEVELOPER_MODE]:
+            self._set_file_permissions(
+                truststore,
+                True,
+                stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH,
+            )
 
     def _is_provider_installed(self):
         # TODO: we currently only check against installations done by
@@ -836,6 +921,7 @@ class Plugin(plugin.PluginBase):
         )
         if self._enabled or self._provider_installed:
             self._setup_firewalld_services()
+            self._add_ovn_pki_entities()
 
     def _print_commands(self, message, commands):
         self.dialog.note(
@@ -852,26 +938,30 @@ class Plugin(plugin.PluginBase):
 
     @plugin.event(
         stage=plugin.Stages.STAGE_CUSTOMIZATION,
+        name=oenginecons.Stages.OVN_PROVIDER_CREDENTIALS_CUSTOMIZATION,
         before=(
             osetupcons.Stages.DIALOG_TITLES_E_MISC,
         ),
         after=(
             oengcommcons.Stages.ADMIN_PASSWORD_SET,
         ),
-        condition=lambda self: self._enabled,
     )
     def _customization_credentials(self):
-        self._user, self._password = self._get_provider_credentials()
+        if self._enabled:
+            self._user, self._password = self._get_provider_credentials()
+            return
 
-    @plugin.event(
-        stage=plugin.Stages.STAGE_MISC,
-        before=(
-            oenginecons.Stages.CA_AVAILABLE,
-        ),
-        condition=lambda self: self._enabled,
-    )
-    def _misc_pki(self):
-        self._generate_pki()
+        ovnprovider_installed = self._is_provider_installed()
+        keycloak_enabled = self.environment.get(
+            oengcommcons.KeycloakEnv.ENABLE
+        )
+        keycloak_configured = self.environment.get(
+            oengcommcons.KeycloakEnv.CONFIGURED
+        )
+
+        if ovnprovider_installed and \
+                keycloak_enabled and not keycloak_configured:
+            self._user, self._password = self._get_provider_credentials()
 
     def _restart_service(self, service):
         self.services.startup(
@@ -886,56 +976,17 @@ class Plugin(plugin.PluginBase):
 
     @plugin.event(
         stage=plugin.Stages.STAGE_MISC,
-        name=oenginecons.Stages.OVN_SERVICES_RESTART,
-        condition=lambda self: (
-            self._enabled and
-            not self.environment[osetupcons.CoreEnv.DEVELOPER_MODE]
-        )
-    )
-    def _restart_ovn_services(self):
-        for service in OvnEnv.ENGINE_MACHINE_OVN_SERVICES:
-            self._restart_service(service)
-
-    @plugin.event(
-        stage=plugin.Stages.STAGE_MISC,
         before=(
-            oenginecons.Stages.OVN_PROVIDER_SERVICE_RESTART,
+            oenginecons.Stages.OVN_SERVICES_RESTART,
         ),
         after=(
             oenginecons.Stages.CA_AVAILABLE,
-            oenginecons.Stages.OVN_SERVICES_RESTART,
         ),
-        condition=lambda self: self._enabled or self._provider_installed,
-    )
-    def _misc_configure_ovn_pki(self):
-        self.logger.info(_('Updating OVN SSL configuration'))
-        self._configure_ovndb_north_connection()
-        self._configure_ovndb_south_connection()
-
-    @plugin.event(
-        stage=plugin.Stages.STAGE_MISC,
-        before=(
-            oenginecons.Stages.OVN_PROVIDER_SERVICE_RESTART,
-        ),
-        after=(
-            oenginecons.Stages.CA_AVAILABLE,
-            oenginecons.Stages.OVN_SERVICES_RESTART,
-        ),
-        condition=lambda self:
-            self._enabled
-    )
-    def _misc_configure_provider(self):
-        self._generate_client_secret()
-        self._configure_ovirt_provider_ovn()
-        self._upate_external_providers_keystore()
-
-    @plugin.event(
-        stage=plugin.Stages.STAGE_MISC,
         condition=lambda self: (
-            self._provider_installed and
-            not self.environment[
-                osetupcons.CoreEnv.DEVELOPER_MODE
-            ]
+                self._provider_installed and
+                not self.environment[
+                    osetupcons.CoreEnv.DEVELOPER_MODE
+                ]
         ),
     )
     def _upgrade(self):
@@ -982,17 +1033,95 @@ class Plugin(plugin.PluginBase):
                 ).format(
                     file=oenginecons.OvnFileLocations.
                     OVIRT_PROVIDER_ENGINE_SETUP_CONFIG_FILE
-                    )
+                )
                 )
             else:
                 raise
 
     @plugin.event(
         stage=plugin.Stages.STAGE_MISC,
+        name=oenginecons.Stages.OVN_SERVICES_RESTART,
+        condition=lambda self: (
+            (self._enabled or self._provider_installed) and not
+            self.environment[osetupcons.CoreEnv.DEVELOPER_MODE]
+        )
+    )
+    def _restart_ovn_services(self):
+        for service in OvnEnv.ENGINE_MACHINE_OVN_SERVICES:
+            self._restart_service(service)
+
+    @plugin.event(
+        stage=plugin.Stages.STAGE_MISC,
+        before=(
+            oenginecons.Stages.OVN_PROVIDER_SERVICE_RESTART,
+        ),
+        after=(
+            oenginecons.Stages.CA_AVAILABLE,
+            oenginecons.Stages.OVN_SERVICES_RESTART,
+        ),
+        condition=lambda self: self._enabled or self._provider_installed,
+    )
+    def _misc_configure_ovn_pki(self):
+        self.logger.info(_('Updating OVN SSL configuration'))
+        self._configure_ovndb_north_connection()
+        self._configure_ovndb_south_connection()
+
+    @plugin.event(
+        stage=plugin.Stages.STAGE_MISC,
+        after=(
+                oenginecons.Stages.OVN_SERVICES_RESTART,
+        ),
+        condition=lambda self: self._enabled or self._provider_installed,
+    )
+    def _misc_configure_ovn_timeout(self):
+        self.logger.info(_('Updating OVN timeout configuration'))
+        self._execute_command(
+            (
+                self.OVN_SOUTH_DB_CONFIG.command,
+                'set',
+                'connection',
+                '.',
+                'inactivity_probe=60000',
+            ),
+            _(
+                'Failed to configure timeout on {name}'
+            ).format(
+                name=self.OVN_SOUTH_DB_CONFIG.name
+            )
+        )
+
+    @plugin.event(
+        stage=plugin.Stages.STAGE_MISC,
+        before=(
+            oenginecons.Stages.OVN_PROVIDER_SERVICE_RESTART,
+            oenginecons.Stages.OVN_PROVIDER_OVN_DB,
+        ),
+        after=(
+            oenginecons.Stages.CA_AVAILABLE,
+            oenginecons.Stages.OVN_SERVICES_RESTART,
+        ),
+    )
+    def _misc_configure_provider(self):
+        if self._enabled:
+            self._generate_client_secret()
+            self._configure_ovirt_provider_ovn()
+            self._upate_external_providers_keystore()
+        elif self._provider_installed:
+            keycloak_enabled = self.environment.get(
+                oengcommcons.KeycloakEnv.ENABLE
+            )
+            if keycloak_enabled:
+                provider_secret_key = OvnEnv.OVIRT_PROVIDER_OVN_SECRET
+                if self.environment.get(provider_secret_key) is None:
+                    self._generate_client_secret()
+                self._configure_ovirt_provider_ovn()
+
+    @plugin.event(
+        stage=plugin.Stages.STAGE_MISC,
         name=oenginecons.Stages.OVN_PROVIDER_SERVICE_RESTART,
         condition=lambda self: (
-            self._enabled and
-            not self.environment[osetupcons.CoreEnv.DEVELOPER_MODE]
+            (self._enabled or self._provider_installed) and not
+            self.environment[osetupcons.CoreEnv.DEVELOPER_MODE]
         )
     )
     def _restart_provider_service(self):
@@ -1043,6 +1172,50 @@ class Plugin(plugin.PluginBase):
         self._set_default_network_provider_in_db()
 
     @plugin.event(
+        stage=plugin.Stages.STAGE_MISC,
+        after=(
+            oenginecons.Stages.OVN_PROVIDER_OVN_DB,
+        ),
+        condition=lambda self: self._provider_installed,
+    )
+    def _update_db_credentials(self):
+        keycloak_enabled = self.environment.get(
+            oengcommcons.KeycloakEnv.ENABLE
+        )
+        keycloak_configured = self.environment.get(
+            oengcommcons.KeycloakEnv.CONFIGURED
+        )
+        if keycloak_enabled and not keycloak_configured:
+            provider_id = self.environment.get(OvnEnv.OVIRT_PROVIDER_ID)
+            keycloak_admin = self.environment[
+                oengcommcons.KeycloakEnv.KEYCLOAK_OVIRT_ADMIN_USER_WITH_PROFILE
+            ]
+            keycloak_password = self.environment[
+                oengcommcons.KeycloakEnv.ADMIN_PASSWORD
+            ]
+            encrypted_password = self._encrypt_password(
+                keycloak_password
+            ).decode()
+
+            self.environment[
+                oenginecons.EngineDBEnv.STATEMENT
+            ].execute(
+                statement="""
+                    UPDATE providers SET
+                        auth_username = %(auth_username)s,
+                        auth_password = %(auth_password)s
+                    WHERE
+                        id = %(provider_id)s
+                """,
+                args=dict(
+                    provider_id=provider_id,
+                    auth_username=keycloak_admin,
+                    auth_password=encrypted_password
+                ),
+            )
+            self._add_client_secret_to_db()
+
+    @plugin.event(
         stage=plugin.Stages.STAGE_CLOSEUP,
         before=(
             osetupcons.Stages.DIALOG_TITLES_E_SUMMARY,
@@ -1051,7 +1224,7 @@ class Plugin(plugin.PluginBase):
             osetupcons.Stages.DIALOG_TITLES_S_SUMMARY,
         ),
         condition=lambda self: (
-            self._enabled and
+            (self._enabled or self._provider_installed) and
             self.environment[osetupcons.CoreEnv.DEVELOPER_MODE]
         )
     )

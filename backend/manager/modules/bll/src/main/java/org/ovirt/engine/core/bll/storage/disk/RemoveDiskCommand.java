@@ -12,10 +12,12 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
+import javax.enterprise.inject.Instance;
 import javax.inject.Inject;
 
 import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.bll.CommandBase;
+import org.ovirt.engine.core.bll.ConcurrentChildCommandsExecutionCallback;
 import org.ovirt.engine.core.bll.DisableInPrepareMode;
 import org.ovirt.engine.core.bll.LockMessage;
 import org.ovirt.engine.core.bll.LockMessagesMatchUtil;
@@ -28,6 +30,7 @@ import org.ovirt.engine.core.bll.snapshots.SnapshotsValidator;
 import org.ovirt.engine.core.bll.storage.disk.image.DisksFilter;
 import org.ovirt.engine.core.bll.storage.disk.image.ImagesHandler;
 import org.ovirt.engine.core.bll.tasks.CommandCoordinatorUtil;
+import org.ovirt.engine.core.bll.tasks.interfaces.CommandCallback;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
 import org.ovirt.engine.core.bll.validator.storage.DiskImagesValidator;
 import org.ovirt.engine.core.bll.validator.storage.DiskOperationsValidator;
@@ -117,6 +120,8 @@ public class RemoveDiskCommand<T extends RemoveDiskParameters> extends CommandBa
     private UnregisteredDisksDao unregisteredDisksDao;
     @Inject
     private CommandCoordinatorUtil commandCoordinatorUtil;
+    @Inject
+    private Instance<ConcurrentChildCommandsExecutionCallback> callbackProvider;
 
     public RemoveDiskCommand(T parameters, CommandContext commandContext) {
         super(parameters, commandContext);
@@ -167,30 +172,30 @@ public class RemoveDiskCommand<T extends RemoveDiskParameters> extends CommandBa
 
         // No need to validate for Hosted Engine disks as the remove operation is not allowed of them to begin with
         switch (disk.getContentType()) {
-        case OVF_STORE:
-            DiskImagesValidator diskImagesValidator = new DiskImagesValidator((DiskImage) disk);
-            if (!validate(diskImagesValidator.disksInStatus(ImageStatus.ILLEGAL,
-                    EngineMessage.ACTION_TYPE_FAILED_OVF_DISK_NOT_IN_APPLICABLE_STATUS))) {
-                return false;
-            }
-            break;
-        case MEMORY_DUMP_VOLUME:
-        case MEMORY_METADATA_VOLUME:
-            List<Snapshot> snapshots = snapshotDao.getSnapshotsByMemoryDiskId(disk.getId());
-            // If there's more than one snapshot it means the snapshot is in preview
-            if (snapshots.size() > 1) {
-                return failValidation(EngineMessage.ACTION_TYPE_FAILED_MEMORY_DISK_SNAPSHOT_IN_PREVIEW);
-            }
-            if (!snapshots.isEmpty() && snapshots.get(0).getType() == Snapshot.SnapshotType.ACTIVE) {
-                return failValidation(EngineMessage.ACTION_TYPE_FAILED_CANNOT_REMOVE_HIBERNATION_DISK);
-            }
-            break;
-        case ISO:
-            List<String> vmNames = vmStaticDao.getAllNamesWithSpecificIsoAttached(disk.getId());
-            if (!vmNames.isEmpty()) {
-                return failValidation(EngineMessage.ERROR_CANNOT_REMOVE_ISO_DISK_ATTACHED_TO_VMS,
-                    String.format("$VmNames %1$s", String.join(",", vmNames)));
-            }
+            case OVF_STORE:
+                DiskImagesValidator diskImagesValidator = new DiskImagesValidator((DiskImage) disk);
+                if (!validate(diskImagesValidator.disksInStatus(ImageStatus.ILLEGAL,
+                        EngineMessage.ACTION_TYPE_FAILED_OVF_DISK_NOT_IN_APPLICABLE_STATUS))) {
+                    return false;
+                }
+                break;
+            case MEMORY_DUMP_VOLUME:
+            case MEMORY_METADATA_VOLUME:
+                List<Snapshot> snapshots = snapshotDao.getSnapshotsByMemoryDiskId(disk.getId());
+                // If there's more than one snapshot it means the snapshot is in preview
+                if (snapshots.size() > 1) {
+                    return failValidation(EngineMessage.ACTION_TYPE_FAILED_MEMORY_DISK_SNAPSHOT_IN_PREVIEW);
+                }
+                if (!snapshots.isEmpty() && snapshots.get(0).getType() == Snapshot.SnapshotType.ACTIVE) {
+                    return failValidation(EngineMessage.ACTION_TYPE_FAILED_CANNOT_REMOVE_HIBERNATION_DISK);
+                }
+                break;
+            case ISO:
+                List<String> vmNames = vmStaticDao.getAllNamesWithSpecificIsoAttached(disk.getId());
+                if (!vmNames.isEmpty()) {
+                    return failValidation(EngineMessage.ERROR_CANNOT_REMOVE_ISO_DISK_ATTACHED_TO_VMS,
+                        String.format("$VmNames %1$s", String.join(",", vmNames)));
+                }
         }
 
         return true;
@@ -327,7 +332,7 @@ public class RemoveDiskCommand<T extends RemoveDiskParameters> extends CommandBa
             return failValidation(EngineMessage.VM_TEMPLATE_IMAGE_LAST_DOMAIN);
         }
 
-        if (!checkDerivedVmFromTemplateExists(diskImage) || !checkDerivedDisksFromDiskNotExist(diskImage)){
+        if (!checkDerivedVmFromTemplateExists(diskImage) || !checkDerivedDisksFromDiskNotExist(diskImage)) {
             return false;
         }
 
@@ -345,7 +350,7 @@ public class RemoveDiskCommand<T extends RemoveDiskParameters> extends CommandBa
     }
 
     private DiskImagesValidator createDiskImagesValidator(DiskImage disk) {
-      return new DiskImagesValidator(disk);
+        return new DiskImagesValidator(disk);
     }
 
     protected boolean checkDerivedDisksFromDiskNotExist(DiskImage diskImage) {
@@ -398,7 +403,7 @@ public class RemoveDiskCommand<T extends RemoveDiskParameters> extends CommandBa
 
     @Override
     protected void executeCommand() {
-        switch (getDisk().getDiskStorageType()) {
+        switch (getDiskStorageType()) {
             case IMAGE:
                 if (getDisk().getContentType() == DiskContentType.MEMORY_DUMP_VOLUME ||
                         getDisk().getContentType() == DiskContentType.MEMORY_METADATA_VOLUME) {
@@ -448,12 +453,16 @@ public class RemoveDiskCommand<T extends RemoveDiskParameters> extends CommandBa
         if (getParameters().isUnregisteredDisk()) {
             unregisteredDisksDao.removeUnregisteredDisk(getParameters().getDiskId(), getParameters().getStorageDomainId());
         }
+        persistCommandIfNeeded();
     }
 
     private void removeManagedBlockStorageDisk() {
+        RemoveDiskParameters params = getParameters();
+        params.setEndProcedure(EndProcedure.COMMAND_MANAGED);
+        params.setCommandId(null);
         Future<ActionReturnValue> future = commandCoordinatorUtil.executeAsyncCommand(
                 ActionType.RemoveManagedBlockStorageDisk,
-                getParameters(),
+                params,
                 cloneContextAndDetachFromParent());
         try {
             setReturnValue(future.get());
@@ -507,7 +516,7 @@ public class RemoveDiskCommand<T extends RemoveDiskParameters> extends CommandBa
         RemoveImageParameters result = new RemoveImageParameters(diskImage.getImageId());
         result.setTransactionScopeOption(TransactionScopeOption.Suppress);
         result.setDiskImage(diskImage);
-        result.setParentCommand(ActionType.RemoveDisk);
+        result.setParentCommand(getActionType());
         result.setEntityInfo(new EntityInfo(VdcObjectType.Disk, getParameters().getDiskId()));
         result.setParentParameters(getParameters());
         result.setRemoveFromSnapshots(true);
@@ -548,42 +557,42 @@ public class RemoveDiskCommand<T extends RemoveDiskParameters> extends CommandBa
     @Override
     public AuditLogType getAuditLogTypeValue() {
         switch (getActionState()) {
-        case EXECUTE:
-            if (getDisk().getDiskStorageType() == DiskStorageType.LUN) {
-                if (getSucceeded()) {
-                    if (getVmsForDiskId().isEmpty()) {
-                        return AuditLogType.USER_FINISHED_REMOVE_DISK_NO_DOMAIN;
+            case EXECUTE:
+                if (getDisk().getDiskStorageType() == DiskStorageType.LUN) {
+                    if (getSucceeded()) {
+                        if (getVmsForDiskId().isEmpty()) {
+                            return AuditLogType.USER_FINISHED_REMOVE_DISK_NO_DOMAIN;
+                        } else {
+                            addAttachVmNamesCustomValue();
+                            return AuditLogType.USER_FINISHED_REMOVE_DISK_ATTACHED_TO_VMS_NO_DOMAIN;
+                        }
                     } else {
-                        addAttachVmNamesCustomValue();
-                        return AuditLogType.USER_FINISHED_REMOVE_DISK_ATTACHED_TO_VMS_NO_DOMAIN;
+                        return AuditLogType.USER_FINISHED_FAILED_REMOVE_DISK_NO_DOMAIN;
                     }
-                } else {
-                    return AuditLogType.USER_FINISHED_FAILED_REMOVE_DISK_NO_DOMAIN;
+                } else if (getDisk().getDiskStorageType() == DiskStorageType.CINDER) {
+                    if (getSucceeded()) {
+                        if (getVmsForDiskId().isEmpty()) {
+                            return AuditLogType.USER_REMOVE_DISK_INITIATED;
+                        } else {
+                            addAttachVmNamesCustomValue();
+                            return AuditLogType.USER_REMOVE_DISK_ATTACHED_TO_VMS_INITIATED;
+                        }
+                    } else {
+                        return AuditLogType.USER_FINISHED_FAILED_REMOVE_DISK;
+                    }
                 }
-            } else if (getDisk().getDiskStorageType() == DiskStorageType.CINDER) {
                 if (getSucceeded()) {
                     if (getVmsForDiskId().isEmpty()) {
-                        return AuditLogType.USER_REMOVE_DISK_INITIATED;
+                        return AuditLogType.USER_FINISHED_REMOVE_DISK;
                     } else {
                         addAttachVmNamesCustomValue();
-                        return AuditLogType.USER_REMOVE_DISK_ATTACHED_TO_VMS_INITIATED;
+                        return AuditLogType.USER_FINISHED_REMOVE_DISK_ATTACHED_TO_VMS;
                     }
                 } else {
                     return AuditLogType.USER_FINISHED_FAILED_REMOVE_DISK;
                 }
-            }
-            if (getSucceeded()) {
-                if (getVmsForDiskId().isEmpty()) {
-                    return AuditLogType.USER_FINISHED_REMOVE_DISK;
-                } else {
-                    addAttachVmNamesCustomValue();
-                    return AuditLogType.USER_FINISHED_REMOVE_DISK_ATTACHED_TO_VMS;
-                }
-            } else {
-                return AuditLogType.USER_FINISHED_FAILED_REMOVE_DISK;
-            }
-        default:
-            return AuditLogType.UNASSIGNED;
+            default:
+                return AuditLogType.UNASSIGNED;
         }
     }
 
@@ -724,5 +733,17 @@ public class RemoveDiskCommand<T extends RemoveDiskParameters> extends CommandBa
 
     @Override
     public void addQuotaPermissionSubject(List<PermissionSubject> quotaPermissionList) {
+    }
+
+    private DiskStorageType getDiskStorageType() {
+        if (getParameters().getDiskStorageType() == null) {
+            getParameters().setDiskStorageType(getDisk().getDiskStorageType());
+        }
+        return getParameters().getDiskStorageType();
+    }
+
+    @Override
+    public CommandCallback getCallback() {
+        return getDiskStorageType() == DiskStorageType.IMAGE ? callbackProvider.get() : null;
     }
 }

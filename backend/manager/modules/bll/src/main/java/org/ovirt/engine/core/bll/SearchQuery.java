@@ -8,6 +8,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -46,6 +47,7 @@ import org.ovirt.engine.core.common.businessentities.aaa.DbGroup;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.businessentities.gluster.GlusterVolumeEntity;
 import org.ovirt.engine.core.common.businessentities.network.NetworkView;
+import org.ovirt.engine.core.common.businessentities.network.VnicProfileView;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
 import org.ovirt.engine.core.common.businessentities.storage.ImageTransfer;
 import org.ovirt.engine.core.common.config.Config;
@@ -57,6 +59,7 @@ import org.ovirt.engine.core.common.queries.QueryParametersBase;
 import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.core.common.queries.SearchParameters;
 import org.ovirt.engine.core.compat.DateTime;
+import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.TimeSpan;
 import org.ovirt.engine.core.compat.Version;
 import org.ovirt.engine.core.dao.AuditLogDao;
@@ -77,6 +80,8 @@ import org.ovirt.engine.core.dao.VmPoolDao;
 import org.ovirt.engine.core.dao.VmTemplateDao;
 import org.ovirt.engine.core.dao.gluster.GlusterVolumeDao;
 import org.ovirt.engine.core.dao.network.NetworkViewDao;
+import org.ovirt.engine.core.dao.network.VmNetworkInterfaceDao;
+import org.ovirt.engine.core.dao.network.VnicProfileViewDao;
 import org.ovirt.engine.core.dao.provider.ProviderDao;
 import org.ovirt.engine.core.searchbackend.ISyntaxChecker;
 import org.ovirt.engine.core.searchbackend.SearchObjects;
@@ -145,6 +150,9 @@ public class SearchQuery<P extends SearchParameters> extends QueriesCommandBase<
     private NetworkViewDao networkViewDao;
 
     @Inject
+    private VnicProfileViewDao vnicProfileViewDao;
+
+    @Inject
     private ProviderDao providerDao;
 
     @Inject
@@ -166,6 +174,8 @@ public class SearchQuery<P extends SearchParameters> extends QueriesCommandBase<
     private LockManager lockManager;
     @Inject
     private HostLocking hostLocking;
+    @Inject
+    private VmNetworkInterfaceDao vmNetworkInterfaceDao;
 
     public SearchQuery(P parameters, EngineContext engineContext) {
         super(parameters, engineContext);
@@ -175,75 +185,78 @@ public class SearchQuery<P extends SearchParameters> extends QueriesCommandBase<
     protected void executeQueryCommand() {
         List<? extends Queryable> returnValue = new ArrayList<>();
         switch (getParameters().getSearchTypeValue()) {
-        case VM:
-            returnValue = searchVmsFromDb();
-            break;
-        case DirectoryGroup:
-            returnValue = searchDirectoryGroups();
-            break;
-        case DirectoryUser:
-            returnValue = searchDirectoryUsers();
-            break;
-        case AuditLog:
-            returnValue = searchAuditLogEvents();
-            break;
-        case DBUser:
-            returnValue = searchDbUsers();
-            break;
-        case DBGroup:
-            returnValue = searchDbGroups();
-            break;
-        case VDS:
-            returnValue = searchVDSsByDb();
-            break;
-        case VmTemplate:
-            returnValue = searchVmTemplates();
-            break;
-        case VmPools:
-            returnValue = searchVmPools();
-            break;
-        case Cluster:
-            returnValue = searchClusters();
-            break;
-        case StoragePool:
-            returnValue = searchStoragePool();
-            break;
-        case StorageDomain:
-            returnValue = searchStorageDomain();
-            break;
-        case Quota:
-            returnValue = searchQuota();
-            break;
-        case Disk:
-            returnValue = searchDisk();
-            break;
-        case GlusterVolume:
-            returnValue = searchGlusterVolumes();
-            break;
-        case Network:
-            returnValue = searchNetworks();
-            break;
-        case Provider:
-            returnValue = searchProviders();
-            break;
-        case InstanceType:
-            returnValue = searchInstanceTypes();
-            break;
-        case ImageType:
-            returnValue = searchImageTypes();
-            break;
-        case Session:
-            returnValue = searchSessions();
-            break;
-        case ImageTransfer:
-            returnValue = searchImageTransfer();
-            break;
-        case Job:
-            returnValue = searchJobs();
-            break;
-        default:
-            log.error("Search object type not handled: {}", getParameters().getSearchTypeValue());
-            break;
+            case VM:
+                returnValue = searchVmsFromDb();
+                break;
+            case DirectoryGroup:
+                returnValue = searchDirectoryGroups();
+                break;
+            case DirectoryUser:
+                returnValue = searchDirectoryUsers();
+                break;
+            case AuditLog:
+                returnValue = searchAuditLogEvents();
+                break;
+            case DBUser:
+                returnValue = searchDbUsers();
+                break;
+            case DBGroup:
+                returnValue = searchDbGroups();
+                break;
+            case VDS:
+                returnValue = searchVDSsByDb();
+                break;
+            case VmTemplate:
+                returnValue = searchVmTemplates();
+                break;
+            case VmPools:
+                returnValue = searchVmPools();
+                break;
+            case Cluster:
+                returnValue = searchClusters();
+                break;
+            case StoragePool:
+                returnValue = searchStoragePool();
+                break;
+            case StorageDomain:
+                returnValue = searchStorageDomain();
+                break;
+            case Quota:
+                returnValue = searchQuota();
+                break;
+            case Disk:
+                returnValue = searchDisk();
+                break;
+            case GlusterVolume:
+                returnValue = searchGlusterVolumes();
+                break;
+            case Network:
+                returnValue = searchNetworks();
+                break;
+            case Provider:
+                returnValue = searchProviders();
+                break;
+            case InstanceType:
+                returnValue = searchInstanceTypes();
+                break;
+            case ImageType:
+                returnValue = searchImageTypes();
+                break;
+            case Session:
+                returnValue = searchSessions();
+                break;
+            case ImageTransfer:
+                returnValue = searchImageTransfer();
+                break;
+            case Job:
+                returnValue = searchJobs();
+                break;
+            case VnicProfile:
+                returnValue = searchVnicProfiles();
+                break;
+            default:
+                log.error("Search object type not handled: {}", getParameters().getSearchTypeValue());
+                break;
         }
         getQueryReturnValue().setReturnValue(returnValue);
     }
@@ -254,15 +267,20 @@ public class SearchQuery<P extends SearchParameters> extends QueriesCommandBase<
             return Collections.emptyList();
         }
 
+        var javaZoneIdToOffset = vmHandler.getJavaZoneIdToOffsetFuncSupplier();
         List<VM> vms = vmDao.getAllUsingQuery(data.getQuery());
+        Map<Guid, VM> vmsById = new HashMap<>();
         for (VM vm : vms) {
             vmHandler.updateVmGuestAgentVersion(vm);
             vmHandler.updateVmLock(vm);
             vmHandler.updateOperationProgress(vm);
             vmHandler.updateVmStatistics(vm);
-            vmHandler.updateNextRunChangedFields(vm, getUser(), getParameters().isFiltered());
             vmHandler.updateConfiguredCpuVerb(vm);
+            vmHandler.updateIsDifferentTimeZone(vm, javaZoneIdToOffset);
+            vmsById.put(vm.getId(), vm);
         }
+        var vmIdsWithVnicsOutOfSync = vmNetworkInterfaceDao.getAllWithVnicOutOfSync(vmsById.keySet());
+        vmIdsWithVnicsOutOfSync.stream().map(vmsById::get).filter(Objects::nonNull).forEach(vm -> vm.setVnicsOutOfSync(true));
         return vms;
     }
 
@@ -389,12 +407,14 @@ public class SearchQuery<P extends SearchParameters> extends QueriesCommandBase<
         if (retVal.isPresent()) {
             clusters.forEach(cluster -> cluster.setClusterCompatibilityLevelUpgradeNeeded(
                             retVal.get().compareTo(cluster.getCompatibilityVersion()) > 0)
-                    );
+            );
         }
-        for(Cluster cluster: clusters) {
-            List<VDS> hostsWithMissingFlags = backend.runInternalQuery(QueryType.GetHostsWithMissingFlagsForCluster,
-                    new IdQueryParameters(cluster.getId())).getReturnValue();
-            cluster.setHasHostWithMissingCpuFlags(!hostsWithMissingFlags.isEmpty());
+        for (Cluster cluster: clusters) {
+            if (cluster.isManaged()) {
+                List<VDS> hostsWithMissingFlags = backend.runInternalQuery(QueryType.GetHostsWithMissingFlagsForCluster,
+                        new IdQueryParameters(cluster.getId())).getReturnValue();
+                cluster.setHasHostWithMissingCpuFlags(!hostsWithMissingFlags.isEmpty());
+            }
 
             String verb = cpuFlagsManagerHandler.getCpuId(cluster.getCpuName(), cluster.getCompatibilityVersion());
             cluster.setConfiguredCpuVerb(verb);
@@ -449,6 +469,10 @@ public class SearchQuery<P extends SearchParameters> extends QueriesCommandBase<
         return genericSearch(networkViewDao, true);
     }
 
+    private List<VnicProfileView> searchVnicProfiles() {
+        return genericSearch(vnicProfileViewDao, true);
+    }
+
     private List<Provider<?>> searchProviders() {
         return genericSearch(providerDao, true);
     }
@@ -474,10 +498,10 @@ public class SearchQuery<P extends SearchParameters> extends QueriesCommandBase<
     }
 
     private static final String[] AD_SEARCH_TYPES = {
-            SearchObjects.AD_USER_OBJ_NAME,
-            SearchObjects.AD_USER_PLU_OBJ_NAME,
-            SearchObjects.AD_GROUP_OBJ_NAME,
-            SearchObjects.AD_GROUP_PLU_OBJ_NAME
+        SearchObjects.AD_USER_OBJ_NAME,
+        SearchObjects.AD_USER_PLU_OBJ_NAME,
+        SearchObjects.AD_GROUP_OBJ_NAME,
+        SearchObjects.AD_GROUP_PLU_OBJ_NAME
     };
 
     private static final Pattern adSearchPattern = Pattern.compile(
@@ -516,7 +540,7 @@ public class SearchQuery<P extends SearchParameters> extends QueriesCommandBase<
             // search text.
             if (!isExistsValue || IsFromYesterday) {
                 log.debug("ResourceManager::searchBusinessObjects(''{}'') - entered", searchText);
-                final char AT='@';
+                final char AT = '@';
                 String queryAuthz = null;
                 String queryNamespace = null;
                 ISyntaxChecker curSyntaxChecker;
@@ -525,7 +549,7 @@ public class SearchQuery<P extends SearchParameters> extends QueriesCommandBase<
                 if (m.matches()) {
                     final String COLON = ":";
                     String prefix = m.group("prefix");
-                    searchText =  m.group("content");
+                    searchText = m.group("content");
                     // get profile
                     List<String> profiles = backend.runInternalQuery(QueryType.GetDomainList,
                             new QueryParametersBase(getParameters().getSessionId())).getReturnValue();
@@ -574,8 +598,8 @@ public class SearchQuery<P extends SearchParameters> extends QueriesCommandBase<
                     int endPos = searchObj.getErrorEndPos();
                     int length = endPos - startPos;
                     String error =
-                            (length > 0 && ((startPos + 1 + length) < searchText.length())
-                            && (endPos + 1 < searchText.length()))
+                            (length > 0 && (startPos + 1 + length) < searchText.length()
+                            && (endPos + 1) < searchText.length())
                                     ?
                                     searchText.substring(0, startPos)
                                             + "$"
@@ -585,12 +609,23 @@ public class SearchQuery<P extends SearchParameters> extends QueriesCommandBase<
                                     :
                                     searchObj.getError().toString();
                     getQueryReturnValue().setExceptionString(error);
-                    log.info("ResourceManager::searchBusinessObjects - erroneous search text - ''{}'' error - ''{}''",
-                            searchText, error);
+                    if (!queriesCache.containsKey(searchKey)) {
+                        // log error only once
+                        log.info(
+                                "ResourceManager::searchBusinessObjects - erroneous search text - ''{}'' error - ''{}''",
+                                searchText,
+                                error);
+                        // add search to the cache in order not process it again in case that
+                        // this query is scheduled to be called repeatedly
+                        queriesCache.put(searchKey, null);
+                    }
                     return null;
                 }
                 if (!searchObj.getvalid()) {
-                    log.warn("ResourceManager::searchBusinessObjects - Invalid search text - ''{}''", searchText);
+                    if (!queriesCache.containsKey(searchKey)) {
+                        log.warn("ResourceManager::searchBusinessObjects - Invalid search text - ''{}''", searchText);
+                        queriesCache.put(searchKey, null);
+                    }
                     return null;
                 }
                 // find if this is a trivial search expression (like 'Vms:' etc).
@@ -609,14 +644,24 @@ public class SearchQuery<P extends SearchParameters> extends QueriesCommandBase<
                 }
             }
         } catch (SearchEngineIllegalCharacterException e) {
-            log.error("Search expression can not end with ESCAPE character: {}", getParameters().getSearchPattern());
+            if (!queriesCache.containsKey(searchKey)) {
+                log.error("Search expression can not end with ESCAPE character: {}",
+                        getParameters().getSearchPattern());
+                queriesCache.put(searchKey, null);
+            }
             data = null;
         } catch (SqlInjectionException e) {
-            log.error("Sql Injection in search: {}", getParameters().getSearchPattern());
+            if (!queriesCache.containsKey(searchKey)) {
+                log.error("Sql Injection in search: {}", getParameters().getSearchPattern());
+                queriesCache.put(searchKey, null);
+            }
             data = null;
         } catch (RuntimeException ex) {
-            log.warn("Illegal search: {}: {}", getParameters().getSearchPattern(), ex.getMessage());
-            log.debug("Exception", ex);
+            if (!queriesCache.containsKey(searchKey)) {
+                log.warn("Illegal search: {}: {}", getParameters().getSearchPattern(), ex.getMessage());
+                log.debug("Exception", ex);
+                queriesCache.put(searchKey, null);
+            }
             throw ex;
         }
         return data;

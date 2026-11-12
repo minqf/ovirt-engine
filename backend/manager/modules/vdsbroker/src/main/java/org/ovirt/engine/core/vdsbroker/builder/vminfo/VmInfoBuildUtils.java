@@ -36,15 +36,18 @@ import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.FeatureSupported;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
 import org.ovirt.engine.core.common.businessentities.ChipsetType;
+import org.ovirt.engine.core.common.businessentities.CpuPinningPolicy;
 import org.ovirt.engine.core.common.businessentities.DisplayType;
 import org.ovirt.engine.core.common.businessentities.GraphicsInfo;
 import org.ovirt.engine.core.common.businessentities.GraphicsType;
 import org.ovirt.engine.core.common.businessentities.HostDevice;
+import org.ovirt.engine.core.common.businessentities.HostDeviceView;
 import org.ovirt.engine.core.common.businessentities.StorageDomainStatic;
 import org.ovirt.engine.core.common.businessentities.StorageServerConnections;
 import org.ovirt.engine.core.common.businessentities.SupportedAdditionalClusterFeature;
 import org.ovirt.engine.core.common.businessentities.UsbControllerModel;
 import org.ovirt.engine.core.common.businessentities.VM;
+import org.ovirt.engine.core.common.businessentities.VdsDynamic;
 import org.ovirt.engine.core.common.businessentities.VdsNumaNode;
 import org.ovirt.engine.core.common.businessentities.VdsStatistics;
 import org.ovirt.engine.core.common.businessentities.VgpuPlacement;
@@ -67,30 +70,32 @@ import org.ovirt.engine.core.common.businessentities.network.VnicProfile;
 import org.ovirt.engine.core.common.businessentities.qos.StorageQos;
 import org.ovirt.engine.core.common.businessentities.storage.CinderConnectionInfo;
 import org.ovirt.engine.core.common.businessentities.storage.CinderDisk;
-import org.ovirt.engine.core.common.businessentities.storage.CinderVolumeDriver;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.DiskInterface;
 import org.ovirt.engine.core.common.businessentities.storage.DiskVmElement;
 import org.ovirt.engine.core.common.businessentities.storage.ManagedBlockStorageDisk;
+import org.ovirt.engine.core.common.businessentities.storage.ManagedVolumeDriver;
 import org.ovirt.engine.core.common.businessentities.storage.PropagateErrors;
 import org.ovirt.engine.core.common.businessentities.storage.StorageType;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.osinfo.OsRepository;
+import org.ovirt.engine.core.common.utils.MDevTypesUtils;
 import org.ovirt.engine.core.common.utils.PDIVMapBuilder;
+import org.ovirt.engine.core.common.utils.SecretValue;
 import org.ovirt.engine.core.common.utils.ValidationUtils;
 import org.ovirt.engine.core.common.utils.VmCpuCountHelper;
 import org.ovirt.engine.core.common.utils.VmDeviceCommonUtils;
 import org.ovirt.engine.core.common.utils.VmDeviceType;
+import org.ovirt.engine.core.common.utils.customprop.VmPropertiesUtils;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.Version;
 import org.ovirt.engine.core.compat.WindowsJavaTimezoneMapping;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogable;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogableImpl;
-import org.ovirt.engine.core.dao.CinderStorageDao;
 import org.ovirt.engine.core.dao.ClusterFeatureDao;
 import org.ovirt.engine.core.dao.DiskVmElementDao;
 import org.ovirt.engine.core.dao.HostDeviceDao;
@@ -100,6 +105,7 @@ import org.ovirt.engine.core.dao.VdsDynamicDao;
 import org.ovirt.engine.core.dao.VdsNumaNodeDao;
 import org.ovirt.engine.core.dao.VdsStaticDao;
 import org.ovirt.engine.core.dao.VdsStatisticsDao;
+import org.ovirt.engine.core.dao.VmDao;
 import org.ovirt.engine.core.dao.VmDeviceDao;
 import org.ovirt.engine.core.dao.VmNumaNodeDao;
 import org.ovirt.engine.core.dao.network.NetworkClusterDao;
@@ -120,6 +126,7 @@ import org.ovirt.engine.core.vdsbroker.vdsbroker.CloudInitHandler;
 import org.ovirt.engine.core.vdsbroker.vdsbroker.IgnitionHandler;
 import org.ovirt.engine.core.vdsbroker.vdsbroker.IoTuneUtils;
 import org.ovirt.engine.core.vdsbroker.vdsbroker.NetworkQosMapper;
+import org.ovirt.engine.core.vdsbroker.vdsbroker.NumaSettingFactory;
 import org.ovirt.engine.core.vdsbroker.vdsbroker.VdsProperties;
 import org.ovirt.engine.core.vdsbroker.vdsbroker.VmSerialNumberBuilder;
 import org.slf4j.Logger;
@@ -134,8 +141,14 @@ public class VmInfoBuildUtils {
     private static final Base64 BASE_64 = new Base64(0, null);
     private static final int DEFAULT_HUGEPAGESIZE_X86_64 = 2048;
     private static final int DEFAULT_HUGEPAGESIZE_PPC64LE = 16384;
+    private static final List<String> SCSI_HOST_DEV_WITH_PREDETERMINED_ADDRESS;
 
     public static final String VDSM_LIBGF_CAP_NAME = "libgfapi_supported";
+
+    static {
+        SCSI_HOST_DEV_WITH_PREDETERMINED_ADDRESS = new ArrayList<>(LibvirtVmXmlBuilder.SCSI_HOST_DEV_DRIVERS);
+        SCSI_HOST_DEV_WITH_PREDETERMINED_ADDRESS.remove(LibvirtVmXmlBuilder.SCSI_VIRTIO_BLK_PCI);
+    }
 
     private final NetworkClusterDao networkClusterDao;
     private final NetworkDao networkDao;
@@ -143,6 +156,7 @@ public class VmInfoBuildUtils {
     private final NetworkQoSDao networkQosDao;
     private final StorageQosDao storageQosDao;
     private final VmDeviceDao vmDeviceDao;
+    private final VmDao vmDao;
     private final VnicProfileDao vnicProfileDao;
     private final VmNicFilterParameterDao vmNicFilterParameterDao;
     private final AuditLogDirector auditLogDirector;
@@ -157,7 +171,6 @@ public class VmInfoBuildUtils {
     private final VdsStatisticsDao vdsStatisticsDao;
     private final HostDeviceDao hostDeviceDao;
     private final DiskVmElementDao diskVmElementDao;
-    private final CinderStorageDao cinderStorageDao;
     private final VmDevicesMonitoring vmDevicesMonitoring;
     private final VmSerialNumberBuilder vmSerialNumberBuilder;
     private final MultiQueueUtils multiQueueUtils;
@@ -169,6 +182,12 @@ public class VmInfoBuildUtils {
             Pattern.compile(String.format(BLOCK_DOMAIN_DISK_PATH, ValidationUtils.GUID,
                     ValidationUtils.GUID, ValidationUtils.GUID));
 
+    private static final int DEFAULT_TSEG_SIZE_MB = 16;
+    private static final int MANY_VCPUS_TSEG_SIZE_INCREASE_MB = 24;
+    private static final int PER_TB_TSEG_SIZE_INCREASE_MB = 8;
+
+    public static final int NVDIMM_LABEL_SIZE = 128 * 1024;
+
     @Inject
     VmInfoBuildUtils(
             NetworkDao networkDao,
@@ -176,6 +195,7 @@ public class VmInfoBuildUtils {
             NetworkQoSDao networkQosDao,
             StorageQosDao storageQosDao,
             VmDeviceDao vmDeviceDao,
+            VmDao vmDao,
             VnicProfileDao vnicProfileDao,
             VmNicFilterParameterDao vmNicFilterParameterDao,
             NetworkClusterDao networkClusterDao,
@@ -193,13 +213,13 @@ public class VmInfoBuildUtils {
             VmSerialNumberBuilder vmSerialNumberBuilder,
             DiskVmElementDao diskVmElementDao,
             VmDevicesMonitoring vmDevicesMonitoring,
-            MultiQueueUtils multiQueueUtils,
-            CinderStorageDao cinderStorageDao) {
+            MultiQueueUtils multiQueueUtils) {
         this.networkDao = Objects.requireNonNull(networkDao);
         this.networkFilterDao = Objects.requireNonNull(networkFilterDao);
         this.networkQosDao = Objects.requireNonNull(networkQosDao);
         this.storageQosDao = Objects.requireNonNull(storageQosDao);
         this.vmDeviceDao = Objects.requireNonNull(vmDeviceDao);
+        this.vmDao = Objects.requireNonNull(vmDao);
         this.vnicProfileDao = Objects.requireNonNull(vnicProfileDao);
         this.vmNicFilterParameterDao = Objects.requireNonNull(vmNicFilterParameterDao);
         this.networkClusterDao = Objects.requireNonNull(networkClusterDao);
@@ -218,54 +238,53 @@ public class VmInfoBuildUtils {
         this.diskVmElementDao = Objects.requireNonNull(diskVmElementDao);
         this.vmDevicesMonitoring = Objects.requireNonNull(vmDevicesMonitoring);
         this.multiQueueUtils = Objects.requireNonNull(multiQueueUtils);
-        this.cinderStorageDao = Objects.requireNonNull(cinderStorageDao);
     }
 
     @SuppressWarnings("unchecked")
     public void buildCinderDisk(CinderDisk cinderDisk, Map<String, Object> struct) {
         CinderConnectionInfo connectionInfo = cinderDisk.getCinderConnectionInfo();
-        CinderVolumeDriver cinderVolumeDriver = CinderVolumeDriver.forValue(connectionInfo.getDriverVolumeType());
-        if (cinderVolumeDriver == null) {
+        ManagedVolumeDriver managedVolumeDriver = ManagedVolumeDriver.forValue(connectionInfo.getDriverVolumeType());
+        if (managedVolumeDriver == null) {
             log.error("Unsupported Cinder volume driver: '{}' (disk: '{}')",
                     connectionInfo.getDriverVolumeType(),
                     cinderDisk.getDiskAlias());
             return;
         }
-        switch (cinderVolumeDriver) {
-        case RBD:
-            Map<String, Object> connectionInfoData = cinderDisk.getCinderConnectionInfo().getData();
-            struct.put(VdsProperties.Path, connectionInfoData.get("name"));
-            struct.put(VdsProperties.Format, VolumeFormat.RAW.toString().toLowerCase());
-            struct.put(VdsProperties.PropagateErrors, PropagateErrors.Off.toString().toLowerCase());
-            struct.put(VdsProperties.Protocol, cinderDisk.getCinderConnectionInfo().getDriverVolumeType());
-            struct.put(VdsProperties.DiskType, VdsProperties.NETWORK);
+        switch (managedVolumeDriver) {
+            case RBD:
+                Map<String, Object> connectionInfoData = cinderDisk.getCinderConnectionInfo().getData();
+                struct.put(VdsProperties.Path, connectionInfoData.get("name"));
+                struct.put(VdsProperties.Format, VolumeFormat.RAW.toString().toLowerCase());
+                struct.put(VdsProperties.PropagateErrors, PropagateErrors.Off.toString().toLowerCase());
+                struct.put(VdsProperties.Protocol, cinderDisk.getCinderConnectionInfo().getDriverVolumeType());
+                struct.put(VdsProperties.DiskType, VdsProperties.NETWORK);
 
-            List<String> hostAddresses = (ArrayList<String>) connectionInfoData.get("hosts");
-            List<String> hostPorts = (ArrayList<String>) connectionInfoData.get("ports");
-            List<Map<String, Object>> hosts = new ArrayList<>();
-            // Looping over hosts addresses to create 'hosts' element
-            // (Cinder should ensure that the addresses and ports lists are synced in order).
-            for (int i = 0; i < hostAddresses.size(); i++) {
-                Map<String, Object> hostMap = new HashMap<>();
-                hostMap.put(VdsProperties.NetworkDiskName, hostAddresses.get(i));
-                hostMap.put(VdsProperties.NetworkDiskPort, hostPorts.get(i));
-                hostMap.put(VdsProperties.NetworkDiskTransport, VdsProperties.Tcp);
-                hosts.add(hostMap);
-            }
-            struct.put(VdsProperties.NetworkDiskHosts, hosts);
+                List<String> hostAddresses = (ArrayList<String>) connectionInfoData.get("hosts");
+                List<String> hostPorts = (ArrayList<String>) connectionInfoData.get("ports");
+                List<Map<String, Object>> hosts = new ArrayList<>();
+                // Looping over hosts addresses to create 'hosts' element
+                // (Cinder should ensure that the addresses and ports lists are synced in order).
+                for (int i = 0; i < hostAddresses.size(); i++) {
+                    Map<String, Object> hostMap = new HashMap<>();
+                    hostMap.put(VdsProperties.NetworkDiskName, hostAddresses.get(i));
+                    hostMap.put(VdsProperties.NetworkDiskPort, hostPorts.get(i));
+                    hostMap.put(VdsProperties.NetworkDiskTransport, VdsProperties.Tcp);
+                    hosts.add(hostMap);
+                }
+                struct.put(VdsProperties.NetworkDiskHosts, hosts);
 
-            boolean authEnabled = (boolean) connectionInfoData.get(VdsProperties.CinderAuthEnabled);
-            String secretType = (String) connectionInfoData.get(VdsProperties.CinderSecretType);
-            String authUsername = (String) connectionInfoData.get(VdsProperties.CinderAuthUsername);
-            String secretUuid = (String) connectionInfoData.get(VdsProperties.CinderSecretUuid);
-            if (authEnabled) {
-                Map<String, Object> authMap = new HashMap<>();
-                authMap.put(VdsProperties.NetworkDiskAuthSecretType, secretType);
-                authMap.put(VdsProperties.NetworkDiskAuthUsername, authUsername);
-                authMap.put(VdsProperties.NetworkDiskAuthSecretUuid, secretUuid);
-                struct.put(VdsProperties.NetworkDiskAuth, authMap);
-            }
-            break;
+                boolean authEnabled = (boolean) connectionInfoData.get(VdsProperties.CinderAuthEnabled);
+                String secretType = (String) connectionInfoData.get(VdsProperties.CinderSecretType);
+                String authUsername = (String) connectionInfoData.get(VdsProperties.CinderAuthUsername);
+                String secretUuid = (String) connectionInfoData.get(VdsProperties.CinderSecretUuid);
+                if (authEnabled) {
+                    Map<String, Object> authMap = new HashMap<>();
+                    authMap.put(VdsProperties.NetworkDiskAuthSecretType, secretType);
+                    authMap.put(VdsProperties.NetworkDiskAuthUsername, authUsername);
+                    authMap.put(VdsProperties.NetworkDiskAuthSecretUuid, secretUuid);
+                    struct.put(VdsProperties.NetworkDiskAuth, authMap);
+                }
+                break;
         }
     }
 
@@ -559,17 +578,17 @@ public class VmInfoBuildUtils {
             DiskInterface scsiInterface,
             boolean reserveFirstTwoLuns,
             boolean reserveForScsiCd) {
-        List<Disk> disks = getSortedDisks(vm);
         Map<Integer, Map<VmDevice, Integer>> vmDeviceUnitMap = new HashMap<>();
-        LinkedList<VmDevice> vmDeviceList = new LinkedList<>();
+        vmDeviceUnitMap.putAll(getVmDeviceUnitMapForHostdevScsiDisks(vm));
 
-        for (Disk disk : disks) {
+        LinkedList<VmDevice> vmDeviceList = new LinkedList<>();
+        getSortedPluggedDisks(vm).forEachOrdered(disk -> {
             DiskVmElement dve = disk.getDiskVmElementForVm(vm.getId());
             if (dve.getDiskInterface() == scsiInterface) {
                 VmDevice vmDevice = getVmDeviceByDiskId(disk.getId(), vm.getId());
                 Map<String, String> address = StringMapUtils.string2Map(vmDevice.getAddress());
-                String unitStr = address.get(VdsProperties.Unit);
-                String controllerStr = address.get(VdsProperties.Controller);
+                final String unitStr = address.get(VdsProperties.Unit);
+                final String controllerStr = address.get(VdsProperties.Controller);
 
                 // If unit property is available adding to 'vmDeviceUnitMap';
                 // Otherwise, adding to 'vmDeviceList' for setting the unit property later.
@@ -579,11 +598,9 @@ public class VmInfoBuildUtils {
                     boolean controllerOutOfRange = controllerInt >= vm.getNumOfIoThreads() + getDefaultVirtioScsiIndex(vm, dve.getDiskInterface());
                     boolean ioThreadsEnabled = vm.getNumOfIoThreads() > 0;
 
-                    if ((ioThreadsEnabled && !controllerOutOfRange) ||
-                            (controllerInt == getDefaultVirtioScsiIndex(vm, dve.getDiskInterface()))) {
-                        if (!vmDeviceUnitMap.containsKey(controllerInt)) {
-                            vmDeviceUnitMap.put(controllerInt, new HashMap<>());
-                        }
+                    if (ioThreadsEnabled && !controllerOutOfRange ||
+                            controllerInt == getDefaultVirtioScsiIndex(vm, dve.getDiskInterface())) {
+                        vmDeviceUnitMap.computeIfAbsent(controllerInt, i -> new HashMap<>());
                         vmDeviceUnitMap.get(controllerInt).put(vmDevice, Integer.valueOf(unitStr));
                     } else {
                         // controller id not correct, generate the address again later
@@ -594,26 +611,78 @@ public class VmInfoBuildUtils {
                     vmDeviceList.add(vmDevice);
                 }
             }
-        }
+        });
 
-        // Find available unit (disk's index in VirtIO-SCSI controller) for disks with empty address\
+        // Find available unit (disk's index in VirtIO-SCSI controller) for disks with empty address
         IntStream.range(0, vmDeviceList.size()).forEach(index -> {
             VmDevice vmDevice = vmDeviceList.get(index);
             // TODO: consider changing this so that it will search for the next available and
             // less used controller instead of always starting from index.
-            int controller = getControllerForScsiDisk(vmDevice, vm, scsiInterface, index);
-
-            if (!vmDeviceUnitMap.containsKey(controller)) {
-                vmDeviceUnitMap.put(controller, new HashMap<>());
-            }
-
-            int unit = getAvailableUnitForScsiDisk(vmDeviceUnitMap.get(controller), reserveFirstTwoLuns, reserveForScsiCd && controller == 0);
+            int controller = getControllerForScsiDisk(vmDevice.getAddress(), vm, scsiInterface, index);
+            var controllerVmDeviceUnitMap = vmDeviceUnitMap.computeIfAbsent(controller, i -> new HashMap<>());
+            int unit = getAvailableUnitForScsiDisk(controllerVmDeviceUnitMap, reserveFirstTwoLuns, reserveForScsiCd && controller == 0);
             vmDeviceUnitMap.get(controller).put(vmDevice, unit);
         });
 
         return vmDeviceUnitMap;
     }
 
+    private Map<Integer, Map<VmDevice, Integer>> getVmDeviceUnitMapForHostdevScsiDisks(VM vm) {
+        List<HostDeviceView> hostDevices = hostDeviceDao.getVmExtendedHostDevicesByVmId(vm.getId());
+        List<HostDeviceView> hostScsiDevices = hostDevices.stream()
+                .filter(dev -> "scsi".equals(dev.getCapability()))
+                .collect(Collectors.toList());
+        if (hostScsiDevices.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        Map<String, String> vmCustomProperties = VmPropertiesUtils.getInstance().getVMProperties(
+                vm.getCompatibilityVersion(),
+                vm.getStaticData());
+        String scsiHostdevProperty = vmCustomProperties.get("scsi_hostdev");
+
+        var vmHostDevices = vmDeviceDao.getVmDeviceByVmIdAndType(vm.getId(), VmDeviceGeneralType.HOSTDEV);
+        var nameToHostScsiDevice = hostScsiDevices.stream().collect(Collectors.toMap(HostDevice::getDeviceName, d -> d));
+
+        return !SCSI_HOST_DEV_WITH_PREDETERMINED_ADDRESS.contains(scsiHostdevProperty) ?
+                // if the address of the vm's host device is dynamically allocated by libvirt, take it from the vm device
+                getHostScsiDeviceAddressByVmHostDevice(vmHostDevices, nameToHostScsiDevice)
+                // otherwise, the address is determined according to the corresponding host device
+                : getHostScsiDeviceAddressByHostDevice(vmHostDevices, nameToHostScsiDevice);
+    }
+
+    private Map<Integer, Map<VmDevice, Integer>> getHostScsiDeviceAddressByVmHostDevice(
+            List<VmDevice> vmHostDevices, Map<String, HostDeviceView> nameToHostScsiDevice) {
+        Map<Integer, Map<VmDevice, Integer>> hostDeviceUnitMap = new HashMap<>();
+        vmHostDevices.stream().filter(dev -> nameToHostScsiDevice.containsKey(dev.getDevice())).forEach(dev -> {
+            Map<String, String> address = StringMapUtils.string2Map(dev.getAddress());
+            String unitStr = address.get(VdsProperties.Unit);
+            String controllerStr = address.get(VdsProperties.Controller);
+            if (StringUtils.isNotEmpty(unitStr) && StringUtils.isNotEmpty(controllerStr)) {
+                int controller = Integer.parseInt(controllerStr);
+                hostDeviceUnitMap.computeIfAbsent(controller, i -> new HashMap<>());
+                hostDeviceUnitMap.get(controller).put(dev, Integer.parseInt(unitStr));
+            }
+        });
+        return hostDeviceUnitMap;
+    }
+
+    private Map<Integer, Map<VmDevice, Integer>> getHostScsiDeviceAddressByHostDevice(
+            List<VmDevice> vmHostDevices, Map<String, HostDeviceView> nameToHostScsiDevice) {
+        Map<Integer, Map<VmDevice, Integer>> hostDeviceUnitMap = new HashMap<>();
+        vmHostDevices.stream().filter(dev -> nameToHostScsiDevice.containsKey(dev.getDevice())).forEach(dev -> {
+            var hostDev = nameToHostScsiDevice.get(dev.getDevice());
+            Map<String, String> address = hostDev.getAddress();
+            String unitStr = address.get("lun");
+            String controllerStr = address.get("host");
+            if (StringUtils.isNotEmpty(unitStr) && StringUtils.isNotEmpty(controllerStr)) {
+                int controller = Integer.parseInt(controllerStr);
+                hostDeviceUnitMap.computeIfAbsent(controller, i -> new HashMap<>());
+                hostDeviceUnitMap.get(controller).put(dev, Integer.parseInt(unitStr));
+            }
+        });
+        return hostDeviceUnitMap;
+    }
 
     private int getDefaultVirtioScsiIndex(VM vm, DiskInterface diskInterface) {
         Map<DiskInterface, Integer> controllerIndexMap =
@@ -628,15 +697,15 @@ public class VmInfoBuildUtils {
      * Generates the next controller id using round robin.
      * If the disk already has an controller id, returns it.
      *
-     * @param disk the disk for which the controller id has to be generated
+     * @param address the PCI address of the disk for which the controller id has to be generated
      * @param vm a VM to which this disk is attached
      * @param diskInterface the interface type of the disk
      * @param increment a number from 0..N to let the round robin cycle
      * @return a controller id
      */
-    public int getControllerForScsiDisk(VmDevice disk, VM vm, DiskInterface diskInterface, int increment) {
-        Map<String, String> address = StringMapUtils.string2Map(disk.getAddress());
-        String controllerStr = address.get(VdsProperties.Controller);
+    public int getControllerForScsiDisk(String address, VM vm, DiskInterface diskInterface, int increment) {
+        Map<String, String> addressMap = StringMapUtils.string2Map(address);
+        String controllerStr = addressMap.get(VdsProperties.Controller);
 
         int defaultIndex = getDefaultVirtioScsiIndex(vm, diskInterface);
 
@@ -680,16 +749,16 @@ public class VmInfoBuildUtils {
         return diskAndDevicePairs;
     }
 
-    public List<Disk> getSortedDisks(VM vm) {
+    private Stream<Disk> getSortedPluggedDisks(VM vm) {
         // Order the drives as following:
         // - Boot devices of non-snapshot disks
         // - Boot devices of snapshot disks (i.e., boot disks of other VMs plugged to this one
         // - Then by the disk alias
-        List<Disk> disks = new ArrayList<>(vm.getDiskMap().values());
-        disks.sort(Comparator.comparing((Disk d) -> !d.getDiskVmElementForVm(vm.getId()).isBoot())
-                .thenComparing(d -> d.getDiskVmElementForVm(vm.getId()).isBoot() && d.isDiskSnapshot())
-                .thenComparing(new LexoNumericNameableComparator<>()));
-        return disks;
+        return vm.getDiskMap().values().stream()
+                .filter(disk -> disk.getDiskVmElementForVm(vm.getId()).isPlugged())
+                .sorted(Comparator.comparing((Disk d) -> !d.getDiskVmElementForVm(vm.getId()).isBoot())
+                        .thenComparing(d -> d.getDiskVmElementForVm(vm.getId()).isBoot() && d.isDiskSnapshot())
+                        .thenComparing(new LexoNumericNameableComparator<>()));
     }
 
     public int getAvailableUnitForScsiDisk(Map<VmDevice, Integer> vmDeviceUnitMap, boolean reserveFirstTwoLuns, boolean reserveForScsiCd) {
@@ -699,7 +768,7 @@ public class VmInfoBuildUtils {
 
         while (reserveForScsiCd && unit == cdPayloadUnitIndex ||
                reserveForScsiCd && unit == cdUnitIndex ||
-               (vmDeviceUnitMap != null && vmDeviceUnitMap.containsValue(unit))) {
+               vmDeviceUnitMap != null && vmDeviceUnitMap.containsValue(unit)) {
             unit++;
         }
         return unit;
@@ -725,6 +794,22 @@ public class VmInfoBuildUtils {
     VmDevice getVmDeviceByDiskId(Guid diskId, Guid vmId) {
         // get vm device for this disk from DB
         return vmDeviceDao.get(new VmDeviceId(diskId, vmId));
+    }
+
+    public boolean needsIommuCachingMode(VM vm, MemoizingSupplier<Map<String, HostDevice>> hostDevicesSupplier,
+            MemoizingSupplier<List<VmDevice>> vmDevicesSupplier) {
+        if (!MDevTypesUtils.getMdevs(vmDevicesSupplier.get(), VmDeviceType.VGPU).isEmpty()) {
+            return true;
+        }
+        for (VmDevice device : vmDevicesSupplier.get()) {
+            if (device.isPlugged() && device.getType() == VmDeviceGeneralType.HOSTDEV) {
+                HostDevice hostDevice = hostDevicesSupplier.get().get(device.getDevice());
+                if (hostDevice != null && "pci".equals(hostDevice.getCapability())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private void reportUnsupportedVnicProfileFeatures(VM vm,
@@ -788,33 +873,24 @@ public class VmInfoBuildUtils {
     }
 
     public int getVmTimeZone(VM vm) {
-        // get vm timezone
         String timeZone = getTimeZoneForVm(vm);
+        String javaZoneId = osRepository.isWindows(vm.getOs()) ? WindowsJavaTimezoneMapping.get(timeZone) : timeZone;
+        long now = new Date().getTime();
+        return javaZoneToOffset(javaZoneId, now);
+    }
 
-        final String javaZoneId;
-        if (osRepository.isWindows(vm.getOs())) {
-            // convert to java & calculate offset
-            javaZoneId = WindowsJavaTimezoneMapping.get(timeZone);
-        } else {
-            javaZoneId = timeZone;
-        }
-
-        int offset = 0;
-        if (javaZoneId != null) {
-            offset = TimeZone.getTimeZone(javaZoneId).getOffset(
-                    new Date().getTime()) / 1000;
-        }
-        return offset;
+    public static int javaZoneToOffset(String javaZoneId, long now) {
+        return javaZoneId != null ? TimeZone.getTimeZone(javaZoneId).getOffset(now) / 1000 : 0;
     }
 
     public String getEmulatedMachineByClusterArch(ArchitectureType arch) {
-        switch(arch) {
-        case ppc64:
-        case ppc64le:
-            return "pseries";
-        case x86_64:
-        default:
-            return "pc";
+        switch (arch) {
+            case ppc64:
+            case ppc64le:
+                return "pseries";
+            case x86_64:
+            default:
+                return "pc";
         }
     }
 
@@ -887,24 +963,24 @@ public class VmInfoBuildUtils {
     public String makeDiskName(String diskInterface, int index) {
         String devIndex = "";
         while (index > 0) {
-            devIndex = (char)('a' + (index % 26)) + devIndex;
+            devIndex = (char) ('a' + (index % 26)) + devIndex;
             index /= 26;
         }
         return diskInterfaceToDevName(diskInterface) + (devIndex.isEmpty() ? 'a' : devIndex);
     }
 
     public String diskInterfaceToDevName(String iface) {
-        switch(iface) {
-        case "virtio":
-            return "vd";
-        case "fdc":
-            return "fd";
-        case "scsi":
-        case "sata":
-            return "sd";
-        case "ide":
-        default:
-            return "hd";
+        switch (iface) {
+            case "virtio":
+                return "vd";
+            case "fdc":
+                return "fd";
+            case "scsi":
+            case "sata":
+                return "sd";
+            case "ide":
+            default:
+                return "hd";
         }
     }
 
@@ -1019,9 +1095,9 @@ public class VmInfoBuildUtils {
         Optional<VmNumaNode> pinnedVmNumaNode = vmNumaNodes.stream().filter(d -> !d.getVdsNumaNodeList().isEmpty()).findAny();
 
         if (MapUtils.isEmpty(cpuPinning) || !pinnedVmNumaNode.isPresent() || vm.getNumOfIoThreads() == 0) {
-            String msgReason1 = MapUtils.isEmpty(cpuPinning) ? "CPU Pinning topology is not set": null;
-            String msgReason2 = vm.getNumOfIoThreads() == 0 ? "IO Threads is not enabled": null;
-            String msgReason3 = !pinnedVmNumaNode.isPresent() ? "vm's virtual NUMA nodes are not pinned to host's NUMA nodes": null;
+            String msgReason1 = MapUtils.isEmpty(cpuPinning) ? "CPU Pinning topology is not set" : null;
+            String msgReason2 = vm.getNumOfIoThreads() == 0 ? "IO Threads is not enabled" : null;
+            String msgReason3 = !pinnedVmNumaNode.isPresent() ? "vm's virtual NUMA nodes are not pinned to host's NUMA nodes" : null;
             String finalMsgReason = Stream.of(msgReason1, msgReason2, msgReason3)
                     .filter(Objects::nonNull).collect(Collectors.joining(", ")) + ".";
 
@@ -1106,7 +1182,7 @@ public class VmInfoBuildUtils {
     private static Set<Integer> getAllPinnedPCpus(Map<String, Object> cpuPinning) {
         final Set<Integer> pinnedCpus = new LinkedHashSet<>();
         cpuPinning.forEach((vcpu, cpuSet) -> {
-            pinnedCpus.addAll(parsePCpuPinningNumbers((String)cpuSet));
+            pinnedCpus.addAll(parsePCpuPinningNumbers((String) cpuSet));
         });
         return pinnedCpus;
     }
@@ -1156,7 +1232,7 @@ public class VmInfoBuildUtils {
 
     // Get list of pCPUs used both for CPU pinning and IO/emulator pinning
     private String getOverriddenPinnedCpusList(Set<Integer> vdsPinnedCpus, List<Integer> ioEmulatorPinnedCpus) {
-        List<Integer> overriddenCpus = (List<Integer>)CollectionUtils.intersection(vdsPinnedCpus, ioEmulatorPinnedCpus);
+        List<Integer> overriddenCpus = (List<Integer>) CollectionUtils.intersection(vdsPinnedCpus, ioEmulatorPinnedCpus);
 
         if (overriddenCpus.isEmpty()) {
             return "";
@@ -1169,7 +1245,7 @@ public class VmInfoBuildUtils {
 
     private static VdsNumaNode getNumaNodeWithLowerCpuIds(VdsNumaNode mostPinnedPnumaNode, VdsNumaNode currNode) {
         return Objects.compare(currNode.getCpuIds(), mostPinnedPnumaNode.getCpuIds(), Comparator.comparing(Collections::min)) < 0 ?
-                currNode: mostPinnedPnumaNode;
+                currNode : mostPinnedPnumaNode;
     }
 
 
@@ -1196,10 +1272,9 @@ public class VmInfoBuildUtils {
     }
 
     public List<VmNumaNode> getVmNumaNodes(VM vm) {
-        int onlineCpus = vm.getNumOfCpus();
-        int vcpus = FeatureSupported.supportedInConfig(ConfigValues.HotPlugCpuSupported, vm.getCompatibilityVersion(), vm.getClusterArch()) ?
-                VmCpuCountHelper.calcMaxVCpu(vm, vm.getClusterCompatibilityVersion())
-                : onlineCpus;
+        int onlineCpus = VmCpuCountHelper.getDynamicNumOfCpu(vm);
+        int vcpus = FeatureSupported.hotPlugCpu(vm.getCompatibilityVersion(), vm.getClusterArch(), vm.getCpuPinningPolicy()) ?
+                VmCpuCountHelper.calcMaxVCpu(vm, vm.getCompatibilityVersion()) : onlineCpus;
         int offlineCpus = vcpus - onlineCpus;
         List<VmNumaNode> vmNumaNodes = vmNumaNodeDao.getAllVmNumaNodeByVmId(vm.getId());
         if (!vmNumaNodes.isEmpty()) {
@@ -1219,9 +1294,9 @@ public class VmInfoBuildUtils {
                         Comparator.comparingInt(o -> o.getCpuIds().size());
                 Collections.sort(vmNumaNodes, compareBySize);
                 int numaCount = vmNumaNodes.size();
-                int start = totalCpusInNodes-1;
+                int start = totalCpusInNodes - 1;
                 for (VmNumaNode vmNode : vmNumaNodes) {
-                    int index = start = start+1;
+                    int index = start = start + 1;
                     while (index < vcpus) {
                         vmNode.getCpuIds().add(index);
                         index += numaCount;
@@ -1258,20 +1333,51 @@ public class VmInfoBuildUtils {
                 .collect(Collectors.toMap(split -> split[0], split -> split[1]));
     }
 
-    public boolean isNumaEnabled(MemoizingSupplier<List<VdsNumaNode>> hostNumaNodesSupplier,
-            MemoizingSupplier<List<VmNumaNode>> vmNumaNodesSupplier, VM vm) {
-        List<VdsNumaNode> hostNumaNodes = hostNumaNodesSupplier.get();
+    public boolean isNumaEnabled(List<VdsNumaNode> hostNumaNodes,
+            List<VmNumaNode> vmNumaNodes, VM vm) {
         if (hostNumaNodes.isEmpty()) {
             log.warn("No host NUMA nodes found for vm {} ({})", vm.getName(), vm.getId());
             return false;
         }
 
-        List<VmNumaNode> vmNumaNodes = vmNumaNodesSupplier.get();
         if (vmNumaNodes.isEmpty()) {
             return false;
         }
 
         return true;
+    }
+
+    public String getMatchingNumaNode(Map<String, Object> numaTuneSetting,
+            MemoizingSupplier<List<VmNumaNode>> vmNumaNodesSupplier, String preferredNode) {
+        String node = null;
+        if (numaTuneSetting != null) {
+            @SuppressWarnings("unchecked")
+            List<Map<String, String>> memNodes = (List<Map<String, String>>) numaTuneSetting.get(VdsProperties.NUMA_TUNE_MEMNODES);
+            if (memNodes != null) {
+                for (Map<String, String> memnode : memNodes) {
+                    if (memnode.get(VdsProperties.NUMA_TUNE_NODESET).equals(preferredNode)) {
+                        node = memnode.get(VdsProperties.NUMA_TUNE_VM_NODE_INDEX);
+                        break;
+                    }
+                }
+            }
+        }
+        if (node == null) {
+            // Matching node not found, use any other node.
+            List<Map<String, Object>> numaNodes = NumaSettingFactory.buildVmNumaNodeSetting(vmNumaNodesSupplier.get());
+            if (!numaNodes.isEmpty()) {
+                node = numaNodes.get(0).get(VdsProperties.NUMA_NODE_INDEX).toString();
+            }
+        }
+        return node;
+    }
+
+    public SecretValue<String> tpmData(Guid vmId) {
+        return vmDao.getTpmData(vmId).getFirst();
+    }
+
+    public SecretValue<String> nvramData(Guid vmId) {
+        return vmDao.getNvramData(vmId).getFirst();
     }
 
     public List<VmDevice> getVmDevices(Guid vmId) {
@@ -1290,16 +1396,28 @@ public class VmInfoBuildUtils {
         return osRepository.getCdInterface(osId, version, chipset);
     }
 
+    public boolean isLegacyVirtio(int osId, ChipsetType chipset) {
+        return osRepository.requiresLegacyVirtio(osId, chipset);
+    }
+
+    public boolean isOvirtGuestAgent(int osId) {
+        return osRepository.requiresOvirtGuestAgentChannel(osId);
+    }
+
     public boolean isKASLRDumpEnabled(int osId) {
         return osRepository.isLinux(osId) && Config.<Boolean> getValue(ConfigValues.EnableKASLRDump);
     }
 
-    public List<VmNicFilterParameter> getAllNetworkFiltersForVmNic(Guid nicId)  {
+    public List<VmNicFilterParameter> getAllNetworkFiltersForVmNic(Guid nicId) {
         return vmNicFilterParameterDao.getAllForVmNic(nicId);
     }
 
     public VnicProfile getVnicProfile(Guid vnicProfileId) {
         return vnicProfileDao.get(vnicProfileId);
+    }
+
+    public List<VnicProfile> getAllVnicProfiles() {
+        return vnicProfileDao.getAll();
     }
 
     public VdsStatistics getVdsStatistics(Guid hostId) {
@@ -1310,13 +1428,6 @@ public class VmInfoBuildUtils {
         return hostDeviceDao.getHostDevicesByHostId(hostId)
                 .stream()
                 .collect(Collectors.toMap(HostDevice::getDeviceName, device -> device));
-    }
-
-    public boolean isHostIncrementalBackupEnabled(Guid hostId) {
-        if (hostId != null) {
-            return vdsDynamicDao.get(hostId).isBackupEnabled();
-        }
-        return false;
     }
 
     public void refreshVmDevices(Guid vmId) {
@@ -1349,43 +1460,44 @@ public class VmInfoBuildUtils {
             Map<Integer, Map<VmDevice, Integer>> vmDeviceSpaprVscsiUnitMap,
             Map<Integer, Map<VmDevice, Integer>> vmDeviceVirtioScsiUnitMap) {
 
+        DiskInterface diskInterface = disk.getDiskVmElementForVm(vm.getId()).getDiskInterface();
         Map<DiskInterface, Integer> controllerIndexMap =
                 ArchStrategyFactory.getStrategy(vm.getClusterArch()).run(new GetControllerIndices()).returnValue();
-        int defaultSpaprVscsiControllerIndex = controllerIndexMap.get(DiskInterface.SPAPR_VSCSI);
-        int defaultVirtioScsiControllerIndex = controllerIndexMap.get(DiskInterface.VirtIO_SCSI);
-        Integer unitIndex = null;
+        Integer defaultControllerIndex = controllerIndexMap.get(diskInterface);
 
-        switch (disk.getDiskVmElementForVm(vm.getId()).getDiskInterface()) {
-        case SPAPR_VSCSI:
-            if (StringUtils.isEmpty(device.getAddress())) {
-                unitIndex = vmDeviceSpaprVscsiUnitMap.get(defaultSpaprVscsiControllerIndex).get(device);
-                device.setAddress(createAddressForScsiDisk(defaultSpaprVscsiControllerIndex, unitIndex).toString());
-            }
-            break;
-        case VirtIO_SCSI:
-            int controllerIndex = defaultVirtioScsiControllerIndex;
-            VmDevice deviceFromMap = device;
-            for (Map.Entry<Integer, Map<VmDevice, Integer>> controllerToDevices : vmDeviceVirtioScsiUnitMap.entrySet()) {
-                Optional<VmDevice> maybeDeviceFromMap = controllerToDevices.getValue().keySet().stream()
-                        .filter(d -> d.getId().equals(device.getId()))
-                        .findFirst();
-                if (maybeDeviceFromMap.isPresent()) {
-                    deviceFromMap = maybeDeviceFromMap.get();
-                    controllerIndex = controllerToDevices.getKey();
-                    unitIndex = controllerToDevices.getValue().get(deviceFromMap);
-                    break;
+        switch (diskInterface) {
+            case SPAPR_VSCSI:
+                if (StringUtils.isEmpty(device.getAddress())) {
+                    Integer unitIndex = vmDeviceSpaprVscsiUnitMap.get(defaultControllerIndex).get(device);
+                    device.setAddress(createAddressForScsiDisk(defaultControllerIndex, unitIndex).toString());
                 }
-            }
+                break;
+            case VirtIO_SCSI:
+                Integer unitIndex = null;
+                int controllerIndex = defaultControllerIndex;
+                VmDevice deviceFromMap = device;
+                for (Map.Entry<Integer, Map<VmDevice, Integer>> controllerToDevices : vmDeviceVirtioScsiUnitMap.entrySet()) {
+                    Optional<VmDevice> maybeDeviceFromMap = controllerToDevices.getValue().keySet().stream()
+                            .filter(d -> d.getId().equals(device.getId()))
+                            .findFirst();
+                    if (maybeDeviceFromMap.isPresent()) {
+                        deviceFromMap = maybeDeviceFromMap.get();
+                        controllerIndex = controllerToDevices.getKey();
+                        unitIndex = controllerToDevices.getValue().get(deviceFromMap);
+                        break;
+                    }
+                }
 
-            if (StringUtils.isEmpty(deviceFromMap.getAddress())) {
-                if (unitIndex == null) {
-                    // should never get here, but for safety having this fallback and generating a new unit id
-                    unitIndex = getAvailableUnitForScsiDisk(vmDeviceVirtioScsiUnitMap.get(controllerIndex), false, false);
-                    log.debug("The unit was null for disk '{}' on controller '{}', generating a new one '{}'", disk.getId(), controllerIndex, unitIndex);
+                if (StringUtils.isEmpty(deviceFromMap.getAddress())) {
+                    if (unitIndex == null) {
+                        // should never get here, but for safety having this fallback and generating a new unit id
+                        unitIndex = getAvailableUnitForScsiDisk(vmDeviceVirtioScsiUnitMap.get(controllerIndex), false, false);
+                        log.debug("The unit was null for disk '{}' on controller '{}', generating a new one '{}'", disk.getId(), controllerIndex, unitIndex);
+                    }
+                    device.setAddress(createAddressForScsiDisk(controllerIndex, unitIndex).toString());
                 }
-                device.setAddress(createAddressForScsiDisk(controllerIndex, unitIndex).toString());
-            }
-            break;
+                break;
+            default:
         }
     }
 
@@ -1417,11 +1529,11 @@ public class VmInfoBuildUtils {
     }
 
     public int getDefaultHugepageSize(VM vm) {
-        switch(vm.getClusterArch().getFamily()) {
-        case ppc:
-            return DEFAULT_HUGEPAGESIZE_PPC64LE;
-        default:
-            return DEFAULT_HUGEPAGESIZE_X86_64;
+        switch (vm.getClusterArch().getFamily()) {
+            case ppc:
+                return DEFAULT_HUGEPAGESIZE_PPC64LE;
+            default:
+                return DEFAULT_HUGEPAGESIZE_X86_64;
         }
     }
 
@@ -1434,8 +1546,21 @@ public class VmInfoBuildUtils {
         return multiQueueUtils.getOptimalNumOfQueuesPerVnic(numOfCpus);
     }
 
+    public int getNumOfScsiQueues(int numOfDisks, int numOfCpus) {
+        return multiQueueUtils.getNumOfScsiQueues(numOfDisks, numOfCpus);
+    }
+
     public boolean isInterfaceQueuable(VmDevice vmDevice, VmNic vmNic) {
         return multiQueueUtils.isInterfaceQueuable(vmDevice, vmNic);
+    }
+
+    public boolean hasUsbController(VM vm) {
+        List<VmDevice> vmUsbDevicesList = vmDeviceDao.getVmDeviceByVmIdTypeAndDevice(
+                vm.getId(),
+                VmDeviceGeneralType.CONTROLLER,
+                VmDeviceType.USB);
+        return !(vmUsbDevicesList.size() == 1
+                && UsbControllerModel.NONE.libvirtName.equals(vmUsbDevicesList.get(0).getSpecParams().get(VdsProperties.Model)));
     }
 
     private UsbControllerModel getUsbControllerModelForVm(VM vm) {
@@ -1446,16 +1571,16 @@ public class VmInfoBuildUtils {
     }
 
     public boolean isTabletEnabled(VM vm) {
-        return vm.getVmType() != VmType.HighPerformance // avoid adding Tablet device for HP VMs since no USB devices are set
-                && getUsbControllerModelForVm(vm) != UsbControllerModel.NONE // or when there's no USB controller for this OS
+        return hasUsbController(vm) // when we have USB controller
+                && getUsbControllerModelForVm(vm) != UsbControllerModel.NONE // when there is USB controller for this OS
                 && vm.getGraphicsInfos().containsKey(GraphicsType.VNC); // and VNC is requested (VNC or SPICE+VNC)
     }
 
     public boolean shouldUseNativeIO(VM vm, DiskImage diskImage, VmDevice device) {
         StorageType storageType = diskImage.getStorageTypes().get(0);
         String diskType = getDiskType(vm, diskImage, device);
-        return (!"file".equals(diskType) || (storageType == StorageType.GLUSTERFS
-                && FeatureSupported.useNativeIOForGluster(vm.getCompatibilityVersion())))
+        return (!"file".equals(diskType) || storageType == StorageType.GLUSTERFS
+                && FeatureSupported.useNativeIOForGluster(vm.getCompatibilityVersion()))
                 && device.getSnapshotId() == null;
         // marked as transient disk (file type) and uses cache when snapshotId is not null
         // so native io should not be used
@@ -1465,19 +1590,19 @@ public class VmInfoBuildUtils {
         return VgpuPlacement.forValue(vdsStaticDao.get(hostId).getVgpuPlacement());
     }
 
-    public void setCinderDriverType(ManagedBlockStorageDisk disk) {
+    public void setManagedDriverType(ManagedBlockStorageDisk disk) {
         Map<String, Object> conn_info = disk.getConnectionInfo();
 
-        if (CinderVolumeDriver.RBD.getName().equals(conn_info.get(ManagedBlockStorageDisk.DRIVER_VOLUME_TYPE))) {
-            disk.setCinderVolumeDriver(CinderVolumeDriver.RBD);
+        if (ManagedVolumeDriver.RBD.getName().equals(conn_info.get(ManagedBlockStorageDisk.DRIVER_VOLUME_TYPE))) {
+            disk.setManagedVolumeDriver(ManagedVolumeDriver.RBD);
         } else {
-            disk.setCinderVolumeDriver(CinderVolumeDriver.BLOCK);
+            disk.setManagedVolumeDriver(ManagedVolumeDriver.BLOCK);
         }
     }
 
-    boolean isKernelFipsMode(Guid vdsGuid) {
-        boolean fips = vdsDynamicDao.get(vdsGuid).isFipsEnabled();
-        log.debug("Kernel FIPS - Guid: {} fips: {}", vdsGuid, fips);
+    boolean isKernelFipsMode(VdsDynamic vds) {
+        boolean fips = vds.isFipsEnabled();
+        log.debug("Kernel FIPS - Guid: {} fips: {}", vds.getId(), fips);
         return fips;
     }
 
@@ -1499,11 +1624,126 @@ public class VmInfoBuildUtils {
         return new IgnitionHandler(vmInit, ignitionVersion).getFileData();
     }
 
-    String getTscFrequency(Guid vdsGuid) {
-        return vdsDynamicDao.get(vdsGuid).getTscFrequency();
+    VdsDynamic getVdsDynamic(Guid vdsGuid) {
+        return vdsDynamicDao.get(vdsGuid);
     }
 
-    String getCpuFlags(Guid vdsGuid) {
-        return vdsDynamicDao.get(vdsGuid).getCpuFlags();
+    private Long alignDown(Long size, Long alignment) {
+        return (size / alignment) * alignment;
+    }
+
+    public Long getNvdimmAlignedSize(VM vm, HostDevice hostDevice) {
+        // Beware: The sizes computed here cannot be changed otherwise data corruption/loss may happen!
+        Map<String, Object> specParams = hostDevice.getSpecParams();
+        final Long hotplugAlignment = new Long(vm.getClusterArch().getHotplugMemorySizeFactorMb() * 1024 * 1024);
+        final Long nvdimmAlignment = (Long) specParams.getOrDefault(VdsProperties.ALIGN_SIZE, hotplugAlignment);
+        // Libvirt performs size alignments, sometimes up rather than down, let's make an initial alignment down
+        // here to be safe.
+        Long size = alignDown((Long) specParams.get(VdsProperties.DEVICE_SIZE), hotplugAlignment);
+        // Libvirt subtracts label size on POWER before checking for alignments.
+        if (vm.getClusterArch().getFamily() == ArchitectureType.ppc) {
+            size += NVDIMM_LABEL_SIZE;
+        }
+        // After QEMU subtracts label size from the NVDIMM size and aligns it down to the align size,
+        // the resulting size must be aligned to hot plug memory size factor in order to make regular
+        // memory hot plug working.
+        // See https://github.com/qemu/qemu/blob/v5.0.0/hw/mem/nvdimm.c#L143 for the related QEMU computations.
+        final Long qemu_memory_size = alignDown(size - NVDIMM_LABEL_SIZE, nvdimmAlignment);
+        if (nvdimmAlignment != null && hotplugAlignment % nvdimmAlignment == 0) {
+            // Additional alignment on hot plug size needed
+            size -= qemu_memory_size % hotplugAlignment;
+        } else if (nvdimmAlignment != null && nvdimmAlignment % hotplugAlignment != 0) {
+            // We can't align this
+            log.error("Memory ({}) or NVDIMM ({}) alignment not a power of 2", hotplugAlignment, nvdimmAlignment);
+            return null;
+        }  // else: NVDIMM alignment aligned with hot plug alignment, no adjustment needed
+        return size;
+    }
+
+    public Long getNvdimmTotalSize(VM vm, MemoizingSupplier<Map<String, HostDevice>> hostDevicesSupplier) {
+        long size = 0;
+        for (VmDevice device : getVmDevices(vm.getId())) {
+            if (device.isPlugged() && device.getType() == VmDeviceGeneralType.HOSTDEV) {
+                HostDevice hostDevice = hostDevicesSupplier.get().get(device.getDevice());
+                if (hostDevice != null && "nvdimm".equals(hostDevice.getCapability())) {
+                    size += getNvdimmAlignedSize(vm, hostDevice);
+                }
+            }
+        }
+        return size;
+    }
+
+    public static int maxNumberOfVcpus(VM vm) {
+        return FeatureSupported.hotPlugCpu(vm.getCompatibilityVersion(), vm.getClusterArch(), vm.getCpuPinningPolicy()) ?
+                VmCpuCountHelper.calcMaxVCpu(vm, vm.getCompatibilityVersion())
+                : VmCpuCountHelper.getDynamicNumOfCpu(vm);
+    }
+
+    public static boolean isVmWithHighNumberOfX86Vcpus(VM vm) {
+        return vm.getClusterArch().getFamily() == ArchitectureType.x86
+                && maxNumberOfVcpus(vm) >= VmCpuCountHelper.HIGH_NUMBER_OF_X86_VCPUS;
+    }
+
+    /**
+     * Return a recommended TSEG size in MB or null to use the default value.
+     *
+     * Large VMs with UEFI will not start if they don't have TSEG large enough.
+     * There is no rule what "large" is, it's a VM with "too many" vCPUs or "too large" memory.
+     * There are just some suggestions:
+     * - To use 48 MB for VMs with many vCPUs or large memory:
+     *   https://bugzilla.redhat.com/show_bug.cgi?id=2074149#c22
+     * - The same in a different context:
+     *   https://bugzilla.redhat.com/show_bug.cgi?id=1469338#c30
+     * - To increase the size by unspecified amount for many vCPUs and by 8 MB of each TB of
+     *   address space (which is max RAM + NVDIMM size in our case):
+     *   https://bugzilla.redhat.com/show_bug.cgi?id=1469338#c7
+     * - Confirmation that 48 MB may not be enough for really large VMs:
+     *   https://bugzilla.redhat.com/show_bug.cgi?id=2074149#c28
+     **/
+    public Long tsegSizeMB(VM vm, MemoizingSupplier<Map<String, HostDevice>> hostDevicesSupplier) {
+        // If UEFI is not used, we should be safe and use the default value.
+        if (vm.getBiosType() == null || !vm.getBiosType().isOvmf()) {
+            return null;
+        }
+        // If the VM is small, we also use the default value, because the TSEG size is taken
+        // from the memory available to the guest.
+        final int cpuLimit = Config.getValue(ConfigValues.ManyVmCpus);
+        final int smallMemory = Config.<Integer>getValue(ConfigValues.UefiBigVmMemoryGB) * 1024;
+        if (maxNumberOfVcpus(vm) < cpuLimit && vm.getMaxMemorySizeMb() < smallMemory) {
+            return null;
+        }
+        // Otherwise, we start with the default value (16 MB currently) and add 24 MB
+        // (which implies at least the recommended value of 48 MB together with the default value
+        // and additional value per memory) for VMs with many vCPUs and 8 MB per each (even partial)
+        // TB of RAM. This is probably a bit wasteful but it's better than risking the VM won't
+        // start.
+        long size = DEFAULT_TSEG_SIZE_MB;
+        if (maxNumberOfVcpus(vm) >= cpuLimit) {
+            size += MANY_VCPUS_TSEG_SIZE_INCREASE_MB;
+        }
+        final long memorySize = vm.getMaxMemorySizeMb() + getNvdimmTotalSize(vm, hostDevicesSupplier) / (1024 * 1024);
+        size += (memorySize / (1024 * 1024) + 1) * PER_TB_TSEG_SIZE_INCREASE_MB;
+        return size;
+    }
+
+    public String getVdsmCpuPinningPolicy(VM vm) {
+        CpuPinningPolicy cpuPinningPolicy = vm.getCpuPinningPolicy();
+        // CpuPinningPolicy.NONE may happen when the engine generates CPU pinning based on the NUMA pinning.
+        // VDSM doesn't recognize 'resize and pin numa' we need to switch it to 'manual'.
+        if (cpuPinningPolicy == CpuPinningPolicy.RESIZE_AND_PIN_NUMA ||
+                vm.getVmPinning() != null && cpuPinningPolicy == CpuPinningPolicy.NONE) {
+            cpuPinningPolicy = CpuPinningPolicy.MANUAL;
+        }
+        String cpuPinningPolicyName = cpuPinningPolicy.name().toLowerCase();
+        if (cpuPinningPolicy == CpuPinningPolicy.ISOLATE_THREADS) {
+            // in VDSM the policy is `isolate-threads` while in JAVA ENUM can't be set with a dash.
+            cpuPinningPolicyName = "isolate-threads";
+        }
+        return cpuPinningPolicyName;
+    }
+
+    public static boolean needsMemtune(VM vm) {
+        return vm.getBiosType() != null && vm.getBiosType().getChipsetType() == ChipsetType.Q35
+                && maxNumberOfVcpus(vm) >= 256;
     }
 }

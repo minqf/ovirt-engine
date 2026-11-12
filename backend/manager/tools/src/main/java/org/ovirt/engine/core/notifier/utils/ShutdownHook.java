@@ -23,7 +23,7 @@ public class ShutdownHook extends Thread {
 
     public static ShutdownHook getInstance() {
         if (instance == null) {
-            synchronized(ShutdownHook.class) {
+            synchronized (ShutdownHook.class) {
                 if (instance == null) {
                     instance = new ShutdownHook();
                 }
@@ -38,7 +38,7 @@ public class ShutdownHook extends Thread {
 
     @Override
     public void run() {
-        log.info("Preparing for shutdown after receiving signal " );
+        log.info("Preparing for shutdown after receiving signal ");
         for (ScheduledFuture<?> scheduled : serviceHandlers) {
             scheduled.cancel(true);
         }

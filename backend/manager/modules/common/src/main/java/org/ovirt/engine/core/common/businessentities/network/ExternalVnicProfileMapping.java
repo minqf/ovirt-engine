@@ -117,9 +117,9 @@ public class ExternalVnicProfileMapping implements Serializable {
      */
     public boolean isSameSourceProfile(VmNetworkInterface vnic) {
         return (Objects.equals(getSourceNetworkName(), vnic.getNetworkName()) ||
-                ("".equals(getSourceNetworkName()) && vnic.getNetworkName() == null)) &&
+                "".equals(getSourceNetworkName()) && vnic.getNetworkName() == null) &&
                 (Objects.equals(getSourceProfileName(), vnic.getVnicProfileName()) ||
-                        ("".equals(getSourceProfileName()) && vnic.getVnicProfileName() == null));
+                        "".equals(getSourceProfileName()) && vnic.getVnicProfileName() == null);
     }
 
      /**
@@ -127,7 +127,7 @@ public class ExternalVnicProfileMapping implements Serializable {
       * in the UI when adding and removing from a set.
      * @return true if the source profile of o is the same as that of this
      */
-   @Override
+    @Override
     public boolean equals(Object o) {
         if (this == o) {
             return true;

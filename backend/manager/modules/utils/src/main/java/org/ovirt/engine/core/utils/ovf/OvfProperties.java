@@ -19,6 +19,7 @@ public interface OvfProperties {
     String VMD_ALIAS = "Alias";
     String VMD_CUSTOM_PROP = "CustomProperties";
     String VMD_SNAPSHOT_PROP = "SnapshotId";
+    String VMD_ID = "rasd:InstanceId";
 
     String AUTO_STARTUP = "AutoStartup";
     String PRIORITY = "Priority";
@@ -76,11 +77,13 @@ public interface OvfProperties {
     String IS_SPICE_COPY_PASTE_ENABLED = "IsSpiceCopyPasteEnabled";
     String ALLOW_CONSOLE_RECONNECT = "AllowConsoleReconnect";
     String CONSOLE_DISCONNECT_ACTION = "ConsoleDisconnectAction";
+    String CONSOLE_DISCONNECT_ACTION_DELAY = "ConsoleDisconnectActionDelay";
     String COMMENT = "Comment";
     String IS_AUTO_CONVERGE = "IsAutoConverge";
     String IS_MIGRATE_COMPRESSED = "IsMigrateCompressed";
     String IS_MIGRATE_ENCRYPTED = "IsMigrateEncrypted";
     String MIGRATION_POLICY_ID = "MigrationPolicyId";
+    String PARALLEL_MIGRATIONS = "ParallelMigrations";
     String CUSTOM_EMULATED_MACHINE = "CustomEmulatedMachine";
     String BIOS_TYPE = "BiosType";
     String CUSTOM_CPU_NAME = "CustomCpuName";
@@ -97,6 +100,9 @@ public interface OvfProperties {
     String ENGINE_XML = "EngineXml";
     String CPU_PINNING = "CpuPinning";
     String MULTI_QUEUES_ENABLED = "MultiQueuesEnabled";
+    String VIRTIO_SCSI_MULTI_QUEUES_ENABLED = "VirtioScsiMultiQueuesEnabled";
+    String BALLOON_ENABLED = "BalloonEnabled";
+    String CPU_PINNING_POLICY = "CpuPinningPolicy";
 
     // Luns
     String LUN_ID = "lun_id";
@@ -116,4 +122,17 @@ public interface OvfProperties {
     String USER_DOMAIN = "UserDomain";
     String USER_ROLES = "UserRoles";
     String ROLE_NAME = "RoleName";
+
+    // External data
+    String VM_EXTERNAL_DATA_ITEM = "VmExternalDataItem";
+    String VM_EXTERNAL_DATA_KIND = "kind";
+    String VM_EXTERNAL_DATA_CONTENT = "VmExternalDataContent";
+
+    // NUMA
+    String NUMA_NODE = "NumaNode";
+    String NUMA_INDEX = "Index";
+    String NUMA_CPU_ID_LIST = "cpuIdList";
+    String NUMA_VDS_NUMA_LIST = "vdsNumaNodeList";
+    String NUMA_TOTAL_MEMORY = "MemTotal";
+    String NUMA_TUNE_MODE = "NumaTuneMode";
 }

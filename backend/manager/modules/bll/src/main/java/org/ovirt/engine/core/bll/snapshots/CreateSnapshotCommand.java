@@ -1,11 +1,9 @@
 package org.ovirt.engine.core.bll.snapshots;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
-import java.util.Set;
 
 import javax.inject.Inject;
 
@@ -18,8 +16,8 @@ import org.ovirt.engine.core.bll.tasks.CommandCoordinatorUtil;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.ActionParametersBase;
 import org.ovirt.engine.core.common.action.ActionType;
+import org.ovirt.engine.core.common.action.CreateSnapshotParameters;
 import org.ovirt.engine.core.common.action.DestroyImageParameters;
-import org.ovirt.engine.core.common.action.ImagesActionsParametersBase;
 import org.ovirt.engine.core.common.asynctasks.AsyncTaskType;
 import org.ovirt.engine.core.common.businessentities.StorageDomain;
 import org.ovirt.engine.core.common.businessentities.VM;
@@ -35,7 +33,6 @@ import org.ovirt.engine.core.common.vdscommands.VDSReturnValue;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.DiskImageDao;
 import org.ovirt.engine.core.dao.ImageDao;
-import org.ovirt.engine.core.dao.StorageDomainDao;
 import org.ovirt.engine.core.dao.VmDao;
 import org.ovirt.engine.core.utils.transaction.TransactionSupport;
 
@@ -46,7 +43,7 @@ import org.ovirt.engine.core.utils.transaction.TransactionSupport;
 
 @InternalCommandAttribute
 @NonTransactiveCommandAttribute
-public class CreateSnapshotCommand<T extends ImagesActionsParametersBase> extends BaseImagesCommand<T> {
+public class CreateSnapshotCommand<T extends CreateSnapshotParameters> extends BaseImagesCommand<T> {
 
     @Inject
     private ImageDao imageDao;
@@ -54,8 +51,6 @@ public class CreateSnapshotCommand<T extends ImagesActionsParametersBase> extend
     private DiskImageDao diskImageDao;
     @Inject
     private VmDao vmDao;
-    @Inject
-    private StorageDomainDao storageDomainDao;
     @Inject
     private CommandCoordinatorUtil commandCoordinatorUtil;
     @Inject
@@ -100,7 +95,7 @@ public class CreateSnapshotCommand<T extends ImagesActionsParametersBase> extend
                 Guid.newGuid() : getParameters().getDestinationImageId());
         persistCommandIfNeeded();
         newDiskImage = cloneDiskImage(getDestinationImageId());
-        newDiskImage.setStorageIds(new ArrayList<>(Arrays.asList(getDestinationStorageDomainId())));
+        newDiskImage.setStorageIds(new ArrayList<>(Collections.singletonList(getDestinationStorageDomainId())));
         getParameters().setStorageDomainId(getDestinationStorageDomainId());
         getParameters().setImageId(getDestinationImageId());
         getParameters().setImageGroupID(getImageGroupId());
@@ -112,24 +107,24 @@ public class CreateSnapshotCommand<T extends ImagesActionsParametersBase> extend
         // storage team request
         newDiskImage.setVolumeType(VolumeType.Sparse);
         newDiskImage.setVolumeFormat(VolumeFormat.COW);
+
+        // If we are creating a thin VM it makes sense to use the default sequence for the new
+        // image as the template image is not "really" part of the disk, but merely a symlink,
+        // so having a different sequence number doesn't provide much benefit
+        int nextSequenceNumber = 1;
+        if (getActionType() != ActionType.CreateSnapshotFromTemplate) {
+            nextSequenceNumber = imageDao.getMaxSequenceNumber(getImageGroupId()) + 1;
+        }
+
+        newDiskImage.getImage().setSequenceNumber(nextSequenceNumber);
+
         try {
             Guid taskId = persistAsyncTaskPlaceHolder(getParameters().getParentCommand());
 
             VDSReturnValue vdsReturnValue =
                     runVdsCommand(
                             VDSCommandType.CreateVolume,
-                            new CreateVolumeVDSCommandParameters(getStoragePoolId(),
-                                    getDestinationStorageDomainId(),
-                                    getImageGroupId(),
-                                    getImage().getImageId(),
-                                    getDiskImage().getSize(),
-                                    newDiskImage.getVolumeType(),
-                                    newDiskImage.getVolumeFormat(),
-                                    getDiskImage().getId(),
-                                    getDestinationImageId(),
-                                    "",
-                                    getStoragePool().getCompatibilityVersion(),
-                                    getDiskImage().getContentType()));
+                            getCreateVDSCommandParameters(nextSequenceNumber));
 
             if (vdsReturnValue != null && vdsReturnValue.getSucceeded()) {
                 getParameters().setVdsmTaskIds(new ArrayList<>());
@@ -158,6 +153,36 @@ public class CreateSnapshotCommand<T extends ImagesActionsParametersBase> extend
         return false;
     }
 
+    private CreateVolumeVDSCommandParameters getCreateVDSCommandParameters(int nextSequenceNumber) {
+        CreateVolumeVDSCommandParameters parameters = new CreateVolumeVDSCommandParameters(getStoragePoolId(),
+                getDestinationStorageDomainId(),
+                getImageGroupId(),
+                getImage().getImageId(),
+                getDiskImage().getSize(),
+                newDiskImage.getVolumeType(),
+                newDiskImage.getVolumeFormat(),
+                getDiskImage().getId(),
+                getDestinationImageId(),
+                "",
+                getStoragePool().getCompatibilityVersion(),
+                getDiskImage().getContentType(),
+                nextSequenceNumber);
+        if (getParameters().getInitialSizeInBytes() != null) {
+            parameters.setImageInitialSizeInBytes(getParameters().getInitialSizeInBytes());
+        }
+
+        if (imagesHandler.shouldUseDiskBitmaps(getStoragePool().getCompatibilityVersion(), getDiskImage())
+                && !getParameters().isLiveSnapshot()) {
+            parameters.setShouldAddBitmaps(true);
+        }
+
+        if (getImage().getVolumeFormat() == VolumeFormat.COW) {
+            parameters.setBitmap(getParameters().getBitmap());
+        }
+
+        return parameters;
+    }
+
     @Override
     protected AsyncTaskType getTaskType() {
         return AsyncTaskType.createVolume;
@@ -183,7 +208,7 @@ public class CreateSnapshotCommand<T extends ImagesActionsParametersBase> extend
         List<VM> vms = vmDao.getVmsListForDisk(getDestinationDiskImage().getId(), false);
         if (getDestinationDiskImage() != null
                 && !vms.isEmpty()
-                && !isSnapshotUsed(vms.get(0))) {
+                && !imagesHandler.isSnapshotUsed(vms.get(0), getDiskImage())) {
 
             // Empty Guid, means new disk rather than snapshot, so no need to add a map to the db for new disk.
             if (!getDestinationDiskImage().getParentId().equals(Guid.Empty)) {
@@ -211,28 +236,6 @@ public class CreateSnapshotCommand<T extends ImagesActionsParametersBase> extend
             unLockImage();
         }
         setSucceeded(true);
-    }
-
-    private boolean isSnapshotUsed(VM vm) {
-        if (vm.isRunning()) {
-            Set<Guid> volumeChain = imagesHandler.getVolumeChain(vm.getId(),
-                    vm.getRunOnVds(),
-                    getDiskImage());
-
-            if (volumeChain == null) {
-                log.warn("Could not retrieve chain, skipping deletion");
-                return true;
-            }
-
-            if (volumeChain.contains(getDiskImage().getImageId())) {
-                log.warn("Image '{}' appears to be in use by VM '{}', skipping deletion",
-                        getDiskImage().getImageId(),
-                        vm.getId());
-                return true;
-            }
-        }
-
-        return false;
     }
 
     protected DestroyImageParameters buildDestroyImageParameters(Guid imageGroupId, List<Guid> imageList) {

@@ -141,7 +141,6 @@ public class BackendVmResourceTest
         setUriInfo(setUpBasicUriExpectations());
         setUpGetEntityExpectations(1);
         setUpGetPayloadExpectations(0, 1);
-        setUpGetBallooningExpectations();
         setUpGetGraphicsExpectations(1);
         setUpGetCertuficateExpectations();
         setUpGetCaRootExpectations();
@@ -155,7 +154,6 @@ public class BackendVmResourceTest
         setUriInfo(addMatrixParameterExpectations(setUpBasicUriExpectations(), BackendVmResource.NEXT_RUN));
         setUpGetEntityNextRunExpectations();
         setUpGetPayloadExpectations(0, 1);
-        setUpGetBallooningExpectations();
         setUpGetNextRunGraphicsExpectations(1);
         setUpGetCertuficateExpectations();
         setUpGetCaRootExpectations();
@@ -171,7 +169,6 @@ public class BackendVmResourceTest
             setUriInfo(setUpBasicUriExpectations());
             setUpGetEntityExpectations(1);
             setUpGetPayloadExpectations(0, 1);
-            setUpGetBallooningExpectations();
             setUpGetGraphicsExpectations(1);
 
             Vm vm = resource.get();
@@ -197,16 +194,16 @@ public class BackendVmResourceTest
         if (allContent) {
             List<String> populates = new ArrayList<>();
             populates.add("true");
-            when(httpHeaders.getRequestHeader(BackendResource.POPULATE)).thenReturn(populates);
+            when(httpHeaders.getRequestHeader(BackendResource.ALL_CONTENT_HEADER)).thenReturn(populates);
             setUpGetConsoleExpectations(0);
             setUpGetVirtioScsiExpectations(0);
             setUpGetSoundcardExpectations(0);
             setUpGetRngDeviceExpectations(0);
             setUpGetVmOvfExpectations(0);
+            setUpGetTpmExpectations(0);
         }
         setUpGetEntityExpectations(1);
         setUpGetPayloadExpectations(0, 1);
-        setUpGetBallooningExpectations();
         setUpGetGraphicsExpectations(1);
         setUpGetCertuficateExpectations();
         setUpGetCaRootExpectations();
@@ -214,7 +211,7 @@ public class BackendVmResourceTest
         verifyModel(response, 0);
         verifyCertificate(response);
 
-        List<String> populateHeader = httpHeaders.getRequestHeader(BackendResource.POPULATE);
+        List<String> populateHeader = httpHeaders.getRequestHeader(BackendResource.ALL_CONTENT_HEADER);
         boolean populated = populateHeader != null ? populateHeader.contains("true") : false;
         assertTrue(populated ? response.isSetConsole() : !response.isSetConsole());
     }
@@ -232,13 +229,12 @@ public class BackendVmResourceTest
         setUpGetEntityForUpdateExpectations(3);
 
         setUpGetPayloadExpectations(0, 2);
-        setUpGetBallooningExpectations();
-        setUpGetBallooningExpectations();
         setUpGetGraphicsExpectations(2);
         setUpGetConsoleExpectations(0);
         setUpGetVmOvfExpectations(0);
         setUpGetVirtioScsiExpectations(0);
         setUpGetSoundcardExpectations(0);
+        setUpGetTpmExpectations(0);
         setUpGetRngDeviceExpectations(0);
         setUriInfo(setUpActionExpectations(ActionType.UpdateVm,
                 VmManagementParametersBase.class,
@@ -257,14 +253,12 @@ public class BackendVmResourceTest
 
         setUpGetPayloadExpectations(0, 1);
         setUpGetNoPayloadExpectations(0, 1);
-
-        setUpGetBallooningExpectations();
-        setUpGetBallooningExpectations();
         setUpGetGraphicsExpectations(2);
         setUpGetConsoleExpectations(0);
         setUpGetVmOvfExpectations(0);
         setUpGetVirtioScsiExpectations(0);
         setUpGetSoundcardExpectations(0);
+        setUpGetTpmExpectations(0);
         setUpGetRngDeviceExpectations(0);
 
 
@@ -284,14 +278,13 @@ public class BackendVmResourceTest
         setUpGetEntityForUpdateExpectations(3);
 
         setUpGetPayloadExpectations(0, 2);
-        setUpGetBallooningExpectations();
-        setUpGetBallooningExpectations();
         setUpGetGraphicsExpectations(2);
         setUpGetConsoleExpectations(0);
         setUpGetVmOvfExpectations(0);
         setUpGetVirtioScsiExpectations(0);
         setUpGetSoundcardExpectations(0);
         setUpGetRngDeviceExpectations(0);
+        setUpGetTpmExpectations(0);
         setUriInfo(setUpActionExpectations(ActionType.UpdateVm,
                 VmManagementParametersBase.class,
                 new String[] {},
@@ -309,14 +302,13 @@ public class BackendVmResourceTest
         setUpGetEntityForUpdateExpectations(3);
 
         setUpGetPayloadExpectations(0, 2);
-        setUpGetBallooningExpectations();
-        setUpGetBallooningExpectations();
         setUpGetGraphicsExpectations(2);
         setUpGetConsoleExpectations(0);
         setUpGetVmOvfExpectations(0);
         setUpGetVirtioScsiExpectations(0);
         setUpGetSoundcardExpectations(0);
         setUpGetRngDeviceExpectations(0);
+        setUpGetTpmExpectations(0);
         setUriInfo(setUpActionExpectations(ActionType.UpdateVm,
                 VmManagementParametersBase.class,
                 new String[]{},
@@ -401,7 +393,7 @@ public class BackendVmResourceTest
         Vm model = getModel(0);
         model.setPlacementPolicy(new VmPlacementPolicy());
         Hosts hosts = new Hosts();
-        for (int i =0; i < GUIDS.length; i++){
+        for (int i = 0; i < GUIDS.length; i++) {
             Host newHost = new Host();
             newHost.setId(GUIDS[i].toString());
             hosts.getHosts().add(newHost);
@@ -413,7 +405,7 @@ public class BackendVmResourceTest
     @Test
     public void testUpdateVmPolicyHostsNames() {
         setUpUdpateVm();
-        for (int i =0; i < NAMES.length; i++){
+        for (int i = 0; i < NAMES.length; i++) {
             setUpGetHostByNameExpectations(i);
         }
         setUriInfo(setUpActionExpectations(ActionType.UpdateVm,
@@ -426,7 +418,7 @@ public class BackendVmResourceTest
         Vm model = getModel(0);
         model.setPlacementPolicy(new VmPlacementPolicy());
         Hosts hosts = new Hosts();
-        for (int i =0; i < NAMES.length; i++){
+        for (int i = 0; i < NAMES.length; i++) {
             Host newHost = new Host();
             newHost.setName(NAMES[i]);
             hosts.getHosts().add(newHost);
@@ -440,13 +432,12 @@ public class BackendVmResourceTest
         setUpGetEntityForUpdateExpectations(3);
 
         setUpGetPayloadExpectations(0, 2);
-        setUpGetBallooningExpectations();
-        setUpGetBallooningExpectations();
         setUpGetGraphicsExpectations(1);
         setUpGetConsoleExpectations(0);
         setUpGetVmOvfExpectations(0);
         setUpGetVirtioScsiExpectations(0);
         setUpGetSoundcardExpectations(0);
+        setUpGetTpmExpectations(0);
         setUpGetRngDeviceExpectations(0);
         setUpGetGraphicsExpectations(1);
     }
@@ -457,11 +448,10 @@ public class BackendVmResourceTest
         setUpGetEntityForUpdateExpectations(3);
 
         setUpGetPayloadExpectations(0, 2);
-        setUpGetBallooningExpectations();
-        setUpGetBallooningExpectations();
         setUpGetConsoleExpectations(0);
         setUpGetVmOvfExpectations(0);
         setUpGetVirtioScsiExpectations(0);
+        setUpGetTpmExpectations(0);
         setUpGetSoundcardExpectations(0);
         setUpGetRngDeviceExpectations(0);
         setUpGetGraphicsExpectations(2);
@@ -502,7 +492,6 @@ public class BackendVmResourceTest
         setUpGetEntityForUpdateExpectations(2);
 
         setUpGetPayloadExpectations(0, 1);
-        setUpGetBallooningExpectations();
         setUpGetGraphicsExpectations(1);
         setUriInfo(setUpActionExpectations(ActionType.UpdateVm,
                 VmManagementParametersBase.class,
@@ -520,7 +509,6 @@ public class BackendVmResourceTest
         setUpGetEntityForUpdateExpectations(2);
 
         setUpGetPayloadExpectations(0, 1);
-        setUpGetBallooningExpectations();
         setUpGetGraphicsExpectations(1);
 
         setUriInfo(setUpBasicUriExpectations());
@@ -728,7 +716,7 @@ public class BackendVmResourceTest
 
         Response response = resource.suspend(new Action());
         verifyActionResponse(response, "vms/" + GUIDS[0], true, null);
-        Action action = (Action)response.getEntity();
+        Action action = (Action) response.getEntity();
         assertTrue(action.isSetStatus());
         assertEquals(actionStatus.value(), action.getStatus());
 
@@ -752,6 +740,16 @@ public class BackendVmResourceTest
                                            new Object[] { GUIDS[0] }));
 
         verifyActionResponse(resource.reboot(new Action()));
+    }
+
+    @Test
+    public void testReset() {
+        setUriInfo(setUpActionExpectations(ActionType.ResetVm,
+                                           VmOperationParameterBase.class,
+                                           new String[] { "VmId" },
+                                           new Object[] { GUIDS[0] }));
+
+        verifyActionResponse(resource.reset(new Action()));
     }
 
     @Test
@@ -873,7 +871,7 @@ public class BackendVmResourceTest
         action.setSnapshot(snapshot);
         Response response = resource.previewSnapshot(action);
         verifyActionResponse(response);
-        Action actionResponse = (Action)response.getEntity();
+        Action actionResponse = (Action) response.getEntity();
         assertTrue(actionResponse.isSetStatus());
         assertEquals(CreationStatus.COMPLETE.value(), actionResponse.getStatus());
     }
@@ -886,7 +884,7 @@ public class BackendVmResourceTest
                                            new Object[] { GUIDS[0], SnapshotActionEnum.UNDO }));
         Response response = resource.undoSnapshot(new Action());
         verifyActionResponse(response);
-        Action action = (Action)response.getEntity();
+        Action action = (Action) response.getEntity();
         assertTrue(action.isSetStatus());
         assertEquals(CreationStatus.COMPLETE.value(), action.getStatus());
     }
@@ -899,7 +897,7 @@ public class BackendVmResourceTest
                                            new Object[] { GUIDS[0], SnapshotActionEnum.COMMIT }));
         Response response = resource.commitSnapshot(new Action());
         verifyActionResponse(response);
-        Action action = (Action)response.getEntity();
+        Action action = (Action) response.getEntity();
         assertTrue(action.isSetStatus());
         assertEquals(CreationStatus.COMPLETE.value(), action.getStatus());
     }
@@ -924,7 +922,7 @@ public class BackendVmResourceTest
 
         Response response = resource.doClone(action);
         verifyActionResponse(response);
-        Action actionResponse = (Action)response.getEntity();
+        Action actionResponse = (Action) response.getEntity();
         assertTrue(actionResponse.isSetStatus());
     }
 
@@ -1023,7 +1021,7 @@ public class BackendVmResourceTest
 
         @SuppressWarnings("unchecked")
         BackendStatisticsResource<Vm, org.ovirt.engine.core.common.businessentities.VM> statisticsResource =
-            (BackendStatisticsResource<Vm, org.ovirt.engine.core.common.businessentities.VM>)resource.getStatisticsResource();
+            (BackendStatisticsResource<Vm, org.ovirt.engine.core.common.businessentities.VM>) resource.getStatisticsResource();
         assertNotNull(statisticsResource);
 
         verifyQuery(statisticsResource.getQuery(), entity);
@@ -1047,10 +1045,9 @@ public class BackendVmResourceTest
         setUriInfo(setUpBasicUriExpectations());
         setUpGetEntityExpectations();
         setUpGetPayloadExpectations(0, 1);
-        setUpGetBallooningExpectations();
         setUpGetGraphicsExpectations(1);
         setUpActionExpectations(ActionType.RemoveVm, RemoveVmParameters.class, new String[] {
-                "VmId", "Force" }, new Object[] { GUIDS[0], Boolean.FALSE }, true, true);
+            "VmId", "Force" }, new Object[] { GUIDS[0], Boolean.FALSE }, true, true);
         verifyRemove(resource.remove());
     }
 
@@ -1058,7 +1055,6 @@ public class BackendVmResourceTest
     public void testRemoveForced() {
         setUpGetEntityExpectations();
         setUpGetPayloadExpectations(0, 1);
-        setUpGetBallooningExpectations();
         setUpGetGraphicsExpectations(1);
         UriInfo uriInfo = setUpActionExpectations(
             ActionType.RemoveVm,
@@ -1078,7 +1074,6 @@ public class BackendVmResourceTest
     public void testRemoveDetachOnly() {
         setUpGetEntityExpectations();
         setUpGetPayloadExpectations(0, 1);
-        setUpGetBallooningExpectations();
         setUpGetGraphicsExpectations(1);
         UriInfo uriInfo = setUpActionExpectations(
             ActionType.RemoveVm,
@@ -1098,7 +1093,6 @@ public class BackendVmResourceTest
     public void testRemoveForcedIncomplete() {
         setUpGetEntityExpectations();
         setUpGetPayloadExpectations(0, 1);
-        setUpGetBallooningExpectations();
         setUpGetGraphicsExpectations(1);
         UriInfo uriInfo = setUpActionExpectations(
             ActionType.RemoveVm,
@@ -1146,7 +1140,6 @@ public class BackendVmResourceTest
     protected void doTestBadRemove(boolean valid, boolean success, String detail) {
         setUpGetEntityExpectations();
         setUpGetPayloadExpectations(0, 1);
-        setUpGetBallooningExpectations();
         setUpGetGraphicsExpectations(1);
         setUriInfo(setUpActionExpectations(ActionType.RemoveVm,
                 RemoveVmParameters.class,
@@ -1173,13 +1166,13 @@ public class BackendVmResourceTest
         List<Statistic> statistics = query.getStatistics(entity);
         verifyStatistics(statistics,
                 new String[]{"memory.installed", "memory.used", "memory.free", "memory.buffered", "memory.cached",
-                        "cpu.current.guest", "cpu.current.hypervisor", "cpu.current.total", "migration.progress",
-                        "network.current.total", "cpu.usage.history", "memory.usage.history", "network.usage.history",
-                        "disks.usage", "elapsed.time"},
+                    "cpu.current.guest", "cpu.current.hypervisor", "cpu.current.total", "migration.progress",
+                    "network.current.total", "cpu.usage.history", "memory.usage.history", "network.usage.history",
+                    "disks.usage", "elapsed.time", "memory.unused"},
                 new BigDecimal[]{asDec(10 * Mb), asDec(2 * Mb), asDec(5 * Mb), asDec(2 * Mb), asDec(1 * Mb),
-                        asDec(30), asDec(40), asDec(70), asDec(50),
-                        asDec(10), asDec(3), asDec(6), asDec(9),
-                        null, asDec(600)}
+                    asDec(30), asDec(40), asDec(70), asDec(50),
+                    asDec(10), asDec(3), asDec(6), asDec(9),
+                    null, asDec(600), asDec(1 * Mb)}
         );
         Statistic adopted = query.adopt(new Statistic());
         assertTrue(adopted.isSetVm());
@@ -1317,14 +1310,6 @@ public class BackendVmResourceTest
         }
     }
 
-    private void setUpGetBallooningExpectations() {
-        setUpGetEntityExpectations(QueryType.IsBalloonEnabled,
-                IdQueryParameters.class,
-                new String[] { "Id" },
-                new Object[] { GUIDS[0] },
-                true);
-    }
-
     protected void setUpGetGraphicsExpectations(int times) {
         for (int i = 0; i < times; i++) {
             setUpGetEntityExpectations(QueryType.GetGraphicsDevices,
@@ -1398,5 +1383,15 @@ public class BackendVmResourceTest
                 new String[]{"Name"},
                 new Object[]{NAMES[idx]},
                 host);
+    }
+
+    private void setUpGetTpmExpectations(int ... idxs) {
+        for (int i = 0; i < idxs.length; i++) {
+            setUpGetEntityExpectations(QueryType.GetTpmDevices,
+                    IdQueryParameters.class,
+                    new String[] { "Id" },
+                    new Object[] { GUIDS[idxs[i]] },
+                    new ArrayList<>());
+        }
     }
 }

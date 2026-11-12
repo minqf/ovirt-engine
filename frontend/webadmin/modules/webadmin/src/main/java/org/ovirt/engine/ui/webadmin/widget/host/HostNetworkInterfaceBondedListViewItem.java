@@ -1,5 +1,6 @@
 package org.ovirt.engine.ui.webadmin.widget.host;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -39,7 +40,7 @@ import com.google.gwt.view.client.ListDataProvider;
 
 public class HostNetworkInterfaceBondedListViewItem extends HostNetworkInterfaceListViewItem {
 
-    private static final String INVALID_AD_PARTNER_MAC = "00:00:00:00:00:00";//$NON-NLS-1$
+    private static final String INVALID_AD_PARTNER_MAC = "00:00:00:00:00:00"; //$NON-NLS-1$
     private static final int MAX_SLAVES = 1000;
 
     private static final ApplicationTemplates templates = AssetProvider.getTemplates();
@@ -92,7 +93,7 @@ public class HostNetworkInterfaceBondedListViewItem extends HostNetworkInterface
         Container container = createItemContainerPanel(content);
 
         CellTable<HostInterface> slavesTable = new CellTable<>(MAX_SLAVES,
-                (Resources)GWT.create(CellTablePopupTableResources.class));
+                (Resources) GWT.create(CellTablePopupTableResources.class));
 
         slavesTable.getElement().addClassName(Styles.TABLE);
         slavesTable.getElement().addClassName(PatternflyConstants.PF_TABLE_STRIPED);
@@ -108,7 +109,7 @@ public class HostNetworkInterfaceBondedListViewItem extends HostNetworkInterface
                 return hostInterface.getName();
             }
         };
-        slavesTable.addColumn(name, constants.macInterface());
+        slavesTable.addColumn(name, constants.nameInterface());
 
         TextColumn<HostInterface> macAddress = new TextColumn<HostInterface>() {
             @Override
@@ -165,8 +166,7 @@ public class HostNetworkInterfaceBondedListViewItem extends HostNetworkInterface
         TextColumn<HostInterface> dropRate = new TextColumn<HostInterface>() {
             @Override
             public String getValue(HostInterface hostInterface) {
-                return String.valueOf(hostInterface.getRxDrop()
-                        + hostInterface.getTxDrop());
+                return dropRenderer.render(new BigInteger[]{hostInterface.getRxDrop(), hostInterface.getTxDrop()});
             }
         };
         slavesTable.addColumn(dropRate, templates.sub(constants.dropsInterface(), constants.pkts()));
@@ -206,7 +206,7 @@ public class HostNetworkInterfaceBondedListViewItem extends HostNetworkInterface
                 message.append(constants.bondInMode4HasNoPartnerMac());
             }
             if (!isAdPartnerMacValid && !isAdAggregatorIdValid) {
-                message.append(" ");//$NON-NLS-1$
+                message.append(" "); //$NON-NLS-1$
             }
             if (!isAdAggregatorIdValid) {
                 message.append(constants.bondInMode4HasInvalidAggregatorId());
@@ -248,10 +248,10 @@ public class HostNetworkInterfaceBondedListViewItem extends HostNetworkInterface
         boolean isBond4 = BondMode.BOND4.equals(BondMode.parseBondMode(bond.getBondOptions()));
 
         if (InterfaceStatus.UP.equals(interfaceStatus) && isBond4) {
-            bondProperties.append("\n").append(createActiveBondTooltipMessage(bond, lineModel));//$NON-NLS-1$
+            bondProperties.append("\n").append(createActiveBondTooltipMessage(bond, lineModel)); //$NON-NLS-1$
         }
-        if ((bond.getActiveSlave() != null) && (bond.getActiveSlave().length() > 0)) {
-            bondProperties.append("\n").append(messages.bondActiveSlave(bond.getActiveSlave()));//$NON-NLS-1$
+        if (bond.getActiveSlave() != null && bond.getActiveSlave().length() > 0) {
+            bondProperties.append("\n").append(messages.bondActiveSlave(bond.getActiveSlave())); //$NON-NLS-1$
         }
         return new SafeHtmlBuilder().appendEscapedLines(bondProperties.toString()).toSafeHtml();
     }
@@ -268,10 +268,10 @@ public class HostNetworkInterfaceBondedListViewItem extends HostNetworkInterface
             String nicAggregatorId = Objects.toString(nic.getInterface().getAdAggregatorId(), "");
             bondProperties.add(messages.bondSlaveAdAggregatorId(nicName, nicAggregatorId));
         }
-        return String.join("\n", bondProperties);//$NON-NLS-1$
+        return String.join("\n", bondProperties); //$NON-NLS-1$
     }
 
-    private boolean isAdPartnerMacValid(Bond bond){
+    private boolean isAdPartnerMacValid(Bond bond) {
         String partnerMac = bond.getAdPartnerMac();
         boolean isAdPartnerMacEmpty = partnerMac == null || partnerMac.isEmpty() || partnerMac.equals(INVALID_AD_PARTNER_MAC);
         boolean isIfcUp = InterfaceStatus.UP.equals(bond.getStatistics().getStatus());

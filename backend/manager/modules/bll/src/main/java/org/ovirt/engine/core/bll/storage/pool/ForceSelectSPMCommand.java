@@ -52,7 +52,7 @@ public class ForceSelectSPMCommand<T extends ForceSelectSPMParameters> extends C
             return failValidation(EngineMessage.VDS_NOT_EXIST);
         }
 
-        if(!getVds().getClusterSupportsVirtService()){
+        if (!getVds().getClusterSupportsVirtService()) {
             return failValidation(EngineMessage.CANNOT_FORCE_SELECT_SPM_HOST_DOES_NOT_SUPPORT_VIRT_SERVICES);
         }
 
@@ -91,11 +91,11 @@ public class ForceSelectSPMCommand<T extends ForceSelectSPMParameters> extends C
 
         if (runVdsCommand(VDSCommandType.SpmStopOnIrs, params).getSucceeded()) {
             auditLogDirector.log(this, AuditLogType.USER_FORCE_SELECTED_SPM);
+            setSucceeded(true);
         } else {
             auditLogDirector.log(this, AuditLogType.USER_FORCE_SELECTED_SPM_STOP_FAILED);
+            setSucceeded(false);
         }
-
-        setSucceeded(true);
     }
 
     @Override

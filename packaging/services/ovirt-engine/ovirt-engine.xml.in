@@ -6,7 +6,7 @@
 {% set HTTPS_PORT = config.getinteger('ENGINE_HTTPS_PORT') %}
 {% endif %}
 
-<server xmlns="urn:jboss:domain:4.0">
+<server xmlns="urn:jboss:domain:11.0">
 
   <extensions>
     <extension module="org.jboss.as.clustering.infinispan"/>
@@ -16,12 +16,16 @@
     <extension module="org.jboss.as.ejb3"/>
     <extension module="org.jboss.as.jaxrs"/>
     <extension module="org.jboss.as.jmx"/>
+    <extension module="org.jboss.as.jpa"/>
     <extension module="org.jboss.as.logging"/>
     <extension module="org.jboss.as.naming"/>
     <extension module="org.jboss.as.remoting"/>
-    <extension module="org.jboss.as.security"/>
     <extension module="org.jboss.as.transactions"/>
     <extension module="org.jboss.as.weld"/>
+    <extension module="org.wildfly.extension.elytron"/>
+    {% if config.getboolean('KEYCLOAK_BUNDLED') %}
+    <extension module="org.keycloak.keycloak-server-subsystem"/>
+    {% endif %}
     <extension module="org.wildfly.extension.batch.jberet"/>
     <extension module="org.wildfly.extension.bean-validation"/>
     <extension module="org.wildfly.extension.io"/>
@@ -33,67 +37,16 @@
   <system-properties>
     <!-- Timeout for application deployment: -->
     <property name="jboss.as.management.blocking.timeout" value="{{ config.getinteger('ENGINE_JBOSS_BLOCKING_TIMEOUT') }}"/>
-
-    <!-- Don't let quartz call home to check for updates: -->
-    <property name="org.quartz.scheduler.skipUpdateCheck" value="true"/>
-
-    <!-- Configure quartz thread pool: -->
-    <property name="org.quartz.threadPool.class" value="{{ config.get('ENGINE_SCHEDULER_POOL_CLASS') }}"/>
-    <property name="org.quartz.threadPool.threadCount" value="{{ config.get('ENGINE_SCHEDULER_POOL_THREAD_SIZE') }}"/>
-    {% if config.get('ENGINE_SCHEDULER_POOL_CLASS') == "org.ovirt.engine.core.utils.timer.SchedulerThreadPool" %}
-    <property name="org.quartz.threadPool.queueSize" value="{{ config.get('ENGINE_SCHEDULER_POOL_QUEUE_SIZE') }}"/>
-    <property name="org.quartz.threadPool.reject" value="{{ config.get('ENGINE_SCHEDULER_POOL_REJECT_POLICY') }}"/>
-    {% endif %}
-    <property name="org.quartz.jobStore.misfireThreshold" value="60000"/>
-    <property name="org.quartz.jobStore.class" value="org.quartz.simpl.RAMJobStore"/>
   </system-properties>
 
   <management>
-    <security-realms>
-      <!-- We need to enable the management subsystem because it is an indirect
-           dependency of the Infinispan subsystem (since version 7.2 of the
-           application server) but at the same time we don't want anyone (other
-           than the root and ovirt users) to be able to connect to the
-           management port, so we just use an empty users file: -->
-      <security-realm name="management">
-        <plug-ins>
-          <plug-in module="org.ovirt.engine.core.auth-plugin"/>
-        </plug-ins>
-        <authentication>
-          <plug-in name="OvirtAuth" mechanism="PLAIN"/>
-        </authentication>
-      </security-realm>
-
-      <!-- This is required by the HTTPS listener: -->
-      <security-realm name="https">
-        <server-identities>
-          <ssl>
-            <keystore
-                alias="1"
-                key-password="mypass"
-                keystore-password="mypass"
-                path="{{ config.get('ENGINE_PKI') }}/keys/jboss.p12"
-                provider="PKCS12"/>
-          </ssl>
-        </server-identities>
-      </security-realm>
-
-      <!-- This is required by http-remoting-connector -->
-      <security-realm name="ApplicationRealm">
-        <authentication>
-          <properties path="/dev/null"/>
-        </authentication>
-        <authorization>
-          <properties path="/dev/null"/>
-        </authorization>
-      </security-realm>
-    </security-realms>
 
     <management-interfaces>
-      <native-interface security-realm="management">
+      <native-interface sasl-authentication-factory="management-sasl-authentication">
         <socket-binding native="management-native"/>
       </native-interface>
-      <http-interface security-realm="management" http-upgrade-enabled="true">
+      <http-interface http-authentication-factory="management-http-authentication">
+        <http-upgrade enabled="true" sasl-authentication-factory="management-sasl-authentication"/>
         <socket-binding http="management"/>
       </http-interface>
     </management-interfaces>
@@ -107,6 +60,56 @@
           module="org.ovirt.engine.core.logger">
         <level name="ALL"/>
       </custom-handler>
+
+      {% if config.getboolean('SYSLOG_HANDLER_ENABLED') %}
+      <custom-handler name="SYSLOG" class="org.jboss.logmanager.handlers.SyslogHandler" module="org.jboss.logmanager">
+        <level name="{{ config.get('SYSLOG_HANDLER_LEVEL') }}"/>
+        {% if config.get('SYSLOG_HANDLER_ENCODING') != "" %}
+        <encoding value="{{ config.get('SYSLOG_HANDLER_ENCODING') }}"/>
+        {% endif %}
+        {% if config.get('SYSLOG_HANDLER_FORMATTER_PATTERN') != "" %}
+        <formatter>
+            <pattern-formatter pattern="{{ config.get('SYSLOG_HANDLER_FORMATTER_PATTERN') }}"/>
+        </formatter>
+        {% endif %}
+        <properties>
+            <property name="serverHostname" value="{{ config.get('SYSLOG_HANDLER_SERVER_HOSTNAME') }}"/>
+            {% if config.get('SYSLOG_HANDLER_PORT') != "" %}
+            <property name="port" value="{{ config.get('SYSLOG_HANDLER_PORT') }}"/>
+            {% endif %}
+            {% if config.get('SYSLOG_HANDLER_FACILITY') != "" %}
+            <property name="facility" value="{{ config.get('SYSLOG_HANDLER_FACILITY') }}"/>
+            {% endif %}
+            {% if config.get('SYSLOG_HANDLER_APP_NAME') != "" %}
+            <property name="appName" value="{{ config.get('SYSLOG_HANDLER_APP_NAME') }}"/>
+            {% endif %}
+            {% if config.get('SYSLOG_HANDLER_HOSTNAME') != "" %}
+            <property name="hostname" value="{{ config.get('SYSLOG_HANDLER_HOSTNAME') }}"/>
+            {% endif %}
+            {% if config.get('SYSLOG_HANDLER_SYSLOG_TYPE') != "" %}
+            <property name="syslogType" value="{{ config.get('SYSLOG_HANDLER_SYSLOG_TYPE') }}"/>
+            {% endif %}
+            {% if config.get('SYSLOG_HANDLER_PROTOCOL') != "" %}
+            <property name="protocol" value="{{ config.get('SYSLOG_HANDLER_PROTOCOL') }}"/>
+            {% endif %}
+            {% if config.get('SYSLOG_HANDLER_MESSAGE_DELIMITER') != "" %}
+            <property name="messageDelimiter" value="{{ config.get('SYSLOG_HANDLER_MESSAGE_DELIMITER') }}"/>
+            {% endif %}
+            {% if config.get('SYSLOG_HANDLER_USE_MESSAGE_DELIMITER') != "" %}
+            <property name="useMessageDelimiter" value="{{ config.get('SYSLOG_HANDLER_USE_MESSAGE_DELIMITER') }}"/>
+            {% endif %}
+            {% if config.get('SYSLOG_HANDLER_USE_COUNTING_FRAMING') != "" %}
+            <property name="useCountingFraming" value="{{ config.get('SYSLOG_HANDLER_USE_COUNTING_FRAMING') }}"/>
+            {% endif %}
+            {% if config.get('SYSLOG_HANDLER_TRUNCATE') != "" %}
+            <property name="truncate" value="{{ config.get('SYSLOG_HANDLER_TRUNCATE') }}"/>
+            {% endif %}
+            {% if config.get('SYSLOG_HANDLER_MAX_LENGTH') != "" %}
+            <property name="maxLength" value="{{ config.get('SYSLOG_HANDLER_MAX_LENGTH') }}"/>
+            {% endif %}
+          </properties>
+      </custom-handler>
+      {% endif %}
 
       <formatter name="DEFAULT">
         <pattern-formatter pattern="%d{yyyy-MM-dd HH:mm:ss,SSSX} %-5p [%c] (%t) %s%E%n"/>
@@ -146,6 +149,18 @@
         <append value="true"/>
       </file-handler>
 
+      {% if config.getboolean('KEYCLOAK_BUNDLED') %}
+      <!-- Keycloak messages go here: -->
+      <file-handler name="KEYCLOAK" autoflush="true">
+        <level name="ALL"/>
+        <formatter>
+          <named-formatter name="WITH_CORRELATION_ID"/>
+        </formatter>
+        <file path="{{ config.get('ENGINE_LOG') }}/keycloak.log"/>
+        <append value="true"/>
+      </file-handler>
+      {% endif %}
+
       <!-- Console -->
       <console-handler name="CONSOLE" autoflush="true">
         <level name="ALL"/>
@@ -178,34 +193,57 @@
 
       <!-- Loggers for the engine: -->
       <logger category="org.ovirt" use-parent-handlers="false">
-        <level name="INFO"/>
+        <level name="{{ config.get('ORG_OVIRT_LOG_LEVEL') }}"/>
         <handlers>
           <handler name="ENGINE"/>
           <handler name="ovirt-logger"/>
           {% if config.getboolean('ENGINE_LOG_TO_CONSOLE') %}
           <handler name="CONSOLE"/>
           {% endif %}
+          {% if config.getboolean('SYSLOG_HANDLER_ENABLED') and config.getboolean('ENGINE_LOG_TO_SYSLOG') %}
+          <handler name="SYSLOG"/>
+          {% endif %}
         </handlers>
       </logger>
+
+      {% if config.getboolean('KEYCLOAK_BUNDLED') %}
+      <!-- Loggers for the Keycloak: -->
+      <logger category="org.keycloak" use-parent-handlers="false">
+        <level name="{{ config.get('KEYCLOAK_LOG_LEVEL') }}"/>
+        <handlers>
+          <handler name="KEYCLOAK"/>
+          {% if config.getboolean('SYSLOG_HANDLER_ENABLED') and config.getboolean('KEYCLOAK_BUNDLED') %}
+          <handler name="SYSLOG"/>
+          {% endif %}
+        </handlers>
+      </logger>
+      {% endif %}
+
       <!-- Loggers for the UI -->
       <logger category="org.ovirt.engine.ui.frontend.server.gwt.OvirtRemoteLoggingService" use-parent-handlers="false">
         <level name="INFO"/>
         <handlers>
           <handler name="UI"/>
+          {% if config.getboolean('SYSLOG_HANDLER_ENABLED') and config.getboolean('UI_LOG_TO_SYSLOG') %}
+          <handler name="SYSLOG"/>
+          {% endif %}
         </handlers>
       </logger>
        <logger category="org.ovirt.engine.core.bll">
-        <level name="INFO"/>
+        <level name="{{ config.get('CORE_BLL_LOG_LEVEL') }}"/>
       </logger>
       <logger category="org.ovirt.engine.core.dal.dbbroker.PostgresDbEngineDialect$PostgresJdbcTemplate">
         <level name="WARN"/>
       </logger>
 
       <root-logger>
-        <level name="INFO"/>
+        <level name="{{ config.get('ROOT_LOG_LEVEL') }}"/>
         <handlers>
           <handler name="ovirt-logger"/>
           <handler name="SERVER"/>
+          {% if config.getboolean('SYSLOG_HANDLER_ENABLED') and config.getboolean('SERVER_LOG_TO_SYSLOG') %}
+          <handler name="SYSLOG"/>
+          {% endif %}
         </handlers>
       </root-logger>
     </subsystem>
@@ -220,6 +258,10 @@
         <max-threads count="10"/>
         <keepalive-time time="30" unit="seconds"/>
       </thread-pool>
+    </subsystem>
+
+    <subsystem xmlns="urn:jboss:domain:jpa:1.1">
+      <jpa default-extended-persistence-inheritance="DEEP"/>
     </subsystem>
 
     <subsystem xmlns="urn:jboss:domain:bean-validation:1.0"/>
@@ -302,6 +344,23 @@
             <valid-connection-checker class-name="org.jboss.jca.adapters.jdbc.extensions.postgres.PostgreSQLValidConnectionChecker"/>
           </validation>
         </datasource>
+        {% if config.getboolean('KEYCLOAK_BUNDLED') %}
+        <datasource
+            jndi-name="java:jboss/datasources/KeycloakDS"
+            pool-name="KeycloakDS"
+            enabled="true"
+            use-java-context="true">
+          <connection-url><![CDATA[{{ config.get('KEYCLOAK_DB_URL') }}]]></connection-url>
+          <driver>postgresql</driver>
+          <pool>
+            <max-pool-size>{{ config.getinteger('KEYCLOAK_DB_MAX_CONNECTIONS') }}</max-pool-size>
+          </pool>
+          <security>
+            <user-name><![CDATA[{{ config.get('KEYCLOAK_DB_USER') }}]]></user-name>
+            <password><![CDATA[{{ config.get('KEYCLOAK_DB_PASSWORD') }}]]></password>
+          </security>
+        </datasource>
+        {% endif %}
 
         <drivers>
           <driver name="postgresql" module="org.postgresql">
@@ -420,7 +479,7 @@
           managed-thread-factory="java:jboss/ee/concurrency/factory/default"/>
     </subsystem>
 
-    <subsystem xmlns="urn:jboss:domain:ejb3:4.0">
+    <subsystem xmlns="urn:jboss:domain:ejb3:5.0">
       <session-bean>
         <stateful default-access-timeout="5000" cache-ref="simple" passivation-disabled-cache-ref="simple"/>
         <stateless>
@@ -463,6 +522,9 @@
         </thread-pool>
       </thread-pools>
       <default-security-domain value="other"/>
+      <application-security-domains>
+        <application-security-domain name="other" security-domain="oVirtDomain"/>
+      </application-security-domains>
       <default-missing-method-permissions-deny-access value="true"/>
       <log-system-exceptions value="true"/>
     </subsystem>
@@ -472,7 +534,7 @@
       <buffer-pool name="default"/>
     </subsystem>
 
-    <subsystem xmlns="urn:jboss:domain:infinispan:4.0">
+    <subsystem xmlns="urn:jboss:domain:infinispan:9.0">
       <cache-container name="server" default-cache="default" module="org.wildfly.clustering.server">
         <local-cache name="default">
           <transaction mode="BATCH"/>
@@ -507,10 +569,49 @@
           default-cache="timeout-base">
         <local-cache name="timeout-base">
           <transaction mode="NONE"/>
-          <eviction max-entries="10000"/>
+          <object-memory size="10000"/>
+          <expiration interval="60000"/>
+        </local-cache>
+        <local-cache name="dashboard">
+          <transaction mode="NONE"/>
+          <object-memory size="10000"/>
+          <expiration interval="60000"/>
+        </local-cache>
+        <local-cache name="inventory">
+          <transaction mode="NONE"/>
+          <object-memory size="10000"/>
           <expiration interval="60000"/>
         </local-cache>
       </cache-container>
+      {% if config.getboolean('KEYCLOAK_BUNDLED') %}
+      <cache-container name="keycloak">
+        <local-cache name="realms">
+          <object-memory size="10000"/>
+        </local-cache>
+        <local-cache name="users">
+          <object-memory size="10000"/>
+        </local-cache>
+        <local-cache name="sessions"/>
+        <local-cache name="authenticationSessions"/>
+        <local-cache name="offlineSessions"/>
+        <local-cache name="clientSessions"/>
+        <local-cache name="offlineClientSessions"/>
+        <local-cache name="loginFailures"/>
+        <local-cache name="work"/>
+        <local-cache name="authorization">
+          <object-memory size="10000"/>
+        </local-cache>
+        <local-cache name="keys">
+          <object-memory size="1000"/>
+          <expiration max-idle="3600000"/>
+        </local-cache>
+        <local-cache name="actionTokens">
+          <object-memory size="-1"/>
+          <expiration interval="300000" max-idle="-1"/>
+        </local-cache>
+      </cache-container>
+      {% endif %}
+
     </subsystem>
 
     <subsystem xmlns="urn:jboss:domain:jaxrs:1.0"/>
@@ -539,68 +640,207 @@
       <expose-expression-model/>
       <remoting-connector/>
     </subsystem>
+    {% if config.getboolean('KEYCLOAK_BUNDLED') %}
+    <subsystem xmlns="urn:jboss:domain:keycloak-server:1.1">
+      <web-context>ovirt-engine-auth</web-context>
+      <master-realm-name>master</master-realm-name>
+      <scheduled-task-interval>900</scheduled-task-interval>
+      <theme>
+        <staticMaxAge>2592000</staticMaxAge>
+        <cacheThemes>true</cacheThemes>
+        <cacheTemplates>true</cacheTemplates>
+        <dir>${jboss.home.dir}/themes</dir>
+      </theme>
+      <spi name="hostname">
+        <default-provider>default</default-provider>
+        <provider name="default" enabled="true">
+          <properties>
+            <property name="frontendUrl" value="${keycloak.frontendUrl:}"/>
+            <property name="forceBackendUrlToFrontendUrl" value="false"/>
+          </properties>
+        </provider>
+      </spi>
+      <spi name="eventsStore">
+        <provider name="jpa" enabled="true">
+          <properties>
+            <property name="exclude-events" value="[&quot;REFRESH_TOKEN&quot;]"/>
+          </properties>
+        </provider>
+      </spi>
+      <spi name="userCache">
+        <provider name="default" enabled="true"/>
+      </spi>
+      <spi name="userSessionPersister">
+        <default-provider>jpa</default-provider>
+      </spi>
+      <spi name="timer">
+        <default-provider>basic</default-provider>
+      </spi>
+      <spi name="connectionsHttpClient">
+        <provider name="default" enabled="true"/>
+      </spi>
+      <spi name="connectionsJpa">
+        <provider name="default" enabled="true">
+          <properties>
+            <property name="dataSource" value="java:jboss/datasources/KeycloakDS"/>
+            <property name="initializeEmpty" value="true"/>
+            <property name="migrationStrategy" value="update"/>
+            <property name="migrationExport" value="${jboss.home.dir}/keycloak-database-update.sql"/>
+          </properties>
+        </provider>
+      </spi>
+      <spi name="realmCache">
+        <provider name="default" enabled="true"/>
+      </spi>
+      <spi name="connectionsInfinispan">
+        <default-provider>default</default-provider>
+        <provider name="default" enabled="true">
+          <properties>
+            <property name="cacheContainer" value="java:jboss/infinispan/container/keycloak"/>
+          </properties>
+        </provider>
+      </spi>
+      <spi name="jta-lookup">
+        <default-provider>${keycloak.jta.lookup.provider:jboss}</default-provider>
+        <provider name="jboss" enabled="true"/>
+      </spi>
+      <spi name="publicKeyStorage">
+        <provider name="infinispan" enabled="true">
+          <properties>
+            <property name="minTimeBetweenRequests" value="10"/>
+          </properties>
+        </provider>
+      </spi>
+    </subsystem>
+    {% endif %}
 
     <subsystem xmlns="urn:jboss:domain:naming:2.0"/>
 
-    <subsystem xmlns="urn:jboss:domain:remoting:3.0">
+    <subsystem xmlns="urn:jboss:domain:remoting:4.0">
       <endpoint worker="default"/>
-      <http-connector name="http-remoting-connector" connector-ref="default" security-realm="ApplicationRealm"/>
+      <http-connector name="http-remoting-connector" connector-ref="http-remoting" sasl-authentication-factory="application-sasl-authentication"/>
     </subsystem>
 
     <subsystem xmlns="urn:jboss:domain:resource-adapters:4.0"/>
 
-    <subsystem xmlns="urn:jboss:domain:security:1.2">
+    <!-- Elytron Security Subsystem -->
+    <subsystem xmlns="urn:wildfly:elytron:13.0" final-providers="combined-providers" disallowed-providers="OracleUcrypto">
+      <providers>
+        <provider-loader name="elytron" module="org.wildfly.security.elytron"/>
+        <provider-loader name="openssl" module="org.wildfly.openssl"/>
+        <aggregate-providers name="combined-providers">
+          <providers name="elytron"/>
+          <providers name="openssl"/>
+        </aggregate-providers>
+      </providers>
+
+      <!-- Custom oVirt Security Realm -->
+      <security-realms>
+        <custom-realm name="oVirtRealm"
+                      module="org.ovirt.engine.core.auth-plugin"
+                      class-name="org.ovirt.engine.core.jboss_auth_plugin.OvirtElytronRealm"/>
+        <!-- Filesystem realm for http-remoting (JBOSS-LOCAL-USER mechanism for local CLI access) -->
+        <!-- Uses engine temp directory; realm will be empty but valid -->
+        <filesystem-realm name="ApplicationRealm">
+          <file path="{{ config.get('ENGINE_TMP') }}/elytron-identities"/>
+        </filesystem-realm>
+      </security-realms>
+
+      <!-- Security Domain -->
       <security-domains>
-        <security-domain name="other" cache-type="default">
-          <authentication>
-            <login-module code="Remoting" flag="optional">
-              <module-option name="password-stacking" value="useFirstPass"/>
-            </login-module>
-          </authentication>
+        <security-domain name="oVirtDomain"
+                         default-realm="oVirtRealm"
+                         permission-mapper="default-permission-mapper">
+          <realm name="oVirtRealm"/>
         </security-domain>
-        <security-domain name="jboss-web-policy" cache-type="default">
-          <authorization>
-            <policy-module code="Delegating" flag="required"/>
-          </authorization>
-        </security-domain>
-        <security-domain name="jboss-ejb-policy" cache-type="default">
-          <authorization>
-            <policy-module code="Delegating" flag="required"/>
-          </authorization>
-        </security-domain>
-        <security-domain name="oVirtKerb">
-          <authentication>
-            <login-module code="com.sun.security.auth.module.Krb5LoginModule" flag="required"/>
-          </authentication>
-        </security-domain>
-        <security-domain name="oVirtKerbDebug">
-          <authentication>
-            <login-module code="com.sun.security.auth.module.Krb5LoginModule" flag="required">
-              <module-option name="debug" value="true"/>
-            </login-module>
-          </authentication>
-        </security-domain>
-        <!-- This security-domain enables authentication via ticket cache or keytab. -->
-        <security-domain name="oVirtKerbAAA">
-          <authentication>
-            <login-module code="com.sun.security.auth.module.Krb5LoginModule" flag="required">
-              <module-option name="useTicketCache" value="{{ config.getboolean('AAA_JAAS_USE_TICKET_CACHE') }}"/>
-              {% if config.get('AAA_JAAS_TICKET_CACHE_FILE') != "" %}
-              <module-option name="ticketCache" value="{{ config.get('AAA_JAAS_TICKET_CACHE_FILE') }}"/>
-              {% endif %}
-              <module-option name="useKeyTab" value="{{ config.getboolean('AAA_JAAS_USE_KEYTAB') }}"/>
-              {% if config.get('AAA_JAAS_KEYTAB_FILE') != "" %}
-              <module-option name="keyTab" value="{{ config.get('AAA_JAAS_KEYTAB_FILE') }}"/>
-              {% endif %}
-              {% if config.get('AAA_JAAS_PRINCIPAL_NAME') != "" %}
-              <module-option name="principal" value="{{ config.get('AAA_JAAS_PRINCIPAL_NAME') }}"/>
-              {% endif %}
-              <module-option name="debug" value="{{ config.getboolean('AAA_JAAS_ENABLE_DEBUG') }}"/>
-              <module-option name="doNotPrompt" value="true"/>
-            </login-module>
-          </authentication>
+        <!-- Domain for http-remoting-connector (equivalent to legacy ApplicationRealm) -->
+        <security-domain name="ApplicationDomain"
+                         default-realm="ApplicationRealm"
+                         permission-mapper="default-permission-mapper">
+          <realm name="ApplicationRealm"/>
         </security-domain>
       </security-domains>
+
+      <!-- Mappers -->
+      <mappers>
+        <simple-permission-mapper name="default-permission-mapper" mapping-mode="first">
+          <permission-mapping match-all="true">
+            <permission-set name="login-permission"/>
+          </permission-mapping>
+        </simple-permission-mapper>
+        <constant-realm-mapper name="local" realm-name="ApplicationRealm"/>
+      </mappers>
+
+      <!-- Permission Sets -->
+      <permission-sets>
+        <permission-set name="login-permission">
+          <permission class-name="org.wildfly.security.auth.permission.LoginPermission"/>
+        </permission-set>
+      </permission-sets>
+
+      <!-- HTTP Authentication -->
+      <http>
+        <http-authentication-factory name="management-http-authentication"
+                                     http-server-mechanism-factory="global"
+                                     security-domain="oVirtDomain">
+          <mechanism-configuration>
+            <mechanism mechanism-name="BASIC">
+              <mechanism-realm realm-name="oVirtRealm"/>
+            </mechanism>
+          </mechanism-configuration>
+        </http-authentication-factory>
+        <provider-http-server-mechanism-factory name="global"/>
+      </http>
+
+      <!-- SASL Authentication -->
+      <sasl>
+        <sasl-authentication-factory name="management-sasl-authentication"
+                                     sasl-server-factory="configured"
+                                     security-domain="oVirtDomain">
+          <mechanism-configuration>
+            <mechanism mechanism-name="PLAIN"/>
+          </mechanism-configuration>
+        </sasl-authentication-factory>
+        <!-- SASL factory for http-remoting-connector -->
+        <sasl-authentication-factory name="application-sasl-authentication"
+                                     sasl-server-factory="configured"
+                                     security-domain="ApplicationDomain">
+          <mechanism-configuration>
+            <mechanism mechanism-name="JBOSS-LOCAL-USER" realm-mapper="local"/>
+            <mechanism mechanism-name="DIGEST-MD5">
+              <mechanism-realm realm-name="ApplicationRealm"/>
+            </mechanism>
+          </mechanism-configuration>
+        </sasl-authentication-factory>
+        <provider-sasl-server-factory name="global"/>
+        <configurable-sasl-server-factory name="configured" sasl-server-factory="global">
+          <filters>
+            <filter pattern="JBOSS-LOCAL-USER"/>
+            <filter pattern="PLAIN"/>
+            <filter pattern="DIGEST-MD5"/>
+          </filters>
+        </configurable-sasl-server-factory>
+      </sasl>
+
+      <!-- TLS Configuration -->
+      <tls>
+        <key-stores>
+          <key-store name="httpsKeyStore">
+            <credential-reference clear-text="mypass"/>
+            <implementation type="PKCS12"/>
+            <file path="{{ config.get('ENGINE_PKI') }}/keys/jboss.p12"/>
+          </key-store>
+        </key-stores>
+        <key-managers>
+          <key-manager name="httpsKeyManager" key-store="httpsKeyStore" alias-filter="1">
+            <credential-reference clear-text="mypass"/>
+          </key-manager>
+        </key-managers>
+        <server-ssl-contexts>
+          <server-ssl-context name="httpsSSC" key-manager="httpsKeyManager" protocols="{{ config.get('ENGINE_HTTPS_PROTOCOLS').replace(',', ' ') }}"/>
+        </server-ssl-contexts>
+      </tls>
+
     </subsystem>
 
     <subsystem xmlns="urn:jboss:domain:transactions:3.0">
@@ -612,10 +852,13 @@
       <recovery-environment socket-binding="txn-recovery-environment" status-socket-binding="txn-status-manager"/>
     </subsystem>
 
-    <subsystem xmlns="urn:jboss:domain:undertow:3.0">
+    <subsystem xmlns="urn:jboss:domain:undertow:12.0">
       <buffer-cache name="default"/>
 
       <server name="default-server">
+       <http-listener
+            name="http-remoting"
+            socket-binding="http-remoting"/>
         <!-- Listeners defined in the engine configuration: -->
         {% if config.getboolean('ENGINE_HTTP_ENABLED') %}
         <http-listener
@@ -627,8 +870,7 @@
         <https-listener
             name="https"
             socket-binding="https"
-            security-realm="https"
-            enabled-protocols="{{ config.get('ENGINE_HTTPS_PROTOCOLS') }}"/>
+            ssl-context="httpsSSC"/>
         {% endif %}
         {% if config.getboolean('ENGINE_AJP_ENABLED') %}
         <ajp-listener
@@ -704,5 +946,6 @@
     <socket-binding name="txn-status-manager" port="8705"/>
     <socket-binding name="management" port="8706" interface="{{ config.get('ENGINE_JMX_INTERFACE') }}"/>
     <socket-binding name="management-native" port="8707" interface="{{ config.get('ENGINE_JMX_INTERFACE') }}"/>
+    <socket-binding name="http-remoting" port="8708"/>
   </socket-binding-group>
 </server>

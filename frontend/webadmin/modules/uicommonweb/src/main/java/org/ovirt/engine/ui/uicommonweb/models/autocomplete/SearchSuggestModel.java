@@ -18,7 +18,7 @@ import org.ovirt.engine.ui.uicompat.ObservableCollection;
 public class SearchSuggestModel extends SearchableListModel {
 
     private final String[] itemsToIgnore = { "monitor-desktop", //$NON-NLS-1$
-            SyntaxChecker.PAGE, SyntaxChecker.SORTBY, SyntaxChecker.SORTDIR_ASC, SyntaxChecker.SORTDIR_DESC};
+        SyntaxChecker.PAGE, SyntaxChecker.SORTBY, SyntaxChecker.SORTDIR_ASC, SyntaxChecker.SORTDIR_DESC};
 
     //Exceptions that are potentially matched by items to ignore but are valid.
     private final List<String> exceptions = Arrays.asList("DESCRIPTION"); //$NON-NLS-1$
@@ -146,7 +146,7 @@ public class SearchSuggestModel extends SearchableListModel {
                 }
 
                 String space = ""; //$NON-NLS-1$
-                if ((pf.length() > 0) && !pf.substring(pf.length() - 1, pf.length() - 1 + 1).equals(".") //$NON-NLS-1$
+                if (pf.length() > 0 && !pf.substring(pf.length() - 1, pf.length() - 1 + 1).equals(".") //$NON-NLS-1$
                         && !".".equals(item)) { //$NON-NLS-1$
                     space = StringConstants.SPACE;
                 }

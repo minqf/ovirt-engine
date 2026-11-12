@@ -38,7 +38,7 @@ public class CpuFlagsManagerHandler implements BackendService {
         for (Version ver : Config.<Set<Version>> getValue(ConfigValues.SupportedClusterLevels)) {
             managersDictionary.put(ver, new CpuFlagsManager(ver));
         }
-       log.info("Finished initializing dictionaries");
+        log.info("Finished initializing dictionaries");
     }
 
     public String getCpuId(String name, Version ver) {
@@ -235,7 +235,7 @@ public class CpuFlagsManagerHandler implements BackendService {
             s390CpuByNameDictionary.clear();
             allCpuList.clear();
 
-            String[] cpus = Config.<String> getValue(ConfigValues.ServerCPUList, ver.toString()).split("[;]", -1);
+            String[] cpus = Config.<String> getValue(ConfigValues.ServerCPUList, ver.toString()).trim().split("[;]", -1);
             for (String cpu : cpus) {
 
                 if (!StringUtils.isEmpty(cpu)) {
@@ -341,7 +341,7 @@ public class CpuFlagsManagerHandler implements BackendService {
                             : new HashSet<>(parseFlags(serverFlags));
 
             // first find cluster cpu
-            if ( StringUtils.isNotEmpty(clusterCpuName)
+            if (StringUtils.isNotEmpty(clusterCpuName)
                     && ((clusterCpu = intelCpuByNameDictionary.get(clusterCpuName)) != null
                             || (clusterCpu = amdCpuByNameDictionary.get(clusterCpuName)) != null
                             || (clusterCpu = ibmCpuByNameDictionary.get(clusterCpuName)) != null
@@ -386,7 +386,7 @@ public class CpuFlagsManagerHandler implements BackendService {
             }
 
             if (ibmCpuByNameDictionary.containsKey(cpuName1)) {
-                return  ibmCpuByNameDictionary.containsKey(cpuName2);
+                return ibmCpuByNameDictionary.containsKey(cpuName2);
             }
 
             if (s390CpuByNameDictionary.containsKey(cpuName1)) {
@@ -461,14 +461,14 @@ public class CpuFlagsManagerHandler implements BackendService {
                     supportedCpus.add(intelCpuList.get(i));
                 }
             } else if (ibmCpuByNameDictionary.containsKey(maxCpuName)) {
-                    ServerCpu selected = ibmCpuByNameDictionary.get(maxCpuName);
-                    int selectedCpuIndex =ibmCpuList.indexOf(selected);
-                    for (int i = 0; i <= selectedCpuIndex; i++) {
-                        supportedCpus.add(ibmCpuList.get(i));
-                    }
+                ServerCpu selected = ibmCpuByNameDictionary.get(maxCpuName);
+                int selectedCpuIndex = ibmCpuList.indexOf(selected);
+                for (int i = 0; i <= selectedCpuIndex; i++) {
+                    supportedCpus.add(ibmCpuList.get(i));
+                }
             } else if (amdCpuByNameDictionary.containsKey(maxCpuName)) {
                 ServerCpu selected = amdCpuByNameDictionary.get(maxCpuName);
-                int selectedCpuIndex =amdCpuList.indexOf(selected);
+                int selectedCpuIndex = amdCpuList.indexOf(selected);
                 for (int i = 0; i <= selectedCpuIndex; i++) {
                     supportedCpus.add(amdCpuList.get(i));
                 }

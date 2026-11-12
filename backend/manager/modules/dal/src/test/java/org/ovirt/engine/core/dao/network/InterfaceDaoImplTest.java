@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -105,7 +106,7 @@ public class InterfaceDaoImplTest extends BaseDaoTestCase<InterfaceDao> {
     }
 
     private void testQosAppendedToResultSet(List<VdsNetworkInterface> result) {
-        result.forEach(r-> {
+        result.forEach(r -> {
             if (r.getQos() == null) {
                 HostNetworkQos hostNetworkQos = new HostNetworkQos();
                 hostNetworkQos.setId(r.getId());
@@ -116,7 +117,7 @@ public class InterfaceDaoImplTest extends BaseDaoTestCase<InterfaceDao> {
             } else {
                 r.getQos().setOutAverageLinkshare(31);
                 r.getQos().setOutAverageUpperlimit(32);
-                r.getQos().setOutAverageRealtime(33 );
+                r.getQos().setOutAverageRealtime(33);
                 hostNetworkQosDao.update(r.getQos());
             }
         });
@@ -240,7 +241,7 @@ public class InterfaceDaoImplTest extends BaseDaoTestCase<InterfaceDao> {
         List<VdsNetworkStatistics> statistics = new ArrayList<>(interfaces.size());
         for (VdsNetworkInterface iface : interfaces) {
             VdsNetworkStatistics stats = iface.getStatistics();
-            stats.setReceiveDropRate(RandomUtils.instance().nextInt() * 1.0);
+            stats.setReceiveDrops(new BigInteger(String.valueOf(RandomUtils.instance().nextInt())));
             stats.setStatus(RandomUtils.instance().nextEnum(InterfaceStatus.class));
             statistics.add(stats);
         }
@@ -253,7 +254,7 @@ public class InterfaceDaoImplTest extends BaseDaoTestCase<InterfaceDao> {
             for (VdsNetworkStatistics stats : statistics) {
                 if (iface.getId().equals(stats.getId())) {
                     found = true;
-                    assertEquals(stats.getReceiveDropRate(), iface.getStatistics().getReceiveDropRate());
+                    assertEquals(stats.getReceiveDrops(), iface.getStatistics().getReceiveDrops());
                     assertEquals(stats.getStatus(), iface.getStatistics().getStatus());
                 }
             }
@@ -362,6 +363,21 @@ public class InterfaceDaoImplTest extends BaseDaoTestCase<InterfaceDao> {
         assertNotNull(interfaces);
         assertEquals(1, interfaces.size());
         assertGetAllForVdsCorrectResult(interfaces);
+    }
+
+    @Test
+    public void testGetAllInterfacesWithIpv6AddressExist() {
+        List<VdsNetworkInterface> interfaces = dao.getAllInterfacesWithIpAddress(FixturesTool.CLUSTER, FixturesTool.IPV6_ADDR_EXISTS);
+        assertNotNull(interfaces);
+        assertEquals(1, interfaces.size());
+        assertGetAllForVdsCorrectResult(interfaces);
+    }
+
+    @Test
+    public void testGetAllInterfacesWithIpv6AddressNotExist() {
+        List<VdsNetworkInterface> interfaces = dao.getAllInterfacesWithIpAddress(FixturesTool.CLUSTER, FixturesTool.IPV6_ADDR_NOT_EXIST);
+        assertNotNull(interfaces);
+        assertTrue(interfaces.isEmpty());
     }
 
     @Test

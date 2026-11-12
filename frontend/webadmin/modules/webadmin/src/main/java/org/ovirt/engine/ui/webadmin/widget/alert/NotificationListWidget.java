@@ -103,7 +103,7 @@ public class NotificationListWidget extends Composite implements ActionWidget {
     public void setHeaderTitle(String title) {
         this.title = title;
         this.thisWidgetId = title.replace(" ", "_").toLowerCase(); // $NON-NLS-1$ $NON-NLS-2$
-     }
+    }
 
     @Override
     public void addAction(String buttonLabel, UICommand command, AuditLogActionCallback callback) {
@@ -255,7 +255,7 @@ public class NotificationListWidget extends Composite implements ActionWidget {
     }
 
     public void setContainerHeight(int height) {
-        this.containerHeight  = height;
+        this.containerHeight = height;
         eventPanelBody.getElement().getStyle().setProperty(MAX_HEIGHT, containerHeight + Unit.PX.getType());
         eventPanelBody.getElement().getStyle().setOverflowY(Overflow.AUTO);
     }

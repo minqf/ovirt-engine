@@ -1,5 +1,6 @@
 package org.ovirt.engine.api.restapi.resource.aaa;
 
+import static org.ovirt.engine.api.restapi.resource.aaa.BackendUserOptionResource.addUserProperties;
 import static org.ovirt.engine.api.utils.ReflectionHelper.assignChildModel;
 
 import java.nio.charset.StandardCharsets;
@@ -67,7 +68,7 @@ public class BackendUsersResource
      * operation.
      */
     private String getSearchPattern() {
-        String user_defined_pattern = QueryHelper.getConstraint(httpHeaders, uriInfo, "",  modelType);
+        String user_defined_pattern = QueryHelper.getConstraint(httpHeaders, uriInfo, "", modelType);
         return user_defined_pattern.equals("Users : ") ?
                user_defined_pattern + USERS_SEARCH_PATTERN
                :
@@ -81,7 +82,7 @@ public class BackendUsersResource
             for (String domain : authzProvidersNames) {
                 Guid domainId = asGuid(domain.getBytes(StandardCharsets.UTF_8));
                 if (domainId.toString().equals(user.getDomain().getId())) {
-                   return domain;
+                    return domain;
                 }
             }
             throw new WebFaultException(null, "Domain: '" + user.getDomain().getId().toString() + "' does not exist.", Response.Status.BAD_REQUEST);
@@ -104,7 +105,7 @@ public class BackendUsersResource
         final StringBuilder sb = new StringBuilder(128);
 
         sb.append(MessageFormat.format(ResourceConstants.AAA_PRINCIPALS_SEARCH_TEMPLATE,
-                  parent!=null?
+                  parent != null ?
                         parent.getDirectory().getName()
                         :
                         domain,
@@ -123,7 +124,7 @@ public class BackendUsersResource
         for (DbUser entity : entities) {
             User user = map(entity);
             user = populate(user, entity);
-            user = addLinks(user, BaseResource.class);
+            user = addUserProperties(addLinks(user, BaseResource.class), getUserResource(user.getId()).getOptionsResource().list());
             collection.getUsers().add(user);
         }
         return collection;
@@ -131,7 +132,7 @@ public class BackendUsersResource
 
     @Override
     protected User addParents(User user) {
-        if(parent!=null){
+        if (parent != null) {
             assignChildModel(user, User.class).setId(parent.get().getId());
         }
         return user;
@@ -145,7 +146,7 @@ public class BackendUsersResource
         if (isFiltered()) {
             return mapDbUserCollection(getBackendCollection(QueryType.GetAllDbUsers, new QueryParametersBase(), SearchType.DBUser));
         } else {
-          return mapDbUserCollection(getBackendCollection(SearchType.DBUser, getSearchPattern()));
+            return mapDbUserCollection(getBackendCollection(SearchType.DBUser, getSearchPattern()));
         }
     }
 
@@ -156,7 +157,7 @@ public class BackendUsersResource
                 String.class,
                 QueryType.GetDomainList,
                 new QueryParametersBase());
-        if (AuthzUtils.getAuthzNameFromEntityName(user.getUserName(), authzProvidersNames) == null) {// user-name may contain the domain (e.g: oliel@xxx.yyy)
+        if (AuthzUtils.getAuthzNameFromEntityName(user.getUserName(), authzProvidersNames) == null) { // user-name may contain the domain (e.g: oliel@xxx.yyy)
             validateParameters(user, "domain.id|name");
         }
         String domain = getAuthzProviderName(user, authzProvidersNames);
@@ -185,18 +186,18 @@ public class BackendUsersResource
             result = getUserById(directoryName, namespace, user.getDomainEntryId());
         } else if (user.isSetId()) {
             result = getUserById(directoryName, namespace, user.getId());
-        } else  if (user.isSetPrincipal()) {
+        } else if (user.isSetPrincipal()) {
             result = getEntity(DirectoryUser.class, QueryType.GetDirectoryUserByPrincipal, new GetDirectoryUserByPrincipalParameters(directoryName, user.getPrincipal()), user.getPrincipal());
         } else if (user.isSetUserName()) {
-                result = getEntity(
-                        DirectoryUser.class,
-                        SearchType.DirectoryUser,
-                        getDirectoryUserSearchPattern(
-                            AuthzUtils.getEntityNameWithoutAuthz(user.getUserName(), directoryName),
-                                user.getNamespace(),
-                                directoryName)
-                        );
-            }
+            result = getEntity(
+                    DirectoryUser.class,
+                    SearchType.DirectoryUser,
+                    getDirectoryUserSearchPattern(
+                         AuthzUtils.getEntityNameWithoutAuthz(user.getUserName(), directoryName),
+                            user.getNamespace(),
+                            directoryName)
+                    );
+        }
         return result;
     }
 
@@ -204,7 +205,7 @@ public class BackendUsersResource
         DirectoryUser result;
         try {
             userId = DirectoryEntryIdUtils.decode(userId);
-        } catch(IllegalArgumentException exception) {
+        } catch (IllegalArgumentException exception) {
             return null;
         }
         result = getEntity(

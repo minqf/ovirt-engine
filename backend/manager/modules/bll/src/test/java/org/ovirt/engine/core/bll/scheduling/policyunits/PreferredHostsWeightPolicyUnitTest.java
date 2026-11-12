@@ -36,7 +36,7 @@ public class PreferredHostsWeightPolicyUnitTest {
 
         VM vm = new VM();
         vm.setId(Guid.newGuid());
-        vm.setDedicatedVmForVdsList(host2.getId());
+        vm.setDedicatedVmForVdsList(Collections.singletonList(host2.getId()));
 
         List<VDS> hosts = new ArrayList<>();
         hosts.add(host1);
@@ -50,7 +50,7 @@ public class PreferredHostsWeightPolicyUnitTest {
             results.put(r.getFirst(), r.getSecond());
         }
 
-        assertEquals(0, (long)results.get(host2.getId()));
+        assertEquals(0, (long) results.get(host2.getId()));
         assertNotEquals(0, (long) results.get(host1.getId()));
         assertNotEquals(0, (long) results.get(host3.getId()));
     }

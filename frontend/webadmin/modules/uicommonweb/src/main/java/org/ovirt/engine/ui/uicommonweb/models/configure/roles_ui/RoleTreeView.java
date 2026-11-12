@@ -130,7 +130,7 @@ public class RoleTreeView {
                                 roleNode(ActionGroup.BACKUP_DISK, getConstants().allowToBackupDiskRoleTreeTooltip())),
                         categoryNode(getConstants().attachDiskProfileRoleTree(),
                                 getConstants().notePermissionsContainingDiskProfileOperationsRoleTreeTooltip(),
-                                roleNode(ActionGroup.ATTACH_DISK_PROFILE, getConstants().allowToAttachDiskProfileToDiskRoleTreeTooltip()) ) );
+                                roleNode(ActionGroup.ATTACH_DISK_PROFILE, getConstants().allowToAttachDiskProfileToDiskRoleTreeTooltip())));
     }
 
     protected static RoleNode createCpuRoleTree() {
@@ -164,6 +164,7 @@ public class RoleTreeView {
 
                 categoryNode(getConstants().basicOperationsRoleTree(),
                         roleNode(ActionGroup.REBOOT_VM, getConstants().allowBasicVmOperationsRoleTreeTooltip()),
+                        roleNode(ActionGroup.RESET_VM, getConstants().allowBasicVmOperationsRoleTreeTooltip()),
                         roleNode(ActionGroup.STOP_VM, getConstants().allowBasicVmOperationsRoleTreeTooltip()),
                         roleNode(ActionGroup.SHUT_DOWN_VM, getConstants().allowBasicVmOperationsRoleTreeTooltip()),
                         roleNode(ActionGroup.HIBERNATE_VM, getConstants().allowBasicVmOperationsRoleTreeTooltip()),

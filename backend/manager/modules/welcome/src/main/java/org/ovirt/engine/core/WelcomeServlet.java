@@ -43,7 +43,12 @@ public class WelcomeServlet extends HttpServlet {
     private static final String LOCALE_KEYS = "localeKeys";
 
     /**
-     * The request attribute containing the section map.
+     * The request attribute containing the preamble html.
+     */
+    private static final String PREAMBLE = "preamble";
+
+    /**
+     * The request attribute containing the section html.
      */
     private static final String SECTIONS = "sections";
 
@@ -143,8 +148,11 @@ public class WelcomeServlet extends HttpServlet {
                             ConfigCommon.defaultConfigurationVersion)).getReturnValue();
             request.setAttribute("sso_credential_change_url", getCredentialsChangeUrl(request));
             request.setAttribute(VERSION, oVirtVersion != null ? oVirtVersion : "myVersion");
-            request.setAttribute(SECTIONS, brandingManager
-                    .getWelcomeSections((Locale) request.getAttribute(LocaleFilter.LOCALE)));
+
+            Locale locale = (Locale) request.getAttribute(LocaleFilter.LOCALE);
+            request.setAttribute(PREAMBLE, brandingManager.getWelcomePreambleSection(locale));
+            request.setAttribute(SECTIONS, brandingManager.getWelcomeSections(locale));
+
             log.debug("Including to ovirt-engine.jsp");
             RequestDispatcher dispatcher = request.getRequestDispatcher(WelcomeUtils.WELCOME_PAGE_JSP_URI);
             response.setContentType("text/html;charset=UTF-8");
@@ -157,7 +165,7 @@ public class WelcomeServlet extends HttpServlet {
 
     private void setUserNameForMenu(HttpServletRequest request, String token) {
         try {
-           log.debug("setting request attributes for User Menu");
+            log.debug("setting request attributes for User Menu");
             if (StringUtils.isNotEmpty(token)) {
                 Map<String, Object> userInfoMap = SsoOAuthServiceUtils.getTokenInfo(token);
                 String username = getCurrentSsoSessionUser(request, userInfoMap);
@@ -182,16 +190,28 @@ public class WelcomeServlet extends HttpServlet {
     }
 
     public String getCurrentSsoSessionUser(HttpServletRequest request, Map<String, Object> userInfoMap) {
-        String username  = null;
+        String username = null;
         if (userInfoMap.containsKey(WelcomeUtils.ERROR_DESCRIPTION)) {
             request.getSession(true).setAttribute(WelcomeUtils.ERROR_DESCRIPTION,
                     userInfoMap.get(WelcomeUtils.ERROR_DESCRIPTION));
             request.getSession(true).setAttribute(WelcomeUtils.ERROR, userInfoMap.get(WelcomeUtils.ERROR));
         } else {
-            username = (String) userInfoMap.get(WelcomeUtils.JSON_USER_ID);
+            String userId = getUserId(userInfoMap);
+            String userAuthz = (String) userInfoMap.get(WelcomeUtils.JSON_USER_AUTHZ);
+            username = userId + "@" + userAuthz;
             log.debug("Got current user {} for session", username);
         }
         return username;
+    }
+
+    private String getUserId(Map<String, Object> userInfoMap) {
+        String userIdWithProfile = (String) userInfoMap.get(WelcomeUtils.JSON_USER_ID);
+        String userId = null;
+        int index = userIdWithProfile.lastIndexOf("@");
+        if (index != -1) {
+            userId = userIdWithProfile.substring(0, index);
+        }
+        return userId;
     }
 
     public boolean getChangePasswordEnabled(Map<String, Object> userInfoMap) {

@@ -13,6 +13,7 @@ import org.ovirt.engine.core.common.businessentities.gluster.GlusterVolumeSnapsh
 import org.ovirt.engine.core.compat.DayOfWeek;
 import org.ovirt.engine.ui.uicommonweb.ICommandTarget;
 import org.ovirt.engine.ui.uicommonweb.Linq;
+import org.ovirt.engine.ui.uicommonweb.dataprovider.AsyncDataProvider;
 import org.ovirt.engine.ui.uicommonweb.help.HelpTag;
 import org.ovirt.engine.ui.uicommonweb.models.EntityModel;
 import org.ovirt.engine.ui.uicommonweb.models.ListModel;
@@ -100,7 +101,7 @@ public class GlusterVolumeSnapshotModel extends EntityModel<GlusterVolumeEntity>
 
     private void validateSnapshotName() {
         getSnapshotName().validateEntity(new IValidation[] { new NotEmptyValidation(), new LengthValidation(128),
-                new AsciiNameValidation() });
+            new AsciiNameValidation() });
     }
 
     private void validateEndDate() {
@@ -118,11 +119,11 @@ public class GlusterVolumeSnapshotModel extends EntityModel<GlusterVolumeEntity>
 
     private void validateDaysOfMonth() {
         if (getRecurrence().getSelectedItem() == GlusterVolumeSnapshotScheduleRecurrence.MONTHLY) {
-            if (getDaysOfMonth().getSelectedItem() == null || getDaysOfMonth().getSelectedItem().equals("")) {//$NON-NLS-1$
+            if (getDaysOfMonth().getSelectedItem() == null || getDaysOfMonth().getSelectedItem().equals("")) { //$NON-NLS-1$
                 String message = ConstantsManager.getInstance().getConstants().noMonthDaysSelectedMessage();
                 getDaysOfMonth().setInvalidityReasons(Collections.singletonList(message));
                 getDaysOfMonth().setIsValid(false);
-            } else if (getDaysOfMonth().getSelectedItem().contains(",L") || getDaysOfMonth().getSelectedItem().contains("L,")) {//$NON-NLS-1$//$NON-NLS-2$
+            } else if (getDaysOfMonth().getSelectedItem().contains(",L") || getDaysOfMonth().getSelectedItem().contains("L,")) { //$NON-NLS-1$//$NON-NLS-2$
                 String message = ConstantsManager.getInstance().getConstants().lastDayMonthCanBeSelectedAlone();
                 getDaysOfMonth().setInvalidityReasons(Collections.singletonList(message));
                 getDaysOfMonth().setIsValid(false);
@@ -157,10 +158,10 @@ public class GlusterVolumeSnapshotModel extends EntityModel<GlusterVolumeEntity>
     }
 
     private void initTimeZones() {
-        Map<String, String> timeZones = TimeZoneType.GENERAL_TIMEZONE.getTimeZoneList();
+        Map<String, String> timeZones = AsyncDataProvider.getInstance().getTimezones(TimeZoneType.GENERAL_TIMEZONE);
         getTimeZones().setItems(timeZones.entrySet());
         getTimeZones().setSelectedItem(Linq.firstOrNull(timeZones.entrySet(),
-                item -> item.getValue().startsWith("(GMT) Greenwich"))); //$NON-NLS-1$
+                item -> item.getKey().equals("Etc/GMT"))); //$NON-NLS-1$
     }
 
     public EntityModel<String> getDataCenter() {
@@ -315,10 +316,10 @@ public class GlusterVolumeSnapshotModel extends EntityModel<GlusterVolumeEntity>
             listenersRegistered = true;
         }
 
-        if(inplaceValidate) {
-            propName = "modelPropertiesChanged";//$NON-NLS-1$
+        if (inplaceValidate) {
+            propName = "modelPropertiesChanged"; //$NON-NLS-1$
         } else {
-            propName = "validateAndSwitchAppropriateTab";//$NON-NLS-1$
+            propName = "validateAndSwitchAppropriateTab"; //$NON-NLS-1$
         }
         onPropertyChanged(new PropertyChangedEventArgs(propName));
 

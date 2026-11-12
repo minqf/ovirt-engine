@@ -7,10 +7,12 @@ import static org.ovirt.engine.core.bll.validator.ValidationResultMatchers.fails
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.ovirt.engine.core.bll.ValidationResult;
+import org.ovirt.engine.core.common.businessentities.CpuPinningPolicy;
 import org.ovirt.engine.core.common.businessentities.VmStatic;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.compat.Guid;
@@ -24,7 +26,15 @@ public class CpuPinningValidatorTest {
         vmStatic = new VmStatic();
         vmStatic.setNumOfSockets(6);
         vmStatic.setCpuPerSocket(2);
-        vmStatic.setDedicatedVmForVdsList(Guid.Empty);
+        vmStatic.setCpuPinningPolicy(CpuPinningPolicy.MANUAL);
+        vmStatic.setDedicatedVmForVdsList(Collections.singletonList(Guid.Empty));
+    }
+
+    @Test
+    public void isCpuPinningValidWithoutManualPolicySelected() {
+        vmStatic.setCpuPinningPolicy(CpuPinningPolicy.NONE);
+        assertFailsWith(isCpuPinningValid("0#0", vmStatic),
+                EngineMessage.ACTION_TYPE_FAILED_VM_MANUAL_PINNING_POLICY_NOT_SELECTED);
     }
 
     @Test

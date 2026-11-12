@@ -16,7 +16,6 @@ public class StorageDomainsColumn extends AbstractTextColumn<Disk> implements Co
     @Override
     public String getValue(Disk object) {
         if (object.getDiskStorageType() != DiskStorageType.IMAGE
-                && object.getDiskStorageType() != DiskStorageType.CINDER
                 && object.getDiskStorageType() != DiskStorageType.MANAGED_BLOCK_STORAGE) {
             return constants.empty();
         }
@@ -36,7 +35,11 @@ public class StorageDomainsColumn extends AbstractTextColumn<Disk> implements Co
 
     @Override
     public SafeHtml getTooltip(Disk object) {
+        // For LUN disks that don't belong to any storage domain
+        if (object.getDiskStorageType() == DiskStorageType.LUN) {
+            return SafeHtmlUtils.fromString(String.join(", ", "")); //$NON-NLS-1$ //$NON-NLS-2$
+        }
         DiskImage diskImage = (DiskImage) object;
-        return SafeHtmlUtils.fromString(String.join(", ", diskImage.getStoragesNames()));  //$NON-NLS-1$
+        return SafeHtmlUtils.fromString(String.join(", ", diskImage.getStoragesNames())); //$NON-NLS-1$
     }
 }

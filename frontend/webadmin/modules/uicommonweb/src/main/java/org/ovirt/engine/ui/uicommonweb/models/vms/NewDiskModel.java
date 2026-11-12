@@ -9,7 +9,7 @@ import org.ovirt.engine.core.common.businessentities.StorageDomain;
 import org.ovirt.engine.core.common.businessentities.StoragePool;
 import org.ovirt.engine.core.common.businessentities.StoragePoolStatus;
 import org.ovirt.engine.core.common.businessentities.VmDeviceId;
-import org.ovirt.engine.core.common.businessentities.storage.CinderDisk;
+import org.ovirt.engine.core.common.businessentities.storage.DiskBackup;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.DiskStorageType;
 import org.ovirt.engine.core.common.businessentities.storage.DiskVmElement;
@@ -36,32 +36,32 @@ public class NewDiskModel extends AbstractDiskModel {
     private boolean descriptionDerivedFromLunId;
 
     private IEventListener<ValueEventArgs<LunModel>> lunSelectionChangedEventListener =
-            new IEventListener<ValueEventArgs<LunModel>> () {
-        @Override
-        public void eventRaised(Event<? extends ValueEventArgs<LunModel>> ev,
+        new IEventListener<ValueEventArgs<LunModel>> () {
+            @Override
+            public void eventRaised(Event<? extends ValueEventArgs<LunModel>> ev,
                 Object sender,
                 ValueEventArgs<LunModel> args) {
-            String description = getDescription().getEntity();
-            if (description == null || description.isEmpty() || descriptionDerivedFromLunId) {
-                LunModel selectedLunModel = args.getValue();
-                if (selectedLunModel.getLunId() != null) {
-                    int numOfChars = (Integer) AsyncDataProvider.getInstance().getConfigValuePreConverted(ConfigValues.PopulateDirectLUNDiskDescriptionWithLUNId);
-                    if (numOfChars == 0) {
-                        return;
+                String description = getDescription().getEntity();
+                if (description == null || description.isEmpty() || descriptionDerivedFromLunId) {
+                    LunModel selectedLunModel = args.getValue();
+                    if (selectedLunModel.getLunId() != null) {
+                        int numOfChars = (Integer) AsyncDataProvider.getInstance().getConfigValuePreConverted(ConfigValues.PopulateDirectLUNDiskDescriptionWithLUNId);
+                        if (numOfChars == 0) {
+                            return;
+                        }
+                        String newDescription;
+                        if (numOfChars <= -1 || numOfChars >= selectedLunModel.getLunId().length()) {
+                            newDescription = selectedLunModel.getLunId();
+                        } else {
+                            newDescription = selectedLunModel.getLunId().substring(selectedLunModel.getLunId().length() - numOfChars);
+                        }
+                        getDescription().setEntity(newDescription);
+                        descriptionDerivedFromLunId = true;
                     }
-                    String newDescription;
-                    if (numOfChars <= -1 || numOfChars >= selectedLunModel.getLunId().length()) {
-                        newDescription = selectedLunModel.getLunId();
-                    } else {
-                        newDescription = selectedLunModel.getLunId().substring(selectedLunModel.getLunId().length() - numOfChars);
-                    }
-                    getDescription().setEntity(newDescription);
-                    descriptionDerivedFromLunId = true;
                 }
+                updatePassDiscardChangeability();
             }
-            updatePassDiscardChangeability();
-        }
-    };
+        };
 
     @Override
     public void initialize() {
@@ -121,11 +121,6 @@ public class NewDiskModel extends AbstractDiskModel {
     }
 
     @Override
-    protected CinderDisk getCinderDisk() {
-        return new CinderDisk();
-    }
-
-    @Override
     protected ManagedBlockStorageDisk getManagedBlockDisk() {
         return new ManagedBlockStorageDisk();
     }
@@ -140,12 +135,6 @@ public class NewDiskModel extends AbstractDiskModel {
                 luns.setLunType(getStorageType().getSelectedItem());
                 lunDisk.setLun(luns);
                 break;
-            case CINDER:
-                CinderDisk cinderDisk = (CinderDisk) getDisk();
-                cinderDisk.setSizeInGigabytes(getSize().getEntity());
-                cinderDisk.setVolumeFormat(VolumeFormat.RAW);
-                cinderDisk.setCinderVolumeType(getCinderVolumeType().getSelectedItem());
-                break;
             default:
                 DiskImage diskImage = (DiskImage) getDisk();
                 if (getSize() != null && getSize().getEntity() != null) {
@@ -153,9 +142,10 @@ public class NewDiskModel extends AbstractDiskModel {
                 }
                 diskImage.setVolumeType(getVolumeType().getSelectedItem());
                 // Incremental backup can be enabled only for COW VolumeFormat
-                VolumeFormat volumeFormat = getIsIncrementalBackup().getEntity() ? VolumeFormat.COW :
-                        AsyncDataProvider.getInstance().getDiskVolumeFormat(
-                                diskImage.getVolumeType(), getStorageDomain().getSelectedItem().getStorageType());
+                VolumeFormat volumeFormat = AsyncDataProvider.getInstance().getDiskVolumeFormat(
+                                diskImage.getVolumeType(),
+                                getStorageDomain().getSelectedItem().getStorageType(),
+                                getIsIncrementalBackup().getEntity() ? DiskBackup.Incremental : DiskBackup.None);
                 diskImage.setVolumeFormat(volumeFormat);
                 break;
         }

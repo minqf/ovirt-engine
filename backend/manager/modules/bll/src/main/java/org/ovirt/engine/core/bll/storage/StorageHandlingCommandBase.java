@@ -24,7 +24,6 @@ import org.ovirt.engine.core.bll.network.macpool.MacPoolPerCluster;
 import org.ovirt.engine.core.bll.snapshots.SnapshotsValidator;
 import org.ovirt.engine.core.bll.storage.connection.StorageHelperDirector;
 import org.ovirt.engine.core.bll.storage.disk.cinder.CinderBroker;
-import org.ovirt.engine.core.bll.storage.disk.image.MetadataDiskDescriptionHandler;
 import org.ovirt.engine.core.bll.storage.pool.ActivateDeactivateSingleAsyncOperationFactory;
 import org.ovirt.engine.core.bll.storage.pool.StoragePoolStatusHandler;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
@@ -50,7 +49,6 @@ import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VDSStatus;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VmBase;
-import org.ovirt.engine.core.common.businessentities.VmEntityType;
 import org.ovirt.engine.core.common.businessentities.VmTemplate;
 import org.ovirt.engine.core.common.businessentities.network.VmNic;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
@@ -62,6 +60,7 @@ import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.errors.EngineException;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.queries.GetUnregisteredDisksQueryParameters;
+import org.ovirt.engine.core.common.queries.QueryReturnValue;
 import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.core.common.utils.Pair;
 import org.ovirt.engine.core.common.vdscommands.IrsBaseVDSCommandParameters;
@@ -71,7 +70,6 @@ import org.ovirt.engine.core.compat.TransactionScopeOption;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogable;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogableImpl;
-import org.ovirt.engine.core.dao.ClusterDao;
 import org.ovirt.engine.core.dao.DiskImageDao;
 import org.ovirt.engine.core.dao.StorageDomainDao;
 import org.ovirt.engine.core.dao.StorageDomainOvfInfoDao;
@@ -103,39 +101,35 @@ public abstract class StorageHandlingCommandBase<T extends StoragePoolParameters
     private AuditLogDirector auditLogDirector;
 
     @Inject
-    private  MacPoolPerCluster macPoolPerCluster;
+    private MacPoolPerCluster macPoolPerCluster;
     @Inject
-    private  SnapshotsValidator snapshotsValidator;
+    private SnapshotsValidator snapshotsValidator;
     @Inject
-    private  VdsDao vdsDao;
+    private VdsDao vdsDao;
     @Inject
-    private  StoragePoolDao storagePoolDao;
+    private StoragePoolDao storagePoolDao;
     @Inject
-    private  StorageDomainDao storageDomainDao;
+    private StorageDomainDao storageDomainDao;
     @Inject
     protected VmTemplateDao vmTemplateDao;
     @Inject
-    private  DiskImageDao diskImageDao;
+    private DiskImageDao diskImageDao;
     @Inject
-    private  UnregisteredOVFDataDao unregisteredOVFDataDao;
+    private UnregisteredOVFDataDao unregisteredOVFDataDao;
     @Inject
     protected VmNicDao vmNicDao;
     @Inject
-    private  ClusterDao clusterDao;
+    private StorageDomainOvfInfoDao storageDomainOvfInfoDao;
     @Inject
-    private  StorageDomainOvfInfoDao storageDomainOvfInfoDao;
-    @Inject
-    private  StorageDomainStaticDao storageDomainStaticDao;
+    private StorageDomainStaticDao storageDomainStaticDao;
     @Inject
     private StoragePoolIsoMapDao storagePoolIsoMapDao;
     @Inject
-    private  UnregisteredDisksDao unregisteredDisksDao;
+    private UnregisteredDisksDao unregisteredDisksDao;
     @Inject
     private VmDao vmDao;
     @Inject
     private OvfUtils ovfUtils;
-    @Inject
-    private MetadataDiskDescriptionHandler metadataDiskDescriptionHandler;
     @Inject
     protected StorageHelperDirector storageHelperDirector;
     @Inject
@@ -304,28 +298,10 @@ public abstract class StorageHandlingCommandBase<T extends StoragePoolParameters
             TransactionSupport.executeInNewTransaction(() -> {
                 for (VM vm : vmsForStorageDomain) {
                     removeEntityLeftOver(vm.getId(), vm.getName(), storageDomainId);
-                    unregisteredOVFDataDao.saveOVFData(new OvfEntityData(
-                            vm.getId(),
-                            vm.getName(),
-                            VmEntityType.VM,
-                            vm.getClusterArch(),
-                            vm.getCompatibilityVersion(),
-                            storageDomainId,
-                            null,
-                            null));
                 }
 
                 for (VmTemplate vmTemplate : vmTemplatesForStorageDomain) {
                     removeEntityLeftOver(vmTemplate.getId(), vmTemplate.getName(), storageDomainId);
-                    unregisteredOVFDataDao.saveOVFData(new OvfEntityData(
-                            vmTemplate.getId(),
-                            vmTemplate.getName(),
-                            VmEntityType.TEMPLATE,
-                            vmTemplate.getClusterArch(),
-                            clusterDao.get(vmTemplate.getClusterId()).getCompatibilityVersion(),
-                            storageDomainId,
-                            null,
-                            null));
                 }
                 storageDomainDao.removeEntitesFromStorageDomain(storageDomainId);
                 return null;
@@ -362,9 +338,9 @@ public abstract class StorageHandlingCommandBase<T extends StoragePoolParameters
             getCompensationContext().snapshotEntity(getStoragePool());
             getStoragePool().setStatus(newStatus);
             StoragePool poolFromDb = storagePoolDao.get(getStoragePool().getId());
-            if ((getStoragePool().getSpmVdsId() == null && poolFromDb.getSpmVdsId() != null)
-                    || (getStoragePool().getSpmVdsId() != null && !getStoragePool().getSpmVdsId().equals(
-                            poolFromDb.getSpmVdsId()))) {
+            if (getStoragePool().getSpmVdsId() == null && poolFromDb.getSpmVdsId() != null
+                    || getStoragePool().getSpmVdsId() != null && !getStoragePool().getSpmVdsId().equals(
+                            poolFromDb.getSpmVdsId())) {
                 log.info("Set storage pool '{}' vds Id to '{}'", getStoragePool().getId(), poolFromDb.getSpmVdsId());
                 getStoragePool().setSpmVdsId(poolFromDb.getSpmVdsId());
             }
@@ -456,16 +432,23 @@ public abstract class StorageHandlingCommandBase<T extends StoragePoolParameters
             ovfDisks = new ArrayList<>();
 
             // Get all unregistered disks.
-            List<DiskImage> disksFromStorage = backend.runInternalQuery(QueryType.GetUnregisteredDisks,
+            QueryReturnValue queryReturnValue = backend.runInternalQuery(QueryType.GetUnregisteredDisks,
                     new GetUnregisteredDisksQueryParameters(storageDomainId,
-                            storagePoolId)).getReturnValue();
-            if (disksFromStorage == null) {
+                            storagePoolId));
+            StorageDomain sd = storageDomainDao.get(storageDomainId);
+            if (sd.getStorageDomainType() == StorageDomainType.Data && !queryReturnValue.getSucceeded()) {
                 log.error("An error occurred while fetching unregistered disks from Storage Domain id '{}'",
                         storageDomainId);
+                throw new RuntimeException("Failed to retrieve unregistered disks");
+            }
+
+            List<DiskImage> disksFromStorage = queryReturnValue.getReturnValue();
+            if (disksFromStorage == null) {
                 return ovfDisks;
             } else {
                 castDiskImagesToUnregisteredDisks(disksFromStorage, storageDomainId);
             }
+
             for (Disk disk : disksFromStorage) {
                 DiskImage ovfStoreDisk = (DiskImage) disk;
                 String diskDescription = ovfStoreDisk.getDescription();
@@ -525,7 +508,7 @@ public abstract class StorageHandlingCommandBase<T extends StoragePoolParameters
             if (isFoundOvfDiskUpdated && !isUpdated) {
                 continue;
             }
-            if ((isUpdated && !isFoundOvfDiskUpdated) || date.after(foundOvfDiskUpdateDate)) {
+            if (isUpdated && !isFoundOvfDiskUpdated || date.after(foundOvfDiskUpdateDate)) {
                 isBetterOvfDiskFound = true;
             }
             if (isBetterOvfDiskFound) {
@@ -535,7 +518,7 @@ public abstract class StorageHandlingCommandBase<T extends StoragePoolParameters
                 size = Long.valueOf(diskDescriptionMap.get(OvfInfoFileConstants.Size).toString());
             }
         }
-        return new Pair<>((DiskImage)ovfDisk, size);
+        return new Pair<>((DiskImage) ovfDisk, size);
     }
 
     protected List<OvfEntityData> getEntitiesFromStorageOvfDisk(Guid storageDomainId, Guid storagePoolId) {
@@ -720,15 +703,6 @@ public abstract class StorageHandlingCommandBase<T extends StoragePoolParameters
 
     private boolean isDomainExistsInDiskDescription(Map<String, Object> map, Guid storageDomainId) {
         return Objects.toString(map.get(OvfInfoFileConstants.Domains), "").contains(storageDomainId.toString());
-    }
-
-    protected String getJsonDiskDescription(Disk disk) {
-        try {
-            return metadataDiskDescriptionHandler.generateJsonDiskDescription(disk);
-        } catch (IOException e) {
-            log.error("Exception while generating json for disk. ERROR: '{}'", e);
-            return StringUtils.EMPTY;
-        }
     }
 
     @Override

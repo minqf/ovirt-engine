@@ -21,13 +21,16 @@ import org.ovirt.engine.core.common.action.ChangeVMClusterParameters;
 import org.ovirt.engine.core.common.action.CloneVmParameters;
 import org.ovirt.engine.core.common.action.ExportVmToOvaParameters;
 import org.ovirt.engine.core.common.action.MoveOrCopyParameters;
+import org.ovirt.engine.core.common.action.RebootVmParameters;
 import org.ovirt.engine.core.common.action.RemoveVmParameters;
 import org.ovirt.engine.core.common.action.RunVmParams;
 import org.ovirt.engine.core.common.action.ShutdownVmParameters;
 import org.ovirt.engine.core.common.action.StopVmParameters;
 import org.ovirt.engine.core.common.action.StopVmTypeEnum;
+import org.ovirt.engine.core.common.action.VmInterfacesModifyParameters;
 import org.ovirt.engine.core.common.action.VmManagementParametersBase;
 import org.ovirt.engine.core.common.action.VmOperationParameterBase;
+import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.DisplayType;
 import org.ovirt.engine.core.common.businessentities.MigrationSupport;
 import org.ovirt.engine.core.common.businessentities.OriginType;
@@ -68,13 +71,15 @@ import org.ovirt.engine.ui.uicommonweb.builders.BuilderExecutor;
 import org.ovirt.engine.ui.uicommonweb.builders.template.UnitToAddVmTemplateParametersBuilder;
 import org.ovirt.engine.ui.uicommonweb.builders.template.VmBaseToVmBaseForTemplateCompositeBaseBuilder;
 import org.ovirt.engine.ui.uicommonweb.builders.vm.CommonUnitToVmBaseBuilder;
-import org.ovirt.engine.ui.uicommonweb.builders.vm.MultiQueuesVmBaseBuilder;
 import org.ovirt.engine.ui.uicommonweb.builders.vm.UnitToGraphicsDeviceParamsBuilder;
 import org.ovirt.engine.ui.uicommonweb.builders.vm.VmIconUnitAndVmToParameterBuilder;
 import org.ovirt.engine.ui.uicommonweb.dataprovider.AsyncDataProvider;
 import org.ovirt.engine.ui.uicommonweb.dataprovider.ImagesDataProvider;
 import org.ovirt.engine.ui.uicommonweb.help.HelpTag;
 import org.ovirt.engine.ui.uicommonweb.models.ConfirmationModel;
+import org.ovirt.engine.ui.uicommonweb.models.ConfirmationModelChain;
+import org.ovirt.engine.ui.uicommonweb.models.ConfirmationModelChain.ConfirmationModelChainItem;
+import org.ovirt.engine.ui.uicommonweb.models.ConfirmationModelSettingsManager;
 import org.ovirt.engine.ui.uicommonweb.models.ConsolePopupModel;
 import org.ovirt.engine.ui.uicommonweb.models.ConsolesFactory;
 import org.ovirt.engine.ui.uicommonweb.models.EntityModel;
@@ -95,6 +100,7 @@ import org.ovirt.engine.ui.uicompat.ConstantsManager;
 import org.ovirt.engine.ui.uicompat.Event;
 import org.ovirt.engine.ui.uicompat.EventArgs;
 import org.ovirt.engine.ui.uicompat.ICancelable;
+import org.ovirt.engine.ui.uicompat.IFrontendActionAsyncCallback;
 import org.ovirt.engine.ui.uicompat.ObservableCollection;
 import org.ovirt.engine.ui.uicompat.PropertyChangedEventArgs;
 import org.ovirt.engine.ui.uicompat.UIConstants;
@@ -137,9 +143,11 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
 
     private UICommand newVMCommand;
 
+    private static final String SUSPEND = "Suspend"; //$NON-NLS-1$
     private static final String SHUTDOWN = "Shutdown"; //$NON-NLS-1$
-    private static final String STOP     = "Stop"; //$NON-NLS-1$
-    private static final String REBOOT   = "Reboot"; //$NON-NLS-1$
+    private static final String STOP = "Stop"; //$NON-NLS-1$
+    private static final String REBOOT = "Reboot"; //$NON-NLS-1$
+    private static final String RESET = "Reset"; //$NON-NLS-1$
 
     public UICommand getNewVmCommand() {
         return newVMCommand;
@@ -180,14 +188,14 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
         privateRunCommand = value;
     }
 
-    private UICommand privatePauseCommand;
+    private UICommand privateSuspendCommand;
 
-    public UICommand getPauseCommand() {
-        return privatePauseCommand;
+    public UICommand getSuspendCommand() {
+        return privateSuspendCommand;
     }
 
-    private void setPauseCommand(UICommand value) {
-        privatePauseCommand = value;
+    private void setSuspendCommand(UICommand value) {
+        privateSuspendCommand = value;
     }
 
     private UICommand privateStopCommand;
@@ -218,6 +226,16 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
 
     public void setRebootCommand(UICommand value) {
         privateRebootCommand = value;
+    }
+
+    private UICommand privateResetCommand;
+
+    public UICommand getResetCommand() {
+        return privateResetCommand;
+    }
+
+    public void setResetCommand(UICommand value) {
+        privateResetCommand = value;
     }
 
     private UICommand privateCancelMigrateCommand;
@@ -358,7 +376,7 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
     }
 
     private void setIsoImages(ObservableCollection<ChangeCDModel> value) {
-        if ((isoImages == null && value != null) || (isoImages != null && !isoImages.equals(value))) {
+        if (isoImages == null && value != null || isoImages != null && !isoImages.equals(value)) {
             isoImages = value;
             onPropertyChanged(new PropertyChangedEventArgs("IsoImages")); //$NON-NLS-1$
         }
@@ -466,6 +484,8 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
         return guestContainerListModel;
     }
 
+    private final ConfirmationModelSettingsManager confirmationModelSettingsManager;
+
     @Inject
     public VmListModel(final VmGeneralModel vmGeneralModel,
             final VmInterfaceListModel vmInterfaceListModel,
@@ -481,7 +501,8 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
             final VmDevicesListModel<VM> vmDevicesListModel,
             final VmAffinityLabelListModel vmAffinityLabelListModel,
             final VmErrataCountModel vmErrataCountModel,
-            final VmGuestContainerListModel vmGuestContainerListModel) {
+            final VmGuestContainerListModel vmGuestContainerListModel,
+            final ConfirmationModelSettingsManager confirmationModelSettingsManager) {
         this.importVmsModelProvider = importVmsModelProvider;
         this.generalModel = vmGeneralModel;
         this.interfaceListModel = vmInterfaceListModel;
@@ -497,6 +518,7 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
         this.guestInfoModel = vmGuestInfoModel;
         this.errataCountModel = vmErrataCountModel;
         this.guestContainerListModel = vmGuestContainerListModel;
+        this.confirmationModelSettingsManager = confirmationModelSettingsManager;
 
         setDetailList();
         setTitle(ConstantsManager.getInstance().getConstants().virtualMachinesTitle());
@@ -518,10 +540,11 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
         setEditCommand(new UICommand("Edit", this)); //$NON-NLS-1$
         setRemoveCommand(new UICommand("Remove", this)); //$NON-NLS-1$
         setRunCommand(new UICommand("Run", this, true)); //$NON-NLS-1$
-        setPauseCommand(new UICommand("Pause", this)); //$NON-NLS-1$
+        setSuspendCommand(new UICommand("Suspend", this)); //$NON-NLS-1$
         setStopCommand(new UICommand("Stop", this)); //$NON-NLS-1$
         setShutdownCommand(new UICommand("Shutdown", this)); //$NON-NLS-1$
         setRebootCommand(new UICommand("Reboot", this)); //$NON-NLS-1$
+        setResetCommand(new UICommand("Reset", this)); //$NON-NLS-1$
         setEditConsoleCommand(new UICommand("EditConsoleCommand", this)); //$NON-NLS-1$
         setConsoleConnectCommand(new UICommand("ConsoleConnectCommand", this)); //$NON-NLS-1$
         setCancelMigrateCommand(new UICommand("CancelMigration", this)); //$NON-NLS-1$
@@ -765,9 +788,30 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
 
     }
 
+    private void confirmBiosTypeUpdate() {
+        VM vm = getSelectedItem();
+        UnitVmModel model = (UnitVmModel) getWindow();
+        if (vm == null || model.getIsNew()) {
+            preSave();
+        } else {
+            BiosType newBiosType = model.getBiosType().getSelectedItem();
+            BiosType oldBiosType = vm.getBiosType();
+            if (oldBiosType.equals(BiosType.Q35_SECURE_BOOT) && !newBiosType.equals(BiosType.Q35_SECURE_BOOT) ||
+                oldBiosType.isOvmf() && !newBiosType.isOvmf()) {
+                ConfirmationModel confirmModel = new ConfirmationModel();
+                confirmModel.setTitle(ConstantsManager.getInstance().getConstants().confirmBiosUpdateTitle());
+                confirmModel.setMessage(ConstantsManager.getInstance().getConstants().confirmBiosUpdateMessage());
+                confirmModel.getCommands().add(UICommand.createDefaultOkUiCommand("PreSave", VmListModel.this)); //$NON-NLS-1$
+                confirmModel.getCommands().add(UICommand.createCancelUiCommand("Cancel", VmListModel.this)); //$NON-NLS-1$
+                setConfirmWindow(confirmModel);
+            } else {
+                preSave();
+            }
+        }
+    }
+
     private void vmInitLoaded(VM vm) {
         UnitVmModel model = new UnitVmModel(new ExistingVmModelBehavior(vm), this);
-        model.getVmType().setSelectedItem(vm.getVmType());
         model.setVmAttachedToPool(vm.getVmPoolId() != null);
         model.setIsAdvancedModeLocalStorageKey(IS_ADVANCED_MODEL_LOCAL_STORAGE_KEY);
         setWindow(model);
@@ -1125,7 +1169,7 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
                 }
                 postExportInitStorageDomains(selectedEntity);
             }),
-        selectedEntity.getId());
+            selectedEntity.getId());
     }
 
     @Override
@@ -1282,9 +1326,11 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
             return;
         }
 
-        if (!model.validate(false)) {
-            model.setIsValid(false);
-        } else  if (model.getIsSubTemplate().getEntity()) {
+        if (!model.validateNaming()) {
+            return;
+        }
+
+        if (model.getIsSubTemplate().getEntity()) {
             postNameUniqueCheck();
         } else {
             String name = model.getName().getEntity();
@@ -1316,31 +1362,37 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
     private void postNameUniqueCheck() {
         UnitVmModel model = (UnitVmModel) getWindow();
         VM vm = getSelectedItem();
+        // populating VMInit
+        AsyncQuery<VM> getVmInitQuery = new AsyncQuery<>(completeVm -> {
+            VM newVm = buildVmOnNewTemplate(model, completeVm);
 
-        VM newVm = buildVmOnNewTemplate(model, vm);
+            AddVmTemplateParameters addVmTemplateParameters =
+                    new AddVmTemplateParameters(newVm,
+                            model.getName().getEntity(),
+                            model.getDescription().getEntity());
+            BuilderExecutor.build(model, addVmTemplateParameters, new UnitToAddVmTemplateParametersBuilder());
+            model.startProgress();
+            Frontend.getInstance().runAction(ActionType.AddVmTemplate, addVmTemplateParameters,
+                    result -> {
+                        getWindow().stopProgress();
+                        ActionReturnValue returnValueBase = result.getReturnValue();
+                        if (returnValueBase != null && returnValueBase.getSucceeded()) {
+                            cancel();
+                        }
 
-        AddVmTemplateParameters addVmTemplateParameters =
-                new AddVmTemplateParameters(newVm,
-                        model.getName().getEntity(),
-                        model.getDescription().getEntity());
-        BuilderExecutor.build(model, addVmTemplateParameters, new UnitToAddVmTemplateParametersBuilder());
-        model.startProgress();
-        Frontend.getInstance().runAction(ActionType.AddVmTemplate, addVmTemplateParameters,
-                result -> {
-                    getWindow().stopProgress();
-                    ActionReturnValue returnValueBase = result.getReturnValue();
-                    if (returnValueBase != null && returnValueBase.getSucceeded()) {
-                        cancel();
-                    }
-
-                }, this);
+                    }, this);
+        });
+        // TODO: if we ever support creation of templates from a running vm,
+        // we would need to take into account next-run configuration here
+        AsyncDataProvider.getInstance().getVmById(getVmInitQuery, vm.getId());
     }
 
     protected static VM buildVmOnNewTemplate(UnitVmModel model, VM vm) {
         VM resultVm = new VM();
         resultVm.setId(vm.getId());
-        BuilderExecutor.build(model, resultVm.getStaticData(), new CommonUnitToVmBaseBuilder(), new MultiQueuesVmBaseBuilder());
+        BuilderExecutor.build(model, resultVm.getStaticData(), new CommonUnitToVmBaseBuilder());
         BuilderExecutor.build(vm.getStaticData(), resultVm.getStaticData(), new VmBaseToVmBaseForTemplateCompositeBaseBuilder());
+        resultVm.setVmInit(vm.getVmInit());
         return resultVm;
     }
 
@@ -1410,6 +1462,13 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
         } else if (actionName.equals(REBOOT)) {
             model.setHelpTag(HelpTag.reboot_virtual_machine);
             model.setHashName("reboot_virtual_machine"); //$NON-NLS-1$
+        } else if (actionName.equals(RESET)) {
+            model.setHelpTag(HelpTag.reset_virtual_machine);
+            model.setHashName("reset_virtual_machine"); //$NON-NLS-1$
+        } else if (actionName.equals(SUSPEND)) {
+            model.setHelpTag(HelpTag.suspend_virtual_machine);
+            model.setHashName(HelpTag.suspend_virtual_machine.name());
+            model.getDoNotShowAgain().setIsAvailable(true);
         }
 
         model.setMessage(message);
@@ -1500,17 +1559,48 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
     }
 
     private void onReboot() {
-        onPowerAction(ActionType.RebootVm, vm -> new VmOperationParameterBase(vm.getId()));
+        onPowerAction(ActionType.RebootVm, vm -> new RebootVmParameters(vm.getId()));
     }
 
-    private void pause() {
-        ArrayList<ActionParametersBase> list = new ArrayList<>();
-        for (Object item : getSelectedItems()) {
-            VM a = (VM) item;
-            list.add(new VmOperationParameterBase(a.getId()));
+    private void reset() {
+        UIConstants constants = ConstantsManager.getInstance().getConstants();
+        powerAction(RESET,
+                constants.resetVirtualMachinesTitle(),
+                constants.areYouSureYouWantToResetTheFollowingVirtualMachinesMsg());
+    }
+
+    private void onReset() {
+        onPowerAction(ActionType.ResetVm, vm -> new VmOperationParameterBase(vm.getId()));
+    }
+
+    private void suspend() {
+        if (confirmationModelSettingsManager.isConfirmSuspendingVm()) {
+            UIConstants constants = ConstantsManager.getInstance().getConstants();
+            powerAction(SUSPEND,
+                    constants.suspendVirtualMachinesTitle(),
+                    constants.areYouSureYouWantToSuspendTheFollowingVirtualMachinesMsg());
+        } else {
+            ArrayList<ActionParametersBase> paramsList = new ArrayList<>();
+            for (Object item : getSelectedItems()) {
+                VM a = (VM) item;
+                paramsList.add(new VmOperationParameterBase(a.getId()));
+            }
+            Frontend.getInstance().runMultipleAction(ActionType.HibernateVm, paramsList, result -> { }, null);
+        }
+    }
+
+    private void onSuspend() {
+        ConfirmationModel model = (ConfirmationModel) getWindow();
+
+        if (model.getProgress() != null) {
+            return;
         }
 
-        Frontend.getInstance().runMultipleAction(ActionType.HibernateVm, list, result -> {}, null);
+        if (model.getDoNotShowAgain().getEntity()) {
+            confirmationModelSettingsManager.setConfirmSuspendingVm(!model.getDoNotShowAgain().getEntity());
+        }
+
+        onPowerAction(ActionType.HibernateVm, vm -> new VmOperationParameterBase(vm.getId()));
     }
 
     private void run() {
@@ -1520,7 +1610,7 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
             list.add(new RunVmParams(a.getId()));
         }
 
-        Frontend.getInstance().runMultipleAction(ActionType.RunVm, list, result -> {}, null);
+        Frontend.getInstance().runMultipleAction(ActionType.RunVm, list, result -> { }, null);
     }
 
     private void onRemove() {
@@ -1624,140 +1714,86 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
 
         setcurrentVm(model.getIsNew() ? new VM() : (VM) Cloner.clone(selectedItem));
 
-        String selectedCpu = model.getCustomCpu().getSelectedItem();
-        if (selectedCpu != null && !selectedCpu.isEmpty()  && !model.getCustomCpu().getItems().contains(selectedCpu)) {
-            confirmCustomCpu("PreSavePhase2"); //$NON-NLS-1$
-        } else {
-            preSavePhase2();
-        }
+        confirmPreSaveWarnings();
     }
 
-    private void confirmCustomCpu(String phase2UiCommand) {
-        ConfirmationModel confirmModel = new ConfirmationModel();
-        confirmModel.setTitle(ConstantsManager.getInstance().getConstants().vmUnsupportedCpuTitle());
-        confirmModel.setMessage(ConstantsManager.getInstance().getConstants().vmUnsupportedCpuMessage());
-        confirmModel.setHelpTag(HelpTag.edit_unsupported_cpu);
-        confirmModel.setHashName("edit_unsupported_cpu"); //$NON-NLS-1$
+    private void confirmPreSaveWarnings() {
+        UnitVmModel model = (UnitVmModel) getWindow();
 
-        confirmModel.getCommands().add(new UICommand(phase2UiCommand, VmListModel.this)
-                .setTitle(ConstantsManager.getInstance().getConstants().ok())
-                .setIsDefault(true));
-
-        confirmModel.getCommands().add(UICommand.createCancelUiCommand("CancelConfirmation", VmListModel.this)); //$NON-NLS-1$
-
-        setConfirmWindow(confirmModel);
+        ConfirmationModelChain chain = new ConfirmationModelChain();
+        chain.addConfirmation(createConfirmCustomCpu(model));
+        chain.addConfirmation(createConfirmCpuPinningLost(model));
+        chain.execute(this, this::preSaveUpdateAndValidateModel);
     }
 
-    private void preSavePhase2() {
-        final UnitVmModel model = (UnitVmModel) getWindow();
+    private ConfirmationModelChainItem createConfirmCustomCpu(UnitVmModel model) {
+        return new ConfirmationModelChainItem() {
 
-        EntityModel<String> cpuPinning = model.getCpuPinning();
-        if (!cpuPinning.getIsChangable() && !model.isVmAttachedToPool() && cpuPinning.getEntity() != null
-                && !cpuPinning.getEntity().isEmpty()) {
-            confirmCpuPinningLost();
-        } else {
-            preSavePhase3();
-        }
+            @Override
+            public boolean isRequired() {
+                final String selectedCpu = model.getCustomCpu().getSelectedItem();
+                return selectedCpu != null && !selectedCpu.isEmpty() && !model.getCustomCpu().getItems().contains(selectedCpu);
+            }
+
+            @Override
+            public ConfirmationModel getConfirmation() {
+                ConfirmationModel confirmModel = new ConfirmationModel();
+                confirmModel.setTitle(ConstantsManager.getInstance().getConstants().vmUnsupportedCpuTitle());
+                confirmModel.setMessage(ConstantsManager.getInstance().getConstants().vmUnsupportedCpuMessage());
+                confirmModel.setHelpTag(HelpTag.edit_unsupported_cpu);
+                confirmModel.setHashName("edit_unsupported_cpu"); //$NON-NLS-1$
+                return confirmModel;
+            }
+        };
     }
 
-    private void confirmCpuPinningLost() {
-        ConfirmationModel confirmModel = new ConfirmationModel();
-        confirmModel.setTitle(ConstantsManager.getInstance().getConstants().vmCpuPinningClearTitle());
-        confirmModel.setMessage(ConstantsManager.getInstance().getConstants().vmCpuPinningClearMessage());
+    private ConfirmationModelChainItem createConfirmCpuPinningLost(UnitVmModel model) {
+        return new ConfirmationModelChainItem() {
 
-        confirmModel.setHelpTag(HelpTag.edit_unsupported_cpu);
-        confirmModel.setHashName("edit_clear_cpu_pinning"); //$NON-NLS-1$
+            @Override
+            public boolean isRequired() {
+                final EntityModel<String> cpuPinning = model.getCpuPinning();
+                return !cpuPinning.getIsChangable() && !model.isVmAttachedToPool() && cpuPinning.getEntity() != null
+                        && !cpuPinning.getEntity().isEmpty();
+            }
 
-        confirmModel.getCommands().add(UICommand.createDefaultOkUiCommand("ClearCpuPinning", VmListModel.this)); //$NON-NLS-1$
-        confirmModel.getCommands().add(UICommand.createCancelUiCommand("CancelConfirmation", VmListModel.this)); //$NON-NLS-1$
+            @Override
+            public ConfirmationModel getConfirmation() {
+                ConfirmationModel confirmModel = new ConfirmationModel();
+                confirmModel.setTitle(ConstantsManager.getInstance().getConstants().vmCpuPinningClearTitle());
+                confirmModel.setMessage(ConstantsManager.getInstance().getConstants().vmCpuPinningClearMessage());
 
-        setConfirmWindow(confirmModel);
+                confirmModel.setHelpTag(HelpTag.edit_unsupported_cpu);
+                confirmModel.setHashName("edit_clear_cpu_pinning"); //$NON-NLS-1$
+
+                return confirmModel;
+            }
+
+            @Override
+            public void onConfirm() {
+                model.getCpuPinning().setEntity("");
+            }
+        };
     }
 
-    private void clearCpuPinning() {
-        final UnitVmModel model = (UnitVmModel) getWindow();
-        model.getCpuPinning().setEntity("");
-
-        preSavePhase3();
-    }
-
-    private void preSavePhase3() {
+    private void preSaveUpdateAndValidateModel() {
         final UnitVmModel model = (UnitVmModel) getWindow();
         final String name = model.getName().getEntity();
-
-        if (!model.getIsNew() && !model.getIsClone() && model.getNumaEnabled().getEntity() &&
-                (!model.getMemSize().getEntity().equals(getcurrentVm().getMemSizeMb()) ||
-                !model.getTotalCPUCores().getEntity().equals(Integer.toString(getcurrentVm().getNumOfCpus())) )) {
-            model.setNumaChanged(true);
-        }
 
         validateVm(model, name);
     }
 
     @Override
-    protected void updateVM (final UnitVmModel model){
+    protected void updateVM (final UnitVmModel model) {
         final VM selectedItem = getSelectedItem();
         // explicitly pass non-editable field from the original VM
         getcurrentVm().setCreatedByUserId(selectedItem.getCreatedByUserId());
         getcurrentVm().setUseLatestVersion(model.getTemplateWithVersion().getSelectedItem().isLatest());
 
-        if (selectedItem.isRunningOrPaused() && !selectedItem.isHostedEngine()) {
-            AsyncDataProvider.getInstance().getVmChangedFieldsForNextRun(editedVm, getcurrentVm(), getUpdateVmParameters(false), new AsyncQuery<>(
-                    new AsyncCallback<QueryReturnValue>() {
-                @Override
-                public void onSuccess(QueryReturnValue returnValue) {
-                    List<String> changedFields = returnValue.getReturnValue();
-                    final boolean cpuHotPluggable = VmCommonUtils.isCpusToBeHotpluggedOrUnplugged(selectedItem, getcurrentVm());
-                    final boolean isHeadlessModeChanged = isHeadlessModeChanged(editedVm, getUpdateVmParameters(false));
-                    final boolean memoryHotPluggable =
-                            VmCommonUtils.isMemoryToBeHotplugged(selectedItem, getcurrentVm());
-                    final boolean minAllocatedMemoryChanged = selectedItem.getMinAllocatedMem() != getcurrentVm().getMinAllocatedMem();
-                    final boolean vmLeaseUpdated = VmCommonUtils.isVmLeaseToBeHotPluggedOrUnplugged(selectedItem, getcurrentVm());
-                    if (isHeadlessModeChanged) {
-                        changedFields.add(constants.headlessMode());
-                    }
-
-                    // provide warnings if isVmUnpinned()
-                    if (!changedFields.isEmpty() || isVmUnpinned() || memoryHotPluggable || cpuHotPluggable || vmLeaseUpdated) {
-                        VmNextRunConfigurationModel confirmModel = new VmNextRunConfigurationModel();
-                        if (isVmUnpinned()) {
-                            confirmModel.setVmUnpinned();
-                        }
-                        confirmModel.setTitle(ConstantsManager.getInstance().getConstants().editNextRunConfigurationTitle());
-                        confirmModel.setHelpTag(HelpTag.edit_next_run_configuration);
-                        confirmModel.setHashName("edit_next_run_configuration"); //$NON-NLS-1$
-                        confirmModel.setChangedFields(changedFields);
-                        confirmModel.setCpuPluggable(cpuHotPluggable);
-                        confirmModel.setMemoryPluggable(memoryHotPluggable);
-                        // it can be plugged only together with the memory, never alone
-                        confirmModel.setMinAllocatedMemoryPluggable(memoryHotPluggable && minAllocatedMemoryChanged);
-                        confirmModel.setVmLeaseUpdated(vmLeaseUpdated);
-
-                        confirmModel.getCommands().add(new UICommand("updateExistingVm", VmListModel.this) //$NON-NLS-1$
-                        .setTitle(ConstantsManager.getInstance().getConstants().ok())
-                        .setIsDefault(true));
-
-                        confirmModel.getCommands().add(UICommand.createCancelUiCommand("CancelConfirmation", VmListModel.this)); //$NON-NLS-1$
-
-                        setConfirmWindow(confirmModel);
-                    } else {
-                        updateExistingVm(false);
-                    }
-                }
-
-                private boolean isVmUnpinned() {
-                    if (selectedItem.isRunning()) {
-                        if (selectedItem.getMigrationSupport() == MigrationSupport.PINNED_TO_HOST
-                            && getcurrentVm().getMigrationSupport() != MigrationSupport.PINNED_TO_HOST) {
-                            return true;
-                        }
-                    }
-                    return false;
-                }
-            }));
-        } else {
-            updateExistingVm(false);
-        }
+        ConfirmationModelChain chain = new ConfirmationModelChain();
+        NextRunConfigurationConfirmation confirmationChainItem = new NextRunConfigurationConfirmation();
+        chain.addConfirmation(confirmationChainItem);
+        chain.execute(this, () -> updateExistingVm(confirmationChainItem.applyChangesLater()));
     }
 
     protected void setupCloneVmModel(UnitVmModel model, List<UICommand> uiCommands) {
@@ -1794,12 +1830,18 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
 
         CloneVmParameters parameters = getCloneVmParameters(vm, vm.getName(), true);
         parameters.setDiskInfoDestinationMap(model.getDisksAllocationModel().getImageToDestinationDomainMap());
+        List<VmInterfacesModifyParameters.VnicWithProfile> vnicsWithProfiles =
+                model.getNicsWithLogicalNetworks().getItems().stream()
+                    .map(vnic -> new VmInterfacesModifyParameters.VnicWithProfile(
+                            vnic.getNetworkInterface(), vnic.getSelectedItem()))
+                    .collect(Collectors.toList());
+        parameters.setVnicsWithProfiles(vnicsWithProfiles);
 
-        Frontend.getInstance()
-                .runAction(ActionType.CloneVm,
-                        parameters,
-                        new UnitVmModelNetworkAsyncCallback(model, defaultNetworkCreatingManager, null),
-                        this);
+        IFrontendActionAsyncCallback callback = result -> {
+            model.stopProgress();
+            cancel();
+        };
+        Frontend.getInstance().runAction(ActionType.CloneVm, parameters, callback, this);
     }
 
     private boolean isHeadlessModeChanged(VM source, VmManagementParametersBase updateVmParameters) {
@@ -1870,10 +1912,11 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
 
         setVmWatchdogToParams(model, params);
         params.setSoundDeviceEnabled(model.getIsSoundcardEnabled().getEntity());
+        params.setTpmEnabled(model.getTpmEnabled().getEntity());
         params.setConsoleEnabled(model.getIsConsoleDeviceEnabled().getEntity());
-        params.setBalloonEnabled(balloonEnabled(model));
         params.setVirtioScsiEnabled(model.getIsVirtioScsiEnabled().getEntity());
-        params.setUpdateNuma(model.isNumaChanged());
+        // it will be calculated on the backend
+        params.setUpdateNuma(null);
         params.setAffinityGroups(model.getAffinityGroupList().getSelectedItems());
         params.setAffinityLabels(model.getLabelList().getSelectedItems());
         if (model.getIsHeadlessModeEnabled().getEntity()) {
@@ -1952,25 +1995,28 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
     }
 
     private void updateActionsAvailability() {
-        List items = getSelectedItems() != null && getSelectedItem() != null ? getSelectedItemsWithStatusForExclusiveLock() : new ArrayList();
+        List<VmWithStatusForExclusiveLock> items = getSelectedItems() != null && getSelectedItem() != null ? getSelectedItemsWithStatusForExclusiveLock() : new ArrayList<>();
 
         boolean singleVmSelected = items.size() == 1;
         boolean vmsSelected = items.size() > 0;
 
-        getEditCommand().setIsExecutionAllowed(isEditCommandExecutionAllowed(items));
+        getEditCommand().setIsExecutionAllowed(singleVmSelected
+                && ActionUtils.canExecute(items, VmWithStatusForExclusiveLock.class, ActionType.UpdateVm));
         getRemoveCommand().setIsExecutionAllowed(vmsSelected && isRemovalEnabled()
                 && ActionUtils.canExecutePartially(items, VmWithStatusForExclusiveLock.class, ActionType.RemoveVm));
         getRunCommand().setIsExecutionAllowed(vmsSelected
                 && ActionUtils.canExecutePartially(items, VmWithStatusForExclusiveLock.class, ActionType.RunVm));
         getCloneVmCommand().setIsExecutionAllowed(singleVmSelected
                 && ActionUtils.canExecute(items, VmWithStatusForExclusiveLock.class, ActionType.CloneVm));
-        getPauseCommand().setIsExecutionAllowed(vmsSelected
+        getSuspendCommand().setIsExecutionAllowed(vmsSelected
                 && ActionUtils.canExecutePartially(items, VmWithStatusForExclusiveLock.class, ActionType.HibernateVm));
         getShutdownCommand().setIsExecutionAllowed(vmsSelected
                 && ActionUtils.canExecutePartially(items, VmWithStatusForExclusiveLock.class, ActionType.ShutdownVm));
         getStopCommand().setIsExecutionAllowed(vmsSelected
                 && ActionUtils.canExecutePartially(items, VmWithStatusForExclusiveLock.class, ActionType.StopVm));
         getRebootCommand().setIsExecutionAllowed(AsyncDataProvider.getInstance().isRebootCommandExecutionAllowed(items));
+        getResetCommand().setIsExecutionAllowed(vmsSelected
+                && ActionUtils.canExecutePartially(items, VmWithStatusForExclusiveLock.class, ActionType.ResetVm));
         getCancelMigrateCommand().setIsExecutionAllowed(vmsSelected
                 && ActionUtils.canExecutePartially(items, VmWithStatusForExclusiveLock.class, ActionType.CancelMigrateVm));
         getNewTemplateCommand().setIsExecutionAllowed(singleVmSelected
@@ -1980,7 +2026,7 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
         getExportCommand().setIsExecutionAllowed(vmsSelected
                 && ActionUtils.canExecute(items, VmWithStatusForExclusiveLock.class, ActionType.ExportVm));
         getExportOvaCommand().setIsExecutionAllowed(vmsSelected
-                && ActionUtils.canExecute(items, VmWithStatusForExclusiveLock.class, ActionType.ExportVmToOva));
+                && ActionUtils.canExecute(items, VmWithStatusForExclusiveLock.class, ActionType.CreateSnapshotForVm));
         getCreateSnapshotCommand().setIsExecutionAllowed(singleVmSelected
                 && !getSelectedItem().isStateless() && !getSelectedItem().isPreviewSnapshot()
                 && ActionUtils.canExecute(items, VmWithStatusForExclusiveLock.class, ActionType.CreateSnapshotForVm));
@@ -1988,9 +2034,11 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
                 && ActionUtils.canExecute(items, VmWithStatusForExclusiveLock.class, ActionType.ChangeDisk));
         getChangeCdCommand().setIsExecutionAllowed(singleVmSelected
                 && ActionUtils.canExecute(items, VmWithStatusForExclusiveLock.class, ActionType.ChangeDisk));
-        getAssignTagsCommand().setIsExecutionAllowed(vmsSelected);
+        getAssignTagsCommand().setIsExecutionAllowed(vmsSelected
+                && items.stream().allMatch(VM::isManaged));
 
-        getGuideCommand().setIsExecutionAllowed(getGuideContext() != null || singleVmSelected);
+        getGuideCommand().setIsExecutionAllowed(getGuideContext() != null || singleVmSelected
+                && items.get(0).isManaged());
 
         getConsoleConnectCommand().setIsExecutionAllowed(isConsoleCommandsExecutionAllowed());
         getEditConsoleCommand().setIsExecutionAllowed(singleVmSelected && isConsoleEditEnabled());
@@ -2041,19 +2089,6 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
                 .anyMatch(VmConsoles::canConnectToConsole);
     }
 
-    /**
-     * Return true if and only if one element is selected.
-     */
-    private boolean isEditCommandExecutionAllowed(List items) {
-        if (items == null) {
-            return false;
-        }
-        if (items.size() != 1) {
-            return false;
-        }
-        return true;
-    }
-
     @Override
     public void eventRaised(Event ev, Object sender, EventArgs args) {
         super.eventRaised(ev, sender, args);
@@ -2083,14 +2118,16 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
             remove();
         } else if (command == getRunCommand()) {
             run();
-        } else if (command == getPauseCommand()) {
-            pause();
+        } else if (command == getSuspendCommand()) {
+            suspend();
         } else if (command == getStopCommand()) {
             stop();
         } else if (command == getShutdownCommand()) {
             shutdown();
         } else if (command == getRebootCommand()) {
             reboot();
+        } else if (command == getResetCommand()) {
+            reset();
         } else if (command == getNewTemplateCommand()) {
             newTemplate();
         } else if (command == getRunOnceCommand()) {
@@ -2114,12 +2151,9 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
         } else if ("Cancel".equals(command.getName())) { //$NON-NLS-1$
             cancel();
         } else if ("OnSave".equals(command.getName())) { //$NON-NLS-1$
+            confirmBiosTypeUpdate();
+        } else if ("PreSave".equals(command.getName())) { //$NON-NLS-1$
             preSave();
-        } else if ("PreSavePhase2".equals(command.getName())) { //$NON-NLS-1$
-            preSavePhase2();
-        } else if ("PreSavePhase3".equals(command.getName())) { //$NON-NLS-1$
-            preSavePhase3();
-            cancelConfirmation();
         } else if ("OnRemove".equals(command.getName())) { //$NON-NLS-1$
             onRemove();
         } else if ("OnExport".equals(command.getName())) { //$NON-NLS-1$
@@ -2144,28 +2178,17 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
             onStop();
         } else if ("OnReboot".equals(command.getName())) { //$NON-NLS-1$
             onReboot();
+        } else if ("OnReset".equals(command.getName())) { //$NON-NLS-1$
+            onReset();
+        } else if ("OnSuspend".equals(command.getName())) { //$NON-NLS-1$
+            onSuspend();
         } else if ("OnChangeCD".equals(command.getName())) { //$NON-NLS-1$
             onChangeCD();
         } else if (command.getName().equals("closeVncInfo") || // $NON-NLS-1$
                 "OnEditConsoleSave".equals(command.getName())) { //$NON-NLS-1$
             setWindow(null);
-        } else if ("updateExistingVm".equals(command.getName())) { // $NON-NLS-1$
-            VmNextRunConfigurationModel model = (VmNextRunConfigurationModel) getConfirmWindow();
-            if (!model.validate()) {
-                return;
-            }
-            updateExistingVm(model.getApplyLater().getEntity());
-            cancelConfirmation();
-        } else if ("ClearCpuPinning".equals(command.getName())) { // $NON-NLS-1$
-            clearCpuPinning();
         } else if (CMD_CONFIGURE_VMS_TO_IMPORT.equals(command.getName())) {
             onConfigureVmsToImport();
-        } else if ("SaveOrUpdateVM".equals(command.getName())) { // $NON-NLS-1$
-            UnitVmModel model = (UnitVmModel) getWindow();
-            if (!model.validate()) {
-                return;
-            }
-            saveOrUpdateVM(model);
         }
     }
 
@@ -2201,14 +2224,14 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
         setWindow(model);
 
         model.getCommands().add(new UICommand(CMD_CONFIGURE_VMS_TO_IMPORT, this)
-        .setIsExecutionAllowed(false)
-        .setTitle(ConstantsManager.getInstance().getConstants().next())
-        .setIsDefault(true)
+            .setIsExecutionAllowed(false)
+            .setTitle(ConstantsManager.getInstance().getConstants().next())
+            .setIsDefault(true)
         );
 
         model.getCommands().add(new UICommand(CMD_CANCEL, this)
-        .setTitle(ConstantsManager.getInstance().getConstants().cancel())
-        .setIsCancel(true)
+            .setTitle(ConstantsManager.getInstance().getConstants().cancel())
+            .setIsCancel(true)
         );
 
         model.initImportModels(
@@ -2243,7 +2266,7 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
                 ,
                 new UICommand(CMD_CANCEL, this).setIsCancel(true)
                     .setTitle(ConstantsManager.getInstance().getConstants().cancel())
-                );
+        );
     }
 
     private void cloneVm() {
@@ -2378,7 +2401,7 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
 
     private OriginType convertImportSourceToOriginType(ImportSource importSource) {
         OriginType originType;
-        switch(importSource) {
+        switch (importSource) {
             case VMWARE:
                 originType = OriginType.VMWARE;
                 break;
@@ -2442,4 +2465,84 @@ public class VmListModel<E> extends VmBaseListModel<E, VM>
         return entity.getStoragePoolId();
     }
 
+    class NextRunConfigurationConfirmation implements ConfirmationModelChainItem {
+
+        private VmNextRunConfigurationModel confirmModel;
+
+        private boolean required;
+
+        @Override
+        public void init(Runnable callback) {
+            required = selectedItem.isRunningOrPaused() && !selectedItem.isHostedEngine();
+
+            if (!required) {
+                callback.run();
+                return;
+            }
+
+            AsyncDataProvider.getInstance().getVmChangedFieldsForNextRun(editedVm, getcurrentVm(), getUpdateVmParameters(false), new AsyncQuery<>(
+                    new AsyncCallback<QueryReturnValue>() {
+                    @Override
+                    public void onSuccess(QueryReturnValue returnValue) {
+                        List<String> changedFields = returnValue.getReturnValue();
+                        final boolean cpuHotPluggable = VmCommonUtils.isCpusToBeHotpluggedOrUnplugged(selectedItem, getcurrentVm());
+                        final boolean isHeadlessModeChanged = isHeadlessModeChanged(editedVm, getUpdateVmParameters(false));
+                        final boolean memoryHotPluggable =
+                            VmCommonUtils.isMemoryToBeHotplugged(selectedItem, getcurrentVm());
+                        final boolean minAllocatedMemoryChanged = selectedItem.getMinAllocatedMem() != getcurrentVm().getMinAllocatedMem();
+                        final boolean vmLeaseUpdated = VmCommonUtils.isVmLeaseToBeHotPluggedOrUnplugged(selectedItem, getcurrentVm());
+                        if (isHeadlessModeChanged) {
+                            changedFields.add(constants.headlessMode());
+                        }
+
+                        // provide warnings if isVmUnpinned()
+                        if (!changedFields.isEmpty() || isVmUnpinned() || memoryHotPluggable || cpuHotPluggable || vmLeaseUpdated) {
+                            confirmModel = new VmNextRunConfigurationModel();
+                            if (isVmUnpinned()) {
+                                confirmModel.setVmUnpinned();
+                            }
+                            confirmModel.setTitle(ConstantsManager.getInstance().getConstants().editNextRunConfigurationTitle());
+                            confirmModel.setHelpTag(HelpTag.edit_next_run_configuration);
+                            confirmModel.setHashName("edit_next_run_configuration"); //$NON-NLS-1$
+                            confirmModel.setChangedFields(changedFields);
+                            confirmModel.setCpuPluggable(cpuHotPluggable);
+                            confirmModel.setMemoryPluggable(memoryHotPluggable);
+                            // it can be plugged only together with the memory, never alone
+                            confirmModel.setMinAllocatedMemoryPluggable(memoryHotPluggable && minAllocatedMemoryChanged);
+                            confirmModel.setVmLeaseUpdated(vmLeaseUpdated);
+                        } else {
+                            required = false;
+                        }
+                        callback.run();
+                    }
+
+                    private boolean isVmUnpinned() {
+                        if (selectedItem.isRunning()) {
+                            if (selectedItem.getMigrationSupport() == MigrationSupport.PINNED_TO_HOST
+                                && getcurrentVm().getMigrationSupport() != MigrationSupport.PINNED_TO_HOST) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    }
+                }));
+        }
+
+        @Override
+        public boolean isRequired() {
+            return required;
+        }
+
+        @Override
+        public VmNextRunConfigurationModel getConfirmation() {
+            return confirmModel;
+        }
+
+        public boolean applyChangesLater() {
+            if (confirmModel == null) {
+                return false;
+            }
+            return !confirmModel.isAnythingPluggable() || confirmModel.getApplyLater().getEntity();
+        }
+    }
 }

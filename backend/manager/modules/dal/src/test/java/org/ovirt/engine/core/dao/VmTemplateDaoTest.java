@@ -17,6 +17,7 @@ import java.util.stream.Collectors;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
+import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.ImageType;
 import org.ovirt.engine.core.common.businessentities.InstanceType;
 import org.ovirt.engine.core.common.businessentities.VmEntityType;
@@ -30,8 +31,8 @@ public class VmTemplateDaoTest extends BaseGenericDaoTestCase<Guid, VmTemplate, 
     private static final int NUMBER_OF_TEMPLATES_IN_DB = 8;
     private static final Guid EXISTING_IMAGE_TYPE_ID = new Guid("5849b030-626e-47cb-ad90-3ce782d831b3");
     protected static final Guid[] HOST_GUIDS = {FixturesTool.VDS_RHEL6_NFS_SPM,
-            FixturesTool.HOST_ID,
-            FixturesTool.GLUSTER_BRICK_SERVER1};
+        FixturesTool.HOST_ID,
+        FixturesTool.GLUSTER_BRICK_SERVER1};
 
     @Override
     protected VmTemplate generateNewEntity() {
@@ -39,6 +40,7 @@ public class VmTemplateDaoTest extends BaseGenericDaoTestCase<Guid, VmTemplate, 
         newVmTemplate.setId(Guid.newGuid());
         newVmTemplate.setName("NewVmTemplate");
         newVmTemplate.setClusterId(FixturesTool.CLUSTER);
+        newVmTemplate.setBiosType(BiosType.Q35_SEA_BIOS);
         newVmTemplate.setClusterArch(ArchitectureType.x86_64);
         newVmTemplate.setCpuProfileId(FixturesTool.CPU_PROFILE_2);
         newVmTemplate.setSmallIconId(FixturesTool.SMALL_ICON_ID);
@@ -334,7 +336,7 @@ public class VmTemplateDaoTest extends BaseGenericDaoTestCase<Guid, VmTemplate, 
     private static void assertGetAllResult(List<VmTemplate> result) {
         assertNotNull(result);
         assertFalse(result.isEmpty());
-        for (VmTemplate template : result){
+        for (VmTemplate template : result) {
             assertEquals(1, template.getDbGeneration(), "Template generation wasn't loaded as expected");
         }
     }

@@ -301,7 +301,7 @@ public class IrsProxyImpl implements IrsProxy {
 
         if (result == null
                 || !result.getSucceeded()
-                || (result.getSucceeded() && ((SpmStatusResult) result.getReturnValue()).getSpmStatus() != SpmStatus.SPM)) {
+                || result.getSucceeded() && ((SpmStatusResult) result.getReturnValue()).getSpmStatus() != SpmStatus.SPM) {
             // update pool status to problematic until fence will happen
             if (storagePool.getStatus() != StoragePoolStatus.NonResponsive
                     && storagePool.getStatus() != StoragePoolStatus.NotOperational) {
@@ -333,7 +333,7 @@ public class IrsProxyImpl implements IrsProxy {
                         }
                     }
                 }
-                if ((tasksList == null) || allTasksFinished) {
+                if (tasksList == null || allTasksFinished) {
                     nullifyInternalProxies();
                 } else {
                     if (_errorAttempts < Config.<Integer> getValue(ConfigValues.SPMFailOverAttempts)) {
@@ -361,6 +361,17 @@ public class IrsProxyImpl implements IrsProxy {
         VDSReturnValue storagePoolInfoResult = resourceManager.runVdsCommand(
                 VDSCommandType.GetStoragePoolInfo, tempVar);
         if (storagePoolInfoResult.getSucceeded()) {
+            if (storagePoolInfoResult.getVdsError() != null &&
+                    storagePoolInfoResult.getVdsError().getCode() == EngineError.StoragePoolMasterNotFound) {
+                // In case there's no master storage domain on the database,
+                // select a temporary storage domain and treat it as the current master, so we can use reconstruct.
+                StorageDomain tempMaster = getStorageDomainForMaster(storagePool.getName(), domainsInDb);
+                if (tempMaster == null) {
+                    return;
+                }
+                reconstructMasterDomainIfNoMaster(tempMaster);
+            }
+
             KeyValuePairCompat<StoragePool, List<StorageDomain>> data =
                     (KeyValuePairCompat<StoragePool, List<StorageDomain>>) storagePoolInfoResult
                             .getReturnValue();
@@ -386,11 +397,31 @@ public class IrsProxyImpl implements IrsProxy {
                             .remove(new StoragePoolIsoMapId(domainInDb.getId(),
                                     storagePoolId));
                 }
-
             }
         }
 
         domainsInMaintenanceCheck(domainsInDb, storagePool);
+    }
+
+    /**
+     * Reconstructs the master domain when there's no master on the database.
+     */
+    private void reconstructMasterDomainIfNoMaster(StorageDomain sd) {
+        getEventQueue().submitEventSync(new Event(this.storagePoolId,
+                        sd.getId(), null, EventType.RECONSTRUCT, "No master storage domain was found in the database."),
+                () -> {
+                    log.warn("No master storage domain was found in the database, selecting one as master.");
+                    return getEventListener().masterDomainNotOperational(sd.getId(), storagePoolId, false, true);
+                });
+    }
+
+    private StorageDomain getStorageDomainForMaster(String storagePoolName, List<StorageDomain> storageDomains) {
+        if (storageDomains.isEmpty()) {
+            log.warn("Cannot elect new master, no storage domains were found for pool {}", storagePoolName);
+            return null;
+        }
+        return storageDomains.stream().filter(sd -> sd.getStorageDomainType() == StorageDomainType.Data).findFirst()
+                .orElse(null);
     }
 
     private void domainsInMaintenanceCheck(List<StorageDomain> storageDomains, StoragePool pool) {
@@ -408,8 +439,8 @@ public class IrsProxyImpl implements IrsProxy {
                             Collection<Guid> vdsConnectedToPool = getVdsConnectedToPool(storagePoolId);
                             Set<Guid> vdsDomInMaintenance = _domainsInMaintenance.get(domain.getId());
                             if (vdsConnectedToPool.isEmpty() ||
-                                    (vdsDomInMaintenance != null &&
-                                            vdsDomInMaintenance.containsAll(vdsConnectedToPool))) {
+                                    vdsDomInMaintenance != null &&
+                                            vdsDomInMaintenance.containsAll(vdsConnectedToPool)) {
                                 log.info("Moving domain '{}' to maintenance", domain.getId());
                                 storagePoolIsoMapDao.updateStatus(
                                         domain.getStoragePoolIsoMapData().getId(),
@@ -457,7 +488,7 @@ public class IrsProxyImpl implements IrsProxy {
             if (domainFromDb.getStorageDomainType() == StorageDomainType.Master && domainPoolMapFromDb != null
                     && domainPoolMapFromDb.getStatus() != StorageDomainStatus.Locked) {
                 // and the domain is not master in the VDSM
-                if (!((domainFromVdsm.getStorageDomainType() == StorageDomainType.Master) || (domainFromVdsm.getStorageDomainType() == StorageDomainType.Unknown))) {
+                if (!(domainFromVdsm.getStorageDomainType() == StorageDomainType.Master || domainFromVdsm.getStorageDomainType() == StorageDomainType.Unknown)) {
                     reconstructMasterDomainNotInSync(domainFromVdsm.getStoragePoolId(),
                             domainFromDb,
                             "Mismatch between master in DB and VDSM",
@@ -504,7 +535,7 @@ public class IrsProxyImpl implements IrsProxy {
             // if status didn't change and still not active no need to
             // update dynamic data
             if (statusChanged
-                    || (domainPoolMapFromDb.getStatus() != StorageDomainStatus.Inactive && domainFromVdsm.getStatus() == StorageDomainStatus.Active)) {
+                    || domainPoolMapFromDb.getStatus() != StorageDomainStatus.Inactive && domainFromVdsm.getStatus() == StorageDomainStatus.Active) {
                 storageDomainDynamicDao.update(domainFromVdsm.getStorageDynamicData());
                 if (domainFromVdsm.getAvailableDiskSize() != null && domainFromVdsm.getUsedDiskSize() != null) {
                     double freePercent = domainFromVdsm.getStorageDynamicData().getfreeDiskPercent();
@@ -541,18 +572,18 @@ public class IrsProxyImpl implements IrsProxy {
 
                     for (EngineError alert : alerts) {
                         switch (alert) {
-                        case VG_METADATA_CRITICALLY_FULL:
-                            auditLogDirector.log(logable, AuditLogType.STORAGE_ALERT_VG_METADATA_CRITICALLY_FULL);
-                            break;
-                        case SMALL_VG_METADATA:
-                            auditLogDirector.log(logable, AuditLogType.STORAGE_ALERT_SMALL_VG_METADATA);
-                            break;
-                        default:
-                            log.error("Unrecognized alert for domain {}(id = {}): {}",
-                                    domainFromVdsm.getStorageName(),
-                                    domainFromVdsm.getId(),
-                                    alert);
-                            break;
+                            case VG_METADATA_CRITICALLY_FULL:
+                                auditLogDirector.log(logable, AuditLogType.STORAGE_ALERT_VG_METADATA_CRITICALLY_FULL);
+                                break;
+                            case SMALL_VG_METADATA:
+                                auditLogDirector.log(logable, AuditLogType.STORAGE_ALERT_SMALL_VG_METADATA);
+                                break;
+                            default:
+                                log.error("Unrecognized alert for domain {}(id = {}): {}",
+                                        domainFromVdsm.getStorageName(),
+                                        domainFromVdsm.getId(),
+                                        alert);
+                                break;
                         }
                     }
                 }
@@ -691,7 +722,7 @@ public class IrsProxyImpl implements IrsProxy {
             @Override
             public void run() {
                 try {
-                    if (isMasterDomainUp())  {
+                    if (isMasterDomainUp()) {
                         getEventListener().storagePoolUpEvent(storagePool);
                     }
                 } catch (RuntimeException exp) {
@@ -921,7 +952,7 @@ public class IrsProxyImpl implements IrsProxy {
             VDS vds = vdsDao.get(curVdsId);
             String vdsName = vds.getName();
             if (vds.getStatus() == VDSStatus.Initializing) {
-                final int DELAY = 5;// 5 Sec
+                final int DELAY = 5; // 5 Sec
                 int total = 0;
                 Integer maxSecToWait = Config.getValue(ConfigValues.WaitForVdsInitInSec);
                 while (total <= maxSecToWait
@@ -1035,7 +1066,7 @@ public class IrsProxyImpl implements IrsProxy {
                         // fence it simply assume
                         // it is not SPM and continue.
                         } else if (destSpmStatus == null
-                                || (destSpmStatus.getSpmStatus() != SpmStatus.Free && destSpmStatus.getSpmStatus() != SpmStatus.Unknown_Pool)) {
+                                || destSpmStatus.getSpmStatus() != SpmStatus.Free && destSpmStatus.getSpmStatus() != SpmStatus.Unknown_Pool) {
                             vdsSpmIdToFence = spmStatus.getSpmId();
                         }
                     } else {
@@ -1113,13 +1144,13 @@ public class IrsProxyImpl implements IrsProxy {
                             EngineError.ENGINE,
                             TransactionScopeOption.RequiresNew);
             if (spmStatus != null) {
-                 TransactionSupport.executeInNewTransaction(() -> {
-                     StoragePool pool =
-                             storagePoolDao.get(storagePool.getId());
-                     pool.setSpmVdsId(null);
-                     storagePoolDao.update(pool);
-                     return null;
-                 });
+                TransactionSupport.executeInNewTransaction(() -> {
+                    StoragePool pool =
+                            storagePoolDao.get(storagePool.getId());
+                    pool.setSpmVdsId(null);
+                    storagePoolDao.update(pool);
+                    return null;
+                });
             }
             throw new IrsSpmStartFailedException();
         }
@@ -1218,7 +1249,7 @@ public class IrsProxyImpl implements IrsProxy {
      * @link StorageDomainStatus#Maintenance or @link StorageDomainStatus#PreparingForMaintenance.
      */
     private Set<Guid> handleDomainsInMaintenanceForHost(Collection<Guid> monitoredDomains) {
-        Set<Guid>  domainsInMaintenance = new HashSet<>();
+        Set<Guid> domainsInMaintenance = new HashSet<>();
         Set<Guid> maintInPool = new HashSet<>(
                 storageDomainStaticDao.getAllIds(
                         storagePoolId, StorageDomainStatus.Maintenance));
@@ -1583,7 +1614,7 @@ public class IrsProxyImpl implements IrsProxy {
         final StoragePool storagePool = storagePoolDao.get(storagePoolId);
         final Guid masterDomainId =
                 storageDomainDao.getMasterStorageDomainIdForPool(storagePoolId);
-        final  List<StoragePoolIsoMap> storagePoolIsoMap = storagePoolIsoMapDao.getAllForStoragePool(storagePoolId);
+        final List<StoragePoolIsoMap> storagePoolIsoMap = storagePoolIsoMapDao.getAllForStoragePool(storagePoolId);
 
         Map<String, Pair<String, String>> acquiredLocks = new HashMap<>();
         try {
@@ -1798,7 +1829,7 @@ public class IrsProxyImpl implements IrsProxy {
 
     private void removeVdsFromUnseenDomainsReport(List<Guid> nonOpVdss) {
         log.info("Removing host(s) '{}' from hosts unseen domain report cache", nonOpVdss);
-        for(Guid id : nonOpVdss) {
+        for (Guid id : nonOpVdss) {
             clearVdsReportInfoOnUnseenDomain(id);
         }
     }
@@ -1869,11 +1900,11 @@ public class IrsProxyImpl implements IrsProxy {
     }
 
     private void cancelJob(ScheduledFuture job) {
-       try {
-           job.cancel(true);
-       } catch (Throwable t) {
-           log.debug("Exception cancelling job: {}" , ExceptionUtils.getRootCauseMessage(t));
-       }
+        try {
+            job.cancel(true);
+        } catch (Throwable t) {
+            log.debug("Exception cancelling job: {}" , ExceptionUtils.getRootCauseMessage(t));
+        }
     }
     private String getDomainIdTuple(Guid domainId) {
         StorageDomainStatic storage_domain = storageDomainStaticDao.get(domainId);

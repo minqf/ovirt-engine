@@ -74,7 +74,7 @@ public class SubTabVolumeBrickView extends AbstractSubTabTableView<GlusterVolume
             @Override
             public String getValue(GlusterBrickEntity brick) {
                 String qualifiedName = brick.getQualifiedName();
-                if(brick.getIsArbiter()){
+                if (brick.getIsArbiter()) {
                     qualifiedName += " (" + constants.arbiter() + ")"; //$NON-NLS-1$ //$NON-NLS-2$
                 }
                 return qualifiedName;
@@ -84,12 +84,12 @@ public class SubTabVolumeBrickView extends AbstractSubTabTableView<GlusterVolume
 
         getTable().addColumn(directoryColumn, constants.brickDirectoryVolumeBrick(), "400px"); //$NON-NLS-1$
 
-        getTable().addColumn(new Column<GlusterBrickEntity, BrickProperties>( new BrickCapacityCell()) {
+        getTable().addColumn(new Column<GlusterBrickEntity, BrickProperties>(new BrickCapacityCell()) {
             @Override
             public BrickProperties getValue(GlusterBrickEntity object) {
                 return object.getBrickProperties();
             }
-        }, constants.volumeCapacity(), "100px");//$NON-NLS-1$
+        }, constants.volumeCapacity(), "100px"); //$NON-NLS-1$
 
         BrickHealInfoColumn healInfoColumn = new BrickHealInfoColumn();
         getTable().addColumn(healInfoColumn, constants.healInfo(), "110px"); //$NON-NLS-1$

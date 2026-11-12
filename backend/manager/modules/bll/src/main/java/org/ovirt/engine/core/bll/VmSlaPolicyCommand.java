@@ -76,7 +76,7 @@ public class VmSlaPolicyCommand<T extends VmSlaPolicyParameters> extends VmComma
         int logId = 0;
         if (getParameters().getCpuQos() != null) {
             Integer limit = getParameters().getCpuQos().getCpuLimit();
-            addCustomValue(LOGABLE_FIELD_CPU_LIMIT, (limit != null) ? String.valueOf(limit): "unlimited");
+            addCustomValue(LOGABLE_FIELD_CPU_LIMIT, (limit != null) ? String.valueOf(limit) : "unlimited");
             logId += 1;
         }
 
@@ -89,10 +89,10 @@ public class VmSlaPolicyCommand<T extends VmSlaPolicyParameters> extends VmComma
         }
 
         final AuditLogType[] logTypes = {
-                AuditLogType.UNASSIGNED, // This can't happen
-                AuditLogType.VM_SLA_POLICY_CPU,
-                AuditLogType.VM_SLA_POLICY_STORAGE,
-                AuditLogType.VM_SLA_POLICY_CPU_STORAGE
+            AuditLogType.UNASSIGNED, // This can't happen
+            AuditLogType.VM_SLA_POLICY_CPU,
+            AuditLogType.VM_SLA_POLICY_STORAGE,
+            AuditLogType.VM_SLA_POLICY_CPU_STORAGE
         };
 
         return getSucceeded() ? logTypes[logId] : AuditLogType.FAILED_VM_SLA_POLICY;

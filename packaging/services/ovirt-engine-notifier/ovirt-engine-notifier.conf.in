@@ -60,6 +60,10 @@ NOTIFIER_PROPERTIES=""
 NOTIFIER_PROPERTIES="${NOTIFIER_PROPERTIES} \"jboss.modules.system.pkgs=org.jboss.byteman,org.ovirt.engine.core.logutils\""
 NOTIFIER_PROPERTIES="${NOTIFIER_PROPERTIES} \"java.util.logging.config.file=${ENGINE_USR}/conf/notifier-logging.properties\""
 
+# We need to disable FIPS configuration of OpenJDK to be able to work with
+# file system keystores and interoperability with openssl
+NOTIFIER_PROPERTIES="${NOTIFIER_PROPERTIES} com.redhat.fips=false"
+
 #
 # Extra Java arguments to be added to command-line.
 #
@@ -110,7 +114,8 @@ INTERVAL_IN_SECONDS=120
 IDLE_INTERVAL=30
 
 # Amount of days to keep dispatched events on history table. If 0, events remain on history table for ever.
-DAYS_TO_KEEP_HISTORY=0
+# CAUTION: Changing this value may affect upgrade time
+DAYS_TO_KEEP_HISTORY=7
 
 # Send a notification email after first failure to fetch notifications,
 # and then once every failedQueriesNotificationThreshold times.
@@ -203,6 +208,20 @@ MAIL_SEND_INTERVAL=1
 
 # Amount of times to attempt sending an email before failing.
 MAIL_RETRIES=4
+
+# Comma-separated list of log type names that could be merged.
+# example:
+# MAIL_MERGE_LOG_TYPES=ENGINE_BACKUP_STARTED,ENGINE_BACKUP_FAILED,ENGINE_BACKUP_COMPLETED
+MAIL_MERGE_LOG_TYPES=
+
+# Maximum allowed log time difference (milliseconds) for two events to be merged. If two events have difference in log
+# time greater than specified by the parameter then the events will not be merged.
+MAIL_MERGE_MAX_TIME_DIFFERENCE=5000
+
+# Locale to be used to create e-mail message subject and body. If not specified then all messages will be in english
+# example:
+# MAIL_LOCALE=cs-CZ
+MAIL_LOCALE=
 
 #-------------------------#
 # SNMP_TRAP Notifications #
@@ -303,3 +322,12 @@ REPEAT_NON_RESPONSIVE_NOTIFICATION=false
 
 # Location of engine pid
 ENGINE_PID=@ENGINE_VAR@/ovirt-engine.pid
+
+# The password for the trust store containing the certificate of the external OIDC server.
+SENSITIVE_KEYS="${SENSITIVE_KEYS},EXTERNAL_OIDC_HTTPS_PKI_TRUST_STORE_PASSWORD"
+
+# Client password to use for external OIDC server.
+SENSITIVE_KEYS="${SENSITIVE_KEYS},EXTERNAL_OIDC_CLIENT_SECRET"
+
+# Keycloak Database connection details
+SENSITIVE_KEYS="${SENSITIVE_KEYS},KEYCLOAK_DB_PASSWORD"

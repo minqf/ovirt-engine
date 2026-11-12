@@ -3,6 +3,7 @@ package org.ovirt.engine.core.bll.kubevirt;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -16,6 +17,8 @@ import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.AddVmParameters;
 import org.ovirt.engine.core.common.action.AttachDetachVmDiskParameters;
 import org.ovirt.engine.core.common.action.RemoveVmParameters;
+import org.ovirt.engine.core.common.action.VmManagementParametersBase;
+import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.VmStatic;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.DiskInterface;
@@ -23,6 +26,7 @@ import org.ovirt.engine.core.common.businessentities.storage.DiskVmElement;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.DiskImageDao;
 import org.ovirt.engine.core.dao.VmStaticDao;
+import org.ovirt.engine.core.utils.ObjectIdentityChecker;
 
 import io.kubernetes.client.models.V1ObjectMeta;
 import kubevirt.io.V1VirtualMachine;
@@ -49,8 +53,14 @@ public class VmUpdater {
         }
 
         VmStatic vmStatic = EntityMapper.toOvirtVm(vm, clusterId);
+        vmStatic.setBiosType(BiosType.Q35_SEA_BIOS);
+
+        AddVmParameters params = new AddVmParameters(vmStatic);
+        params.setSoundDeviceEnabled(false);
+        params.setVirtioScsiEnabled(false);
+
         // at some point we may want to call AddUnmanagedVm
-        ActionReturnValue retVal = backend.get().runInternalAction(ActionType.AddVm, new AddVmParameters(vmStatic));
+        ActionReturnValue retVal = backend.get().runInternalAction(ActionType.AddVm, params);
         if (!retVal.getSucceeded()) {
             return false;
         }
@@ -101,6 +111,21 @@ public class VmUpdater {
     public boolean removeVm(Guid vmId) {
         ActionReturnValue returnValue =
                 backend.get().runInternalAction(ActionType.RemoveVm, new RemoveVmParameters(vmId, true));
+        return returnValue.getSucceeded();
+    }
+
+    public boolean updateVM(V1VirtualMachine oldVm, V1VirtualMachine newVm, Guid clusterId) {
+        VmStatic oldStatic = EntityMapper.toOvirtVm(oldVm, clusterId);
+        VmStatic newStatic = EntityMapper.toOvirtVm(newVm, clusterId);
+
+        Set<String> fields = ObjectIdentityChecker.getChangedFields(oldStatic, newStatic);
+        if (fields.isEmpty()) {
+            return false;
+        }
+        VmManagementParametersBase params = new VmManagementParametersBase(newStatic);
+        params.setApplyChangesLater(true);
+        ActionReturnValue returnValue =
+                backend.get().runInternalAction(ActionType.UpdateVm, params);
         return returnValue.getSucceeded();
     }
 }

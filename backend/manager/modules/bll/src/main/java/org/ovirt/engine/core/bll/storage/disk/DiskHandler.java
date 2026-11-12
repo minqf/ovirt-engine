@@ -1,6 +1,7 @@
 package org.ovirt.engine.core.bll.storage.disk;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -8,6 +9,7 @@ import java.util.stream.Collectors;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 
+import org.ovirt.engine.core.common.businessentities.VmDeviceId;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.DiskVmElement;
@@ -39,7 +41,7 @@ public class DiskHandler {
      * Loads a disk info for selected snapshot, if no snapshot ID was specified it will load the active snapshot
      */
     public Disk loadDiskFromSnapshot(Guid diskId, Guid snapshotId) {
-        return snapshotId == null ?  loadActiveDisk(diskId) :
+        return snapshotId == null ? loadActiveDisk(diskId) :
                 diskImageDao.getDiskSnapshotForVmSnapshot(diskId, snapshotId);
     }
 
@@ -59,5 +61,16 @@ public class DiskHandler {
                 .filter(dve -> disksMap.keySet().contains(dve.getDiskId()))
                 .collect(Collectors.toMap(diskVmElement ->
                         disksMap.get(diskVmElement.getId().getDeviceId()), Function.identity()));
+    }
+
+    /**
+     * Loads the {@code DiskVmElement} with respect to the specified disk and VM/template
+     * and update the specified disk.
+     * @param disk the disk to update
+     * @param vmId the identifier of the vm/template for which to load the DiskVmElement
+     */
+    public void updateDiskVmElementFromDb(Disk disk, Guid vmId) {
+        DiskVmElement dve = diskVmElementDao.get(new VmDeviceId(disk.getId(), vmId));
+        disk.setDiskVmElements(Collections.singletonList(dve));
     }
 }

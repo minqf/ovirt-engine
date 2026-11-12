@@ -3,9 +3,11 @@ package org.ovirt.engine.core.bll.network.macpool;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
+import java.util.function.Predicate;
 
 import org.apache.commons.lang.Validate;
 import org.apache.commons.lang.math.LongRange;
+import org.ovirt.engine.core.utils.MacAddressRangeUtils;
 
 class Range {
     private final LongRange range;
@@ -22,7 +24,7 @@ class Range {
 
     public Range(LongRange range) {
         this.range = range;
-        long numberOfMacsLong =  (range.getMaximumLong() - range.getMinimumLong()) + 1;
+        long numberOfMacsLong = (range.getMaximumLong() - range.getMinimumLong()) + 1;
         Validate.isTrue(numberOfMacsLong <= Integer.MAX_VALUE,
                 String.format("Range too big; Range shouldn't be bigger than %1$s, but passed one "
                         + "contains %2$s elements.", Integer.MAX_VALUE, numberOfMacsLong));
@@ -104,19 +106,27 @@ class Range {
         return numberOfMacsInRange;
     }
 
-    public List<Long> allocateMacs(int numberOfMacs) {
+    public List<Long> allocateMacs(int numberOfMacs, Predicate<String> skipAllocationPredicate) {
         if (numberOfMacs > getAvailableCount()) {
             throw new IllegalStateException("Insufficient amount of free MACs.");
         }
 
         List<Long> result = new ArrayList<>(numberOfMacs);
 
-        for (int count = 0; count < numberOfMacs; count++) {
+        int remainingMacs = numberOfMacs;
+        int remainingAttempts = availableMacsCount;
+        while (remainingMacs > 0 && remainingAttempts > 0) {
+            remainingAttempts -= 1;
             final long mac = findUnusedMac();
+            String macAddress = MacAddressRangeUtils.macToString(mac);
+            if (skipAllocationPredicate.test(macAddress)) {
+                continue;
+            }
 
             // Well duplicates may be allowed, but we're using unallocated mac.
             use(mac, false);
             result.add(mac);
+            remainingMacs -= 1;
         }
 
         return result;
@@ -124,6 +134,8 @@ class Range {
 
     private long findUnusedMac() {
         int index = usedMacs.nextClearBit(startingLocationWhenSearchingForUnusedMac);
+        // below predicate is never true bc largest index value is one less than the size.
+        // see https://docs.oracle.com/javase/7/docs/api/java/util/BitSet.html#BitSet(int)
         boolean notFound = index == numberOfMacsInRange;
         if (notFound) {
             index = usedMacs.nextClearBit(0);

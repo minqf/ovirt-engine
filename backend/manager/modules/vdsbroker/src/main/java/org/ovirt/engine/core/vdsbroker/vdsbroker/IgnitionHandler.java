@@ -63,7 +63,7 @@ public class IgnitionHandler {
      * @param customScript String of the custom script
      * @return String of the existing custom script with the ignition version depending on the osinfo
      */
-     private String handleIgnitionVersion(String customScript) {
+    private String handleIgnitionVersion(String customScript) {
         if (!ignitionVersionExists(customScript)) {
             JsonReader reader = Json.createReader(new StringReader(customScript));
             JsonObject ignitionJson = reader.readObject();
@@ -74,7 +74,7 @@ public class IgnitionHandler {
             customScript = builder.build().toString();
         }
         return customScript;
-     }
+    }
 
     /**
      * Creates a json snippet to ignition version in ignition format
@@ -96,13 +96,13 @@ public class IgnitionHandler {
      * @param customScript String of the custom script
      * @return true if the ignition version is configured in custom script, false otherwise
      */
-     private boolean ignitionVersionExists(String customScript) {
+    private boolean ignitionVersionExists(String customScript) {
         JsonObject reader = Json.createReader(new StringReader(customScript)).readObject();
         if (reader.containsKey("ignition")) {
             return reader.getJsonObject("ignition").containsKey("version");
         }
         return false;
-     }
+    }
 
     /**
      * Handle the hostname if given in the UI, if the hostname exists in the custom script
@@ -239,7 +239,7 @@ public class IgnitionHandler {
         JsonObject reader = Json.createReader(new StringReader(customScript)).readObject();
         if (reader.containsKey("passwd")) {
             if (reader.getJsonObject("passwd").containsKey("users")) {
-                for(JsonValue user: reader.getJsonObject("passwd").getJsonArray("users")){
+                for (JsonValue user: reader.getJsonObject("passwd").getJsonArray("users")) {
                     return user.toString().replace("\"", "").contains(vmInit.getUserName());
                 }
             }
@@ -258,7 +258,7 @@ public class IgnitionHandler {
         if (vmInit.getAuthorizedKeys() != null && !vmInit.getAuthorizedKeys().isEmpty()) {
             JsonArrayBuilder keys = Json.createArrayBuilder();
             // adding ssh keys
-            for(String key: vmInit.getAuthorizedKeys().split("(\\r?\\n|\\r)+")){
+            for (String key: vmInit.getAuthorizedKeys().split("(\\r?\\n|\\r)+")) {
                 if (!StringUtils.isEmpty(key)) {
                     keys.add(key);
                 }

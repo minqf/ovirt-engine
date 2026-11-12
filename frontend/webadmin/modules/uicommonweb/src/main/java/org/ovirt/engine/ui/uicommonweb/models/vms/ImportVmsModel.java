@@ -211,51 +211,52 @@ public class ImportVmsModel extends ListWithSimpleDetailsModel {
     public ImportVmModel getSpecificImportModel(boolean vmsToImportHaveFullInfo) {
         selectedImportVmModel = null;
 
-        switch(importSources.getSelectedItem()) {
-        case EXPORT_DOMAIN:
-            importFromExportDomainModel.setEntity(null);
-            importFromExportDomainModel.init(getVmsToImport(), exportDomain.getEntity().getId());
-            importFromExportDomainModel.setEntity(exportDomain.getEntity().getId());
-            selectedImportVmModel = importFromExportDomainModel;
-            break;
-        case VMWARE:
-            if (vmsToImportHaveFullInfo) {
-                importFromExternalSourceModel.init(getVmsToImport(), getDataCenters().getSelectedItem().getId());
-            }
-            importFromExternalSourceModel.setUrl(getUrl());
-            importFromExternalSourceModel.setUsername(getUsername().getEntity());
-            importFromExternalSourceModel.setPassword(getPassword().getEntity());
-            importFromExternalSourceModel.setProxyHostId(getProxyHosts().getSelectedItem() != null ? getProxyHosts().getSelectedItem().getId() : null);
-            selectedImportVmModel = importFromExternalSourceModel;
-            break;
-        case OVA:
-            importFromOvaModel.init(getVmsToImport(), getDataCenters().getSelectedItem().getId());
-            importFromOvaModel.setIsoName(getOvaPath().getEntity());
-            importFromOvaModel.setHostId(getHosts().getSelectedItem().getId());
-            importFromOvaModel.setVmNameToOva(getVmNameToOva());
-            selectedImportVmModel = importFromOvaModel;
-            break;
-        case XEN:
-            if (vmsToImportHaveFullInfo) {
-                importFromExternalSourceModel.init(getVmsToImport(), getDataCenters().getSelectedItem().getId());
-            }
-            importFromExternalSourceModel.setUrl(getXenUri().getEntity());
-            importFromExternalSourceModel.setUsername(""); //$NON-NLS-1$
-            importFromExternalSourceModel.setPassword(""); //$NON-NLS-1$
-            importFromExternalSourceModel.setProxyHostId(getXenProxyHosts().getSelectedItem() != null ? getXenProxyHosts().getSelectedItem().getId() : null);
-            selectedImportVmModel = importFromExternalSourceModel;
-            break;
-        case KVM:
-            if (vmsToImportHaveFullInfo) {
-                importFromExternalSourceModel.init(getVmsToImport(), getDataCenters().getSelectedItem().getId());
-            }
-            importFromExternalSourceModel.setUrl(getKvmUri().getEntity());
-            importFromExternalSourceModel.setUsername(getKvmUsername().getEntity());
-            importFromExternalSourceModel.setPassword(getKvmPassword().getEntity());
-            importFromExternalSourceModel.setProxyHostId(getKvmProxyHosts().getSelectedItem() != null ? getKvmProxyHosts().getSelectedItem().getId() : null);
-            selectedImportVmModel = importFromExternalSourceModel;
-            break;
-        default:
+        switch (importSources.getSelectedItem()) {
+            case EXPORT_DOMAIN:
+                importFromExportDomainModel.setEntity(null);
+                importFromExportDomainModel.init(getVmsToImport(), exportDomain.getEntity().getId());
+                importFromExportDomainModel.setEntity(exportDomain.getEntity().getId());
+                selectedImportVmModel = importFromExportDomainModel;
+                break;
+            case VMWARE:
+                if (vmsToImportHaveFullInfo) {
+                    importFromExternalSourceModel.init(getVmsToImport(), getDataCenters().getSelectedItem().getId());
+                }
+                importFromExternalSourceModel.setUrl(getUrl());
+                importFromExternalSourceModel.setUsername(getUsername().getEntity());
+                importFromExternalSourceModel.setPassword(getPassword().getEntity());
+                importFromExternalSourceModel.setProxyHostId(getProxyHosts().getSelectedItem() != null ? getProxyHosts().getSelectedItem().getId() : null);
+                selectedImportVmModel = importFromExternalSourceModel;
+                break;
+            case OVA:
+                importFromOvaModel.init(getVmsToImport(), getDataCenters().getSelectedItem().getId());
+                String ovaPathEntity = getOvaPath().getEntity();
+                importFromOvaModel.setIsoName(ovaPathEntity == null ? null : ovaPathEntity.trim());
+                importFromOvaModel.setHostId(getHosts().getSelectedItem().getId());
+                importFromOvaModel.setVmNameToOva(getVmNameToOva());
+                selectedImportVmModel = importFromOvaModel;
+                break;
+            case XEN:
+                if (vmsToImportHaveFullInfo) {
+                    importFromExternalSourceModel.init(getVmsToImport(), getDataCenters().getSelectedItem().getId());
+                }
+                importFromExternalSourceModel.setUrl(getXenUri().getEntity());
+                importFromExternalSourceModel.setUsername(""); //$NON-NLS-1$
+                importFromExternalSourceModel.setPassword(""); //$NON-NLS-1$
+                importFromExternalSourceModel.setProxyHostId(getXenProxyHosts().getSelectedItem() != null ? getXenProxyHosts().getSelectedItem().getId() : null);
+                selectedImportVmModel = importFromExternalSourceModel;
+                break;
+            case KVM:
+                if (vmsToImportHaveFullInfo) {
+                    importFromExternalSourceModel.init(getVmsToImport(), getDataCenters().getSelectedItem().getId());
+                }
+                importFromExternalSourceModel.setUrl(getKvmUri().getEntity());
+                importFromExternalSourceModel.setUsername(getKvmUsername().getEntity());
+                importFromExternalSourceModel.setPassword(getKvmPassword().getEntity());
+                importFromExternalSourceModel.setProxyHostId(getKvmProxyHosts().getSelectedItem() != null ? getKvmProxyHosts().getSelectedItem().getId() : null);
+                selectedImportVmModel = importFromExternalSourceModel;
+                break;
+            default:
         }
         return selectedImportVmModel;
     }
@@ -300,19 +301,19 @@ public class ImportVmsModel extends ListWithSimpleDetailsModel {
         return returnValue -> {
             List<StorageDomain> storageDomains = returnValue.getReturnValue();
 
-           exportDomain.setEntity(getExportDomain(storageDomains));
-           if (exportDomain.getEntity() == null) {
-               stopProgress();
-           } else {
-               setExportName(exportDomain.getEntity().getName());
-               setExportDescription(exportDomain.getEntity().getDescription());
-               // get export-path
-               AsyncDataProvider.getInstance().getStorageConnectionById(new AsyncQuery<>(connection -> {
-                   setExportPath(connection == null ? null : connection.getConnection());
-                   stopProgress();
-               }), exportDomain.getEntity().getStorage(), true);
-           }
-           validateSource();
+            exportDomain.setEntity(getExportDomain(storageDomains));
+            if (exportDomain.getEntity() == null) {
+                stopProgress();
+            } else {
+                setExportName(exportDomain.getEntity().getName());
+                setExportDescription(exportDomain.getEntity().getDescription());
+                // get export-path
+                AsyncDataProvider.getInstance().getStorageConnectionById(new AsyncQuery<>(connection -> {
+                    setExportPath(connection == null ? null : connection.getConnection());
+                    stopProgress();
+                }), exportDomain.getEntity().getStorage(), true);
+            }
+            validateSource();
         };
     }
 
@@ -336,17 +337,17 @@ public class ImportVmsModel extends ListWithSimpleDetailsModel {
 
     private void providerChanged() {
         clearValidations();
-        switch(importSources.getSelectedItem()) {
-        case VMWARE:
-            vmwareProviderChanged();
-            break;
-        case KVM:
-            kvmProviderChanged();
-            break;
-        case XEN:
-            xenProviderChanged();
-            break;
-        default:
+        switch (importSources.getSelectedItem()) {
+            case VMWARE:
+                vmwareProviderChanged();
+                break;
+            case KVM:
+                kvmProviderChanged();
+                break;
+            case XEN:
+                xenProviderChanged();
+                break;
+            default:
         }
     }
 
@@ -483,7 +484,7 @@ public class ImportVmsModel extends ListWithSimpleDetailsModel {
             clearValidations();
             loadProviders();
         });
-        importSources.setSelectedItem(ImportSource.EXPORT_DOMAIN);
+        importSources.setSelectedItem(ImportSource.OVA);
     }
 
     private void validateSource() {
@@ -560,17 +561,17 @@ public class ImportVmsModel extends ListWithSimpleDetailsModel {
     }
 
     private void loadProviders() {
-        switch(importSources.getSelectedItem()) {
-        case VMWARE:
-            loadVmwareProviders();
-            break;
-        case KVM:
-            loadKvmProviders();
-            break;
-        case XEN:
-            loadXenProviders();
-            break;
-        default:
+        switch (importSources.getSelectedItem()) {
+            case VMWARE:
+                loadVmwareProviders();
+                break;
+            case KVM:
+                loadKvmProviders();
+                break;
+            case XEN:
+                loadXenProviders();
+                break;
+            default:
         }
     }
 
@@ -615,7 +616,8 @@ public class ImportVmsModel extends ListWithSimpleDetailsModel {
 
     private boolean validateOvaConfiguration() {
         getOvaPath().validateEntity(new IValidation[]{
-                new NotEmptyValidation()});
+            new NotEmptyValidation()
+        });
 
         return getOvaPath().getIsValid();
     }
@@ -688,20 +690,20 @@ public class ImportVmsModel extends ListWithSimpleDetailsModel {
 
     private boolean validateVmwareConfiguration() {
         getvCenter().validateEntity(new IValidation[] {
-                new NotEmptyValidation(),
-                new LengthValidation(255),
-                new HostAddressValidation() });
+            new NotEmptyValidation(),
+            new LengthValidation(255),
+            new HostAddressValidation() });
         getEsx().validateEntity(new IValidation[]{
-                new NotEmptyValidation(),
-                new LengthValidation(255),
-                new HostAddressValidation()});
+            new NotEmptyValidation(),
+            new LengthValidation(255),
+            new HostAddressValidation()});
         getVmwareDatacenter().validateEntity(new IValidation[]{
-                new NotEmptyValidation()});
+            new NotEmptyValidation()});
         getUsername().validateEntity(new IValidation[]{
-                new NotEmptyValidation(),
-                new NameAndOptionalDomainValidation()});
+            new NotEmptyValidation(),
+            new NameAndOptionalDomainValidation()});
         getPassword().validateEntity(new IValidation[]{
-                new NotEmptyValidation()});
+            new NotEmptyValidation()});
 
         return getvCenter().getIsValid()
                 && getEsx().getIsValid()
@@ -712,19 +714,19 @@ public class ImportVmsModel extends ListWithSimpleDetailsModel {
 
     private boolean validateXenConfiguration() {
         getXenUri().validateEntity(new IValidation[] {
-                new NotEmptyValidation(),
-                new LengthValidation(255)});
+            new NotEmptyValidation(),
+            new LengthValidation(255)});
         return getXenUri().getIsValid();
     }
 
     private boolean validateKvmConfiguration() {
         getKvmUri().validateEntity(new IValidation[] {
-                new NotEmptyValidation(),
-                new LengthValidation(255)});
+            new NotEmptyValidation(),
+            new LengthValidation(255)});
         getKvmUsername().validateEntity(new IValidation[] {
-                new NotEmptyValidation() });
+            new NotEmptyValidation() });
         getKvmPassword().validateEntity(new IValidation[] {
-                new NotEmptyValidation() });
+            new NotEmptyValidation() });
 
         return getKvmUri().getIsValid() &&
                getKvmUsername().getIsValid() &&
@@ -855,7 +857,7 @@ public class ImportVmsModel extends ListWithSimpleDetailsModel {
     }
 
     public boolean vmsToImportHaveFullInfo() {
-        switch(importSources.getSelectedItem()) {
+        switch (importSources.getSelectedItem()) {
             case VMWARE:
             case KVM:
             case XEN:

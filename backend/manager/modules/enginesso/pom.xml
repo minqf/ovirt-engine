@@ -5,73 +5,48 @@
     <parent>
         <artifactId>manager-modules</artifactId>
         <groupId>org.ovirt.engine.core</groupId>
-        <version>4.4.0-SNAPSHOT</version>
+        <version>4.5.8-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>enginesso</artifactId>
     <packaging>war</packaging>
-    <name>ovirt-engine sso</name>
+    <name>oVirt Engine SSO</name>
     <description>oVirt engine sso</description>
 
     <dependencies>
-
         <dependency>
             <groupId>${engine.groupId}</groupId>
             <artifactId>uutils</artifactId>
             <version>${engine.version}</version>
             <scope>provided</scope>
         </dependency>
-
         <dependency>
             <groupId>${engine.groupId}</groupId>
             <artifactId>extensions-manager</artifactId>
             <version>${engine.version}</version>
             <scope>provided</scope>
         </dependency>
-
-        <dependency>
-            <groupId>org.ovirt.engine.api</groupId>
-            <artifactId>ovirt-engine-extensions-api</artifactId>
-            <version>${ovirt-engine-extensions-api.version}</version>
-            <scope>provided</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.jboss.spec.javax.servlet</groupId>
-            <artifactId>jboss-servlet-api_3.1_spec</artifactId>
-            <scope>provided</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>commons-io</groupId>
-            <artifactId>commons-io</artifactId>
-            <scope>provided</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>commons-lang</groupId>
-            <artifactId>commons-lang</artifactId>
-            <scope>provided</scope>
-        </dependency>
-
         <dependency>
             <groupId>${engine.groupId}</groupId>
             <artifactId>branding</artifactId>
             <version>${engine.version}</version>
         </dependency>
-
         <dependency>
-            <groupId>org.codehaus.jackson</groupId>
-            <artifactId>jackson-core-asl</artifactId>
+            <groupId>org.ovirt.engine.api</groupId>
+            <artifactId>ovirt-engine-extensions-api</artifactId>
             <scope>provided</scope>
         </dependency>
         <dependency>
-            <groupId>org.codehaus.jackson</groupId>
-            <artifactId>jackson-mapper-asl</artifactId>
+            <groupId>org.jboss.spec.javax.servlet</groupId>
+            <artifactId>jboss-servlet-api_3.1_spec</artifactId>
             <scope>provided</scope>
         </dependency>
-
+        <dependency>
+            <groupId>commons-lang</groupId>
+            <artifactId>commons-lang</artifactId>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>org.apache.httpcomponents</groupId>
             <artifactId>httpcore</artifactId>
@@ -80,12 +55,22 @@
         <dependency>
             <groupId>org.jboss.resteasy</groupId>
             <artifactId>jose-jwt</artifactId>
-            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.jboss.resteasy</groupId>
             <artifactId>resteasy-jaxrs</artifactId>
-            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
         </dependency>
     </dependencies>
 

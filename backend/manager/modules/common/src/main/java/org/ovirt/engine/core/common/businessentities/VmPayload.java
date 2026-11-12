@@ -1,13 +1,17 @@
 package org.ovirt.engine.core.common.businessentities;
 
 import java.io.Serializable;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
+import javax.validation.constraints.Size;
+
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.utils.VmDeviceType;
+import org.ovirt.engine.core.common.validation.annotation.ValidI18NName;
 import org.ovirt.engine.core.compat.Guid;
 
 
@@ -17,7 +21,10 @@ public class VmPayload extends VmDevice implements Serializable {
     private static final String SpecParamsVolumeIdType = "volId";
     private static final String SpecParamsFileType = "file";
 
+    @ValidI18NName(message = "ACTION_TYPE_FAILED_VOLUME_ID_MAY_NOT_CONTAIN_SPECIAL_CHARS")
+    @Size(max = BusinessEntitiesDefinitions.VM_PAYLOAD_VOLUME_ID_SIZE)
     private String volumeId;
+
     private Map<String, String> files; // file data is base64-encoded
 
     // Use the constructor with the vmid if you have it!
@@ -42,9 +49,9 @@ public class VmPayload extends VmDevice implements Serializable {
                 dev.getLogicalName());
 
         if (dev.getSpecParams() != null) {
-            Map<String, Object> payload = (Map<String, Object>)dev.getSpecParams().get(SpecParamsPayload);
-            this.volumeId = (String)payload.get(SpecParamsVolumeIdType);
-            this.files = (HashMap<String, String>)payload.get(SpecParamsFileType);
+            Map<String, Object> payload = (Map<String, Object>) dev.getSpecParams().get(SpecParamsPayload);
+            this.volumeId = (String) payload.get(SpecParamsVolumeIdType);
+            this.files = (HashMap<String, String>) payload.get(SpecParamsFileType);
         }
     }
 
@@ -52,8 +59,14 @@ public class VmPayload extends VmDevice implements Serializable {
         return specParams == null ? false : specParams.containsKey(SpecParamsPayload);
     }
 
-    public static boolean isPayloadSizeLegal(String payload) {
-        return payload.length() <= Config.<Integer> getValue(ConfigValues.PayloadSize);
+    /**
+     * Enforce a max byte size for the payload content.
+     *
+     * @param content The payload content to check.
+     * @return true if the payload size is within the allowed limit, false otherwise.
+     */
+    public static boolean isPayloadSizeLegal(String content) {
+        return content.getBytes(StandardCharsets.UTF_8).length <= Config.<Integer> getValue(ConfigValues.PayloadSize);
     }
 
     public VmDeviceType getDeviceType() {

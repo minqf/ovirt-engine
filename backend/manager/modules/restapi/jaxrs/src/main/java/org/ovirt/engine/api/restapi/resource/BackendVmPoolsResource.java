@@ -40,6 +40,8 @@ public class BackendVmPoolsResource
         extends AbstractBackendCollectionResource<VmPool, org.ovirt.engine.core.common.businessentities.VmPool>
     implements VmPoolsResource {
 
+    public static final String SEAL = "seal";
+
     public BackendVmPoolsResource() {
         super(VmPool.class, org.ovirt.engine.core.common.businessentities.VmPool.class);
     }
@@ -66,7 +68,7 @@ public class BackendVmPoolsResource
     private boolean isSortedAndMaxResults() {
         String searchConstraint = QueryHelper.getConstraint(httpHeaders, uriInfo, "", modelType);
         int max = ParametersHelper.getIntegerParameter(httpHeaders, uriInfo, "max", -1, -1);
-        return searchConstraint!=null
+        return searchConstraint != null
                 && !searchConstraint.isEmpty()
                 && searchConstraint.toLowerCase().contains("sortby name asc")
                 && max != -1;
@@ -116,22 +118,27 @@ public class BackendVmPoolsResource
         AddVmPoolParameters params = new AddVmPoolParameters(entity, vm, size);
         params.setConsoleEnabled(pool.isSetVm() && pool.getVm().isSetConsole() && pool.getVm().getConsole().isSetEnabled() ?
                 pool.getVm().getConsole().isEnabled() : !getConsoleDevicesForEntity(template.getId()).isEmpty());
+        if (pool.isSetVm()) {
+            DisplayHelper.setGraphicsToParams(pool.getVm().getDisplay(), params);
+        }
         params.setVirtioScsiEnabled(!VmHelper.getVirtioScsiControllersForEntity(this, template.getId()).isEmpty());
         params.setSoundDeviceEnabled(pool.isSetSoundcardEnabled() ? pool.isSoundcardEnabled() : !VmHelper.getSoundDevicesForEntity(this, template.getId()).isEmpty());
         params.setRngDevice(pool.isSetVm() && pool.getVm().isSetRngDevice() ?
                 RngDeviceMapper.map(pool.getVm().getRngDevice(), null) : params.getRngDevice());
-        boolean balloonEnabled = pool.isSetVm() &&
-                pool.getVm().isSetMemoryPolicy() &&
-                pool.getVm().getMemoryPolicy().isSetBallooning() &&
-                pool.getVm().getMemoryPolicy().isBallooning();
-        params.setBalloonEnabled(balloonEnabled);
         params.getVmStaticData().setCustomProperties(pool.isSetVm() && pool.getVm().isSetCustomProperties() ?
                 CustomPropertiesParser.parse(pool.getVm().getCustomProperties().getCustomProperties()) : params.getVmStaticData().getCustomProperties());
+        params.setTpmEnabled(pool.isSetTpmEnabled() ? pool.isTpmEnabled() : null);
+        setupSealing(params);
 
         return performCreate(ActionType.AddVmPool,
                                params,
                                new QueryIdResolver<Guid>(QueryType.GetVmPoolById,
                                                    IdQueryParameters.class));
+    }
+
+    private void setupSealing(AddVmPoolParameters params) {
+        Boolean seal = ParametersHelper.getBooleanParameter(httpHeaders, uriInfo, SEAL, Boolean.TRUE, null);
+        params.setSeal(seal);
     }
 
     @Override
@@ -146,12 +153,12 @@ public class BackendVmPoolsResource
             Vm vm = VmMapper.map(vmModel, new Vm());
             DisplayHelper.adjustDisplayData(this, vm, false);
             BackendVmDeviceHelper.setPayload(this, vm);
-            MemoryPolicyHelper.setupMemoryBalloon(vm, this);
             BackendVmDeviceHelper.setConsoleDevice(this, vm);
             BackendVmDeviceHelper.setVirtioScsiController(this, vm);
             BackendVmDeviceHelper.setSoundcard(this, vm);
             BackendVmDeviceHelper.setCertificateInfo(this, vm);
             BackendVmDeviceHelper.setRngDevice(this, vm);
+            BackendVmDeviceHelper.setTpmDevice(this, vm);
             pool.setVm(vm);
         }
         // Legacy code

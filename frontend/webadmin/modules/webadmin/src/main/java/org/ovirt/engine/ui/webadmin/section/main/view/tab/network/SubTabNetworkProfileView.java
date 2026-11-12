@@ -67,20 +67,20 @@ public class SubTabNetworkProfileView extends AbstractSubTabTableView<NetworkVie
         getTable().addColumn(networkColumn, constants.networkVnicProfile(), "200px"); //$NON-NLS-1$
 
         AbstractTextColumn<VnicProfileView> dcColumn = new AbstractLinkColumn<VnicProfileView>(
-                new FieldUpdater<VnicProfileView, String>() {
-            @Override
-            public void update(int index, VnicProfileView profileView, String value) {
-                Map<String, String> parameters = new HashMap<>();
-                parameters.put(FragmentParams.NAME.getName(), profileView.getDataCenterName());
-                getPlaceTransitionHandler().handlePlaceTransition(
+            new FieldUpdater<VnicProfileView, String>() {
+                @Override
+                public void update(int index, VnicProfileView profileView, String value) {
+                    Map<String, String> parameters = new HashMap<>();
+                    parameters.put(FragmentParams.NAME.getName(), profileView.getDataCenterName());
+                    getPlaceTransitionHandler().handlePlaceTransition(
                         WebAdminApplicationPlaces.dataCenterStorageSubTabPlace, parameters);
-            }
-        }) {
-            @Override
-            public String getValue(VnicProfileView object) {
-                return object.getDataCenterName();
-            }
-        };
+                }
+            }) {
+                @Override
+                public String getValue(VnicProfileView object) {
+                    return object.getDataCenterName();
+                }
+            };
         dcColumn.makeSortable();
         getTable().addColumn(dcColumn, constants.dcVnicProfile(), "200px"); //$NON-NLS-1$
 
@@ -130,6 +130,15 @@ public class SubTabNetworkProfileView extends AbstractSubTabTableView<NetworkVie
         };
         passthroughColumn.makeSortable();
         getTable().addColumn(passthroughColumn, constants.passthroughVnicProfile(), "100px"); //$NON-NLS-1$
+
+        AbstractTextColumn<VnicProfileView> failoverColumn = new AbstractTextColumn<VnicProfileView>() {
+            @Override
+            public String getValue(VnicProfileView object) {
+                return object.getFailoverVnicProfileName();
+            }
+        };
+        failoverColumn.makeSortable();
+        getTable().addColumn(failoverColumn, constants.failoverVnicProfile(), "150px"); //$NON-NLS-1$
 
         AbstractTextColumn<VnicProfileView> descriptionColumn =
                 new AbstractTextColumn<VnicProfileView>() {

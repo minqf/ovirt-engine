@@ -196,7 +196,7 @@ public class CommandCallbacksPoller implements BackendService {
                 log.debug("Exception", ex);
                 handleError(ex, status, cmdId);
             } finally {
-                if ((CommandStatus.FAILED == status || (CommandStatus.SUCCEEDED == status && !errorInCallback))
+                if ((CommandStatus.FAILED == status || CommandStatus.SUCCEEDED == status && !errorInCallback)
                         && !runCallbackAgain) {
                     log.debug("Callback of command {} ({}) has been notified, removing command from command repository.",
                             cmdActionType, cmdId);
@@ -262,7 +262,7 @@ public class CommandCallbacksPoller implements BackendService {
                     cmdEntity.getCommandStatus() != CommandStatus.FAILED &&
                     cmdEntity.getCommandStatus() != CommandStatus.EXECUTION_FAILED &&
                     cmdEntity.getCommandStatus() != CommandStatus.ENDED_WITH_FAILURE
-                    ) {
+            ) {
                 commandsRepository.updateCommandStatus(cmdEntity.getId(), CommandStatus.EXECUTION_FAILED);
             }
 

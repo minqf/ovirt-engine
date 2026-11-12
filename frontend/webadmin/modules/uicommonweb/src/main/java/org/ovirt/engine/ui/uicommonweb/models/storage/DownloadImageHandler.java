@@ -4,12 +4,13 @@ import java.util.List;
 import java.util.function.Predicate;
 import java.util.logging.Logger;
 
-import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.TransferDiskImageParameters;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
+import org.ovirt.engine.core.common.businessentities.storage.DiskContentType;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.ImageStatus;
 import org.ovirt.engine.core.common.businessentities.storage.ImageTransfer;
+import org.ovirt.engine.core.common.businessentities.storage.TransferClientType;
 import org.ovirt.engine.core.common.businessentities.storage.TransferType;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.common.queries.IdQueryParameters;
@@ -28,44 +29,45 @@ public class DownloadImageHandler {
 
     private static final Logger log = Logger.getLogger(DownloadImageHandler.class.getName());
 
-    private DiskImage diskImage;
+    private Guid transferId;
 
-    public DownloadImageHandler(DiskImage diskImage) {
-        this.diskImage = diskImage;
+    public DownloadImageHandler(Guid transferId) {
+        this.transferId = transferId;
     }
 
-    private TransferDiskImageParameters createInitParams() {
+    static TransferDiskImageParameters createInitParams(DiskImage diskImage) {
         TransferDiskImageParameters parameters = new TransferDiskImageParameters();
         parameters.setTransferType(TransferType.Download);
+        String fileExtension = "";
+        if (diskImage.getContentType() == DiskContentType.ISO) {
+            if (!diskImage.getDiskAlias().endsWith(".iso")) { //$NON-NLS-1$
+                fileExtension = ".iso"; //$NON-NLS-1$
+            }
+        } else {
+            fileExtension = diskImage.getVolumeFormat() == VolumeFormat.COW ? ".qcow2" : ".raw"; //$NON-NLS-1$ //$NON-NLS-2$
+        }
         parameters.setImageGroupID(diskImage.getId());
-        String fileExtension = diskImage.getVolumeFormat() == VolumeFormat.COW ?
-                ".qcow2" : ".raw"; //$NON-NLS-1$ //$NON-NLS-2$
-        parameters.setDownloadFilename(diskImage.getDiskAlias() + fileExtension); //$NON-NLS-1$
+        parameters.setDownloadFilename(diskImage.getDiskAlias() + fileExtension);
         parameters.setTransferSize(diskImage.getActualSizeInBytes());
-        parameters.setTransferringViaBrowser(true);
+        parameters.setTransferClientType(TransferClientType.TRANSFER_VIA_BROWSER);
 
         return parameters;
     }
 
     public void start() {
-        Frontend.getInstance().runAction(ActionType.TransferDiskImage,
-                createInitParams(),
-                result -> {
-                    if (result.getReturnValue().getSucceeded()) {
-                        Guid transferId = result.getReturnValue().getActionReturnValue();
-                        Frontend.getInstance().runQuery(QueryType.GetImageTransferById,
-                                new IdQueryParameters(transferId),
-                                new AsyncQuery<QueryReturnValue>(returnValue -> {
-                                    ImageTransfer imageTransfer = returnValue.getReturnValue();
-                                    initiateDownload(imageTransfer);
-                                }));
-                    }
-                },
-                this);
+        Frontend.getInstance().runQuery(QueryType.GetImageTransferById,
+                new IdQueryParameters(transferId),
+                new AsyncQuery<QueryReturnValue>(returnValue -> {
+                    ImageTransfer imageTransfer = returnValue.getReturnValue();
+                    initiateDownload(imageTransfer);
+                }));
     }
 
     private void initiateDownload(ImageTransfer imageTransfer) {
-        String url = imageTransfer.getProxyUri() + "/" + imageTransfer.getImagedTicketId(); //$NON-NLS-1$
+        // Use close=y to inform proxy and daemon that we are done and the
+        // connection must be closed at the end of the download. Avoids failure
+        // in deactivaing a volume after download.
+        String url = imageTransfer.getProxyUri() + "/" + imageTransfer.getImagedTicketId() + "?close=y"; //$NON-NLS-1$ //$NON-NLS-2$
 
         log.info("Initiating download: " + url); //$NON-NLS-1$
 

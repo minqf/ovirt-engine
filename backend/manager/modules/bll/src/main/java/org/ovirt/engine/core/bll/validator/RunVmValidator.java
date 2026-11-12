@@ -4,11 +4,13 @@ import static org.ovirt.engine.core.bll.storage.disk.image.DisksFilter.ONLY_NOT_
 import static org.ovirt.engine.core.bll.storage.disk.image.DisksFilter.ONLY_PLUGGED;
 import static org.ovirt.engine.core.bll.storage.disk.image.DisksFilter.ONLY_SNAPABLE;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -34,7 +36,9 @@ import org.ovirt.engine.core.common.action.RunVmParams;
 import org.ovirt.engine.core.common.businessentities.BootSequence;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.GraphicsType;
+import org.ovirt.engine.core.common.businessentities.HostDevice;
 import org.ovirt.engine.core.common.businessentities.OriginType;
+import org.ovirt.engine.core.common.businessentities.Snapshot;
 import org.ovirt.engine.core.common.businessentities.StorageDomainStatus;
 import org.ovirt.engine.core.common.businessentities.StoragePool;
 import org.ovirt.engine.core.common.businessentities.StoragePoolIsoMap;
@@ -71,6 +75,8 @@ import org.ovirt.engine.core.common.vdscommands.IsVmDuringInitiatingVDSCommandPa
 import org.ovirt.engine.core.common.vdscommands.VDSCommandType;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.DiskDao;
+import org.ovirt.engine.core.dao.HostDeviceDao;
+import org.ovirt.engine.core.dao.SnapshotDao;
 import org.ovirt.engine.core.dao.StoragePoolIsoMapDao;
 import org.ovirt.engine.core.dao.VdsDynamicDao;
 import org.ovirt.engine.core.dao.VmDeviceDao;
@@ -87,6 +93,7 @@ public class RunVmValidator {
 
     private List<Disk> cachedVmDisks;
     private List<DiskImage> cachedVmImageDisks;
+    private List<DiskImage> cachedVmMemoryDisks;
     private Set<String> cachedInterfaceNetworkNames;
     private List<Network> cachedClusterNetworks;
     private Set<String> cachedClusterNetworksNames;
@@ -117,6 +124,9 @@ public class RunVmValidator {
     private VmDeviceDao vmDeviceDao;
 
     @Inject
+    private HostDeviceDao hostDeviceDao;
+
+    @Inject
     private NetworkDao networkDao;
 
     @Inject
@@ -124,6 +134,9 @@ public class RunVmValidator {
 
     @Inject
     private VdsDynamicDao vdsDynamicDao;
+
+    @Inject
+    private SnapshotDao snapshotDao;
 
     @Inject
     private BackendInternal backend;
@@ -174,7 +187,8 @@ public class RunVmValidator {
                    validate(validateVmStatusUsingMatrix(vm), messages) &&
                    validate(validateStoragePoolUp(vm, storagePool, getVmImageDisks()), messages) &&
                    validate(vmDuringInitialization(vm), messages) &&
-                   validate(validateStorageDomains(vm, isInternalExecution, getVmImageDisks()), messages) &&
+                   validate(validateStorageDomains(vm, isInternalExecution, getVmImageDisks(), true), messages) &&
+                   validate(validateStorageDomains(vm, isInternalExecution, getVmMemoryDisks(), false), messages) &&
                    validate(validateImagesForRunVm(vm, getVmImageDisks()), messages) &&
                    validate(validateDisksPassDiscard(vm), messages) &&
                    !schedulingManager.prepareCall(cluster)
@@ -190,16 +204,18 @@ public class RunVmValidator {
                 validate(validateDisplayType(), messages) &&
                 validate(new VmValidator(vm).vmNotLocked(), messages) &&
                 validate(snapshotsValidator.vmNotDuringSnapshot(vm.getId()), messages) &&
-                ((runInUnknownStatus && vm.getStatus() == VMStatus.Unknown) || validate(validateVmStatusUsingMatrix(vm), messages)) &&
+                (runInUnknownStatus && vm.getStatus() == VMStatus.Unknown || validate(validateVmStatusUsingMatrix(vm), messages)) &&
                 validate(validateStoragePoolUp(vm, storagePool, getVmImageDisks()), messages) &&
-                validate(validateIsoPath(vm, runVmParam.getDiskPath(), runVmParam.getFloppyPath(), activeIsoDomainId), messages)  &&
+                validate(validateIsoPath(vm, runVmParam.getDiskPath(), runVmParam.getFloppyPath(), activeIsoDomainId), messages) &&
                 validate(vmDuringInitialization(vm), messages) &&
                 validate(validateStatelessVm(vm, runVmParam.getRunAsStateless()), messages) &&
                 validate(validateFloppy(), messages) &&
-                validate(validateStorageDomains(vm, isInternalExecution, getVmImageDisks()), messages) &&
+                validate(validateStorageDomains(vm, isInternalExecution, getVmImageDisks(), true), messages) &&
+                validate(validateStorageDomains(vm, isInternalExecution, getVmMemoryDisks(), false), messages) &&
                 validate(validateImagesForRunVm(vm, getVmImageDisks()), messages) &&
                 validate(validateDisksPassDiscard(vm), messages) &&
                 validate(validateMemorySize(vm), messages) &&
+                validate(validateHostBlockDevicePath(vm), messages) &&
                 !schedulingManager.prepareCall(cluster)
                         .hostBlackList(vdsBlackList)
                         .hostWhiteList(vdsWhiteList)
@@ -326,12 +342,14 @@ public class RunVmValidator {
      *            The VM to run
      * @param isInternalExecution
      *            Command is internal?
+     * @param validateThresholds
+     *            Is the validation for storage domains thresholds needed
      * @param vmImages
      *            The VM's image disks
      * @return <code>true</code> if the VM can be run, <code>false</code> if not
      */
     private ValidationResult validateStorageDomains(VM vm, boolean isInternalExecution,
-            List<DiskImage> vmImages) {
+            List<DiskImage> vmImages, boolean validateThresholds) {
         if (vmImages.isEmpty()) {
             return ValidationResult.VALID;
         }
@@ -346,17 +364,20 @@ public class RunVmValidator {
             if (!result.isValid()) {
                 return result;
             }
-            // In order to check the storage domain thresholds we need a set of
-            // non-preallocated and non read-only images
-            Set<Guid> filteredStorageDomainIds =
-                    ImagesHandler.getAllStorageIdsForImageIds(filterReadOnlyAndPreallocatedDisks(vmImages));
-            MultipleStorageDomainsValidator filteredStorageDomainValidator =
-                    new MultipleStorageDomainsValidator(vm.getStoragePoolId(), filteredStorageDomainIds);
 
-            result = !vm.isAutoStartup() ? filteredStorageDomainValidator.allDomainsWithinThresholds()
-                    : ValidationResult.VALID;
-            if (!result.isValid()) {
-                return result;
+            if (validateThresholds) {
+                // In order to check the storage domain thresholds we need a set of
+                // non-preallocated and non read-only images
+                Set<Guid> filteredStorageDomainIds =
+                        ImagesHandler.getAllStorageIdsForImageIds(filterReadOnlyAndPreallocatedDisks(vmImages));
+                MultipleStorageDomainsValidator filteredStorageDomainValidator =
+                        new MultipleStorageDomainsValidator(vm.getStoragePoolId(), filteredStorageDomainIds);
+
+                result = !vm.isAutoStartup() ? filteredStorageDomainValidator.allDomainsWithinThresholds()
+                        : ValidationResult.VALID;
+                if (!result.isValid()) {
+                    return result;
+                }
             }
         }
 
@@ -367,12 +388,10 @@ public class RunVmValidator {
      * Check isValid only if VM is not HA VM
      */
     private ValidationResult validateImagesForRunVm(VM vm, List<DiskImage> vmDisks) {
-        if (vmDisks.isEmpty()) {
+        if (vmDisks.isEmpty() || vm.isAutoStartup() && isInternalExecution) {
             return ValidationResult.VALID;
         }
-
-        return !vm.isAutoStartup() ?
-                new DiskImagesValidator(vmDisks).diskImagesNotLocked() : ValidationResult.VALID;
+        return new DiskImagesValidator(vmDisks).diskImagesNotLocked();
     }
 
     protected ValidationResult validateDisksPassDiscard(VM vm) {
@@ -515,10 +534,9 @@ public class RunVmValidator {
     }
 
     private ValidationResult validateStoragePoolUp(VM vm, StoragePool storagePool, List<DiskImage> vmImages) {
-        if (vmImages.isEmpty() || vm.isAutoStartup()) {
+        if (vmImages.isEmpty() || vm.isAutoStartup() && isInternalExecution) {
             return ValidationResult.VALID;
         }
-
         return new StoragePoolValidator(storagePool).existsAndUp();
     }
 
@@ -560,6 +578,29 @@ public class RunVmValidator {
                 : new ValidationResult(
                         EngineMessage.ACTION_TYPE_FAILED_NOT_A_VM_NETWORK,
                         String.format("$networks %1$s", StringUtils.join(nonVmNetworkNames, ",")));
+    }
+
+    private ValidationResult validateHostBlockDevicePath(VM vm) {
+        String scsiHostdevProperty = getVmPropertiesUtils()
+                .getVMProperties(vm.getCompatibilityVersion(), vm.getStaticData()).get("scsi_hostdev");
+        if (scsiHostdevProperty == null || scsiHostdevProperty.equals("scsi_generic")) {
+            return ValidationResult.VALID;
+        }
+        List<Guid> pinnedHostIds = vm.getDedicatedVmForVdsList();
+        if (pinnedHostIds.isEmpty()) {
+            return ValidationResult.VALID;
+        }
+        // single dedicated host allowed
+        Guid hostId = pinnedHostIds.get(0);
+        boolean missingPath = hostDeviceDao.getVmExtendedHostDevicesByVmId(vm.getId()).stream()
+                .filter(h -> h.getHostId().equals(hostId))
+                .filter(HostDevice::isScsi)
+                .map(HostDevice::getBlockPath)
+                .anyMatch(Objects::isNull);
+        if (missingPath) {
+            return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_MISSING_HOST_BLOCK_DEVICE_PATH);
+        }
+        return ValidationResult.VALID;
     }
 
     ///////////////////////
@@ -631,6 +672,23 @@ public class RunVmValidator {
         return cachedVmImageDisks;
     }
 
+    private List<DiskImage> getVmMemoryDisks() {
+        if (cachedVmMemoryDisks == null) {
+            cachedVmMemoryDisks = new ArrayList<>();
+            Snapshot activeSnapshot = snapshotDao.get(vm.getId(), Snapshot.SnapshotType.ACTIVE);
+            DiskImage memoryDump = (DiskImage) diskDao.get(activeSnapshot.getMemoryDiskId());
+            DiskImage metadata = (DiskImage) diskDao.get(activeSnapshot.getMetadataDiskId());
+            if (memoryDump != null) {
+                cachedVmMemoryDisks.add(memoryDump);
+            }
+            if (metadata != null) {
+                cachedVmMemoryDisks.add(metadata);
+            }
+        }
+
+        return cachedVmMemoryDisks;
+    }
+
     private Set<String> getInterfaceNetworkNames() {
         if (cachedInterfaceNetworkNames == null) {
             cachedInterfaceNetworkNames =
@@ -642,7 +700,7 @@ public class RunVmValidator {
 
     private List<Network> getClusterNetworks() {
         if (cachedClusterNetworks == null) {
-            cachedClusterNetworks =  networkDao.getAllForCluster(vm.getClusterId());
+            cachedClusterNetworks = networkDao.getAllForCluster(vm.getClusterId());
         }
 
         return cachedClusterNetworks;

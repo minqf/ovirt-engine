@@ -126,7 +126,7 @@ public class AddVmFromSnapshotCommand<T extends AddVmFromSnapshotParameters> ext
     }
 
     @Override
-    protected Collection<DiskImage> getAdjustedDiskImagesFromConfiguration() {
+    protected Collection<DiskImage> getSourceDisks() {
         if (diskImagesFromConfiguration == null) {
             diskImagesFromConfiguration =
                     DisksFilter.filterImageDisks(vmFromConfiguration.getDiskMap().values(),
@@ -141,7 +141,7 @@ public class AddVmFromSnapshotCommand<T extends AddVmFromSnapshotParameters> ext
     private void adjustDisksImageConfiguration(Collection<DiskImage> diskImages) {
         for (DiskImage diskImage : diskImages) {
             // Adjust disk image configuration if needed.
-            if ( diskImage.getVolumeType().equals(VolumeType.Sparse) && diskImage.getVolumeFormat().equals(VolumeFormat.RAW) &&
+            if (diskImage.getVolumeType().equals(VolumeType.Sparse) && diskImage.getVolumeFormat().equals(VolumeFormat.RAW) &&
                     getDestintationDomainTypeFromDisk(diskImage).isBlockDomain()) {
                 diskImage.setVolumeFormat(VolumeFormat.COW);
             }
@@ -202,7 +202,7 @@ public class AddVmFromSnapshotCommand<T extends AddVmFromSnapshotParameters> ext
     protected boolean checkCanDisableVirtIoScsi() {
         VmValidator vmValidator = createVmValidator(getVmFromConfiguration());
         if (Boolean.FALSE.equals(getParameters().isVirtioScsiEnabled()) &&
-                !validate(vmValidator.canDisableVirtioScsi(getAdjustedDiskImagesFromConfiguration()))) {
+                !validate(vmValidator.canDisableVirtioScsi(getSourceDisks()))) {
             return false;
         } else {
             return true;

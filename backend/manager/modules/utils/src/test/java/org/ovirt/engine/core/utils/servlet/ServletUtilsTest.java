@@ -69,7 +69,7 @@ public class ServletUtilsTest {
         assertTrue(ServletUtils.canReadFile(file), "We should be able to read this file.");
         ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
         ServletUtils.writeFileToStream(out, file);
-        assertEquals((int)hostSize, out.size(), "The bytes in the buffer have to match the length of the file");
+        assertEquals((int) hostSize, out.size(), "The bytes in the buffer have to match the length of the file");
     }
 
     /**
@@ -83,7 +83,7 @@ public class ServletUtilsTest {
         assertEquals(0L, zeroSize, "The file size should be 0");
         ByteArrayOutputStream out = new ByteArrayOutputStream(4096);
         ServletUtils.writeFileToStream(out, file);
-        assertEquals((int)zeroSize, out.size(), "The bytes in the buffer have to match the length of the file");
+        assertEquals((int) zeroSize, out.size(), "The bytes in the buffer have to match the length of the file");
     }
 
     /**
@@ -104,7 +104,7 @@ public class ServletUtilsTest {
     public void testIsSane() {
         assertTrue(ServletUtils.isSane("/etc"), "/etc should be sane");
         StringBuilder builder = new StringBuilder();
-        for(int i = 0; i < 100; i++) {
+        for (int i = 0; i < 100; i++) {
             builder.append("/abcdefghijkl");
         }
         assertFalse(ServletUtils.isSane(builder.toString()), "longPath is not sane");
@@ -149,13 +149,13 @@ public class ServletUtilsTest {
      */
     @Test
     public void testSendFile_MissingFile() throws IOException {
-       HttpServletRequest mockRequest = mock(HttpServletRequest.class);
-       HttpServletResponse mockResponse = mock(HttpServletResponse.class);
-       ServletOutputStream responseOut = mock(ServletOutputStream.class);
-       when(mockResponse.getOutputStream()).thenReturn(responseOut);
-       File file = new File("/etc/doesntexist");
-       ServletUtils.sendFile(mockRequest, mockResponse, file, null);
-       verify(mockResponse).sendError(HttpServletResponse.SC_NOT_FOUND);
+        HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+        HttpServletResponse mockResponse = mock(HttpServletResponse.class);
+        ServletOutputStream responseOut = mock(ServletOutputStream.class);
+        when(mockResponse.getOutputStream()).thenReturn(responseOut);
+        File file = new File("/etc/doesntexist");
+        ServletUtils.sendFile(mockRequest, mockResponse, file, null);
+        verify(mockResponse).sendError(HttpServletResponse.SC_NOT_FOUND);
     }
 
     /**
@@ -163,18 +163,18 @@ public class ServletUtilsTest {
      */
     @Test
     public void testSendFile_PNG() throws IOException {
-       HttpServletRequest mockRequest = mock(HttpServletRequest.class);
-       HttpServletResponse mockResponse = mock(HttpServletResponse.class);
-       ServletOutputStream responseOut = mock(ServletOutputStream.class);
-       when(mockResponse.getOutputStream()).thenReturn(responseOut);
-       File file = createTempPng();
-       ServletUtils.sendFile(mockRequest, mockResponse, file, "application/xml");
-       //Check that the mime type was set to the one passed in, instead of the one associated with the file
-       verify(mockResponse).setContentType("application/xml");
-       //Check the file length is set right.
-       verify(mockResponse).setContentLength((int) file.length());
-       //Make sure the stream is written to.
-       verify(responseOut).write(any(), eq(0), anyInt());
+        HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+        HttpServletResponse mockResponse = mock(HttpServletResponse.class);
+        ServletOutputStream responseOut = mock(ServletOutputStream.class);
+        when(mockResponse.getOutputStream()).thenReturn(responseOut);
+        File file = createTempPng();
+        ServletUtils.sendFile(mockRequest, mockResponse, file, "application/xml");
+        //Check that the mime type was set to the one passed in, instead of the one associated with the file
+        verify(mockResponse).setContentType("application/xml");
+        //Check the file length is set right.
+        verify(mockResponse).setContentLength((int) file.length());
+        //Make sure the stream is written to.
+        verify(responseOut).write(any(), eq(0), anyInt());
     }
 
     /**
@@ -182,18 +182,18 @@ public class ServletUtilsTest {
      */
     @Test
     public void testSendFile_PNGNoMime() throws IOException {
-       HttpServletRequest mockRequest = mock(HttpServletRequest.class);
-       HttpServletResponse mockResponse = mock(HttpServletResponse.class);
-       ServletOutputStream responseOut = mock(ServletOutputStream.class);
-       when(mockResponse.getOutputStream()).thenReturn(responseOut);
-       File file = createTempPng();
-       ServletUtils.sendFile(mockRequest, mockResponse, file, null);
-       //Check that the mime type was set to the one passed in, instead of the one associated with the file
-       verify(mockResponse).setContentType("image/png");
-       //Check the file length is set right.
-       verify(mockResponse).setContentLength((int) file.length());
-       //Make sure the stream is written to.
-       verify(responseOut).write(any(), eq(0), anyInt());
+        HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+        HttpServletResponse mockResponse = mock(HttpServletResponse.class);
+        ServletOutputStream responseOut = mock(ServletOutputStream.class);
+        when(mockResponse.getOutputStream()).thenReturn(responseOut);
+        File file = createTempPng();
+        ServletUtils.sendFile(mockRequest, mockResponse, file, null);
+        //Check that the mime type was set to the one passed in, instead of the one associated with the file
+        verify(mockResponse).setContentType("image/png");
+        //Check the file length is set right.
+        verify(mockResponse).setContentLength((int) file.length());
+        //Make sure the stream is written to.
+        verify(responseOut).write(any(), eq(0), anyInt());
     }
 
     /**
@@ -201,20 +201,20 @@ public class ServletUtilsTest {
      */
     @Test
     public void testSendFile_PNGNoMime_Cache() throws IOException {
-       HttpServletRequest mockRequest = mock(HttpServletRequest.class);
-       HttpServletResponse mockResponse = mock(HttpServletResponse.class);
-       ServletOutputStream responseOut = mock(ServletOutputStream.class);
-       when(mockResponse.getOutputStream()).thenReturn(responseOut);
-       File file = createTempPng();
-       ServletUtils.sendFile(mockRequest, mockResponse, file, null, true);
-       //Check that we have eTag
-       verify(mockResponse).setHeader("ETag", ServletUtils.getETag(file));
-       //Check that the mime type was set to the one passed in, instead of the one associated with the file
-       verify(mockResponse).setContentType("image/png");
-       //Check the file length is set right.
-       verify(mockResponse).setContentLength((int) file.length());
-       //Make sure the stream is written to.
-       verify(responseOut).write(any(), eq(0), anyInt());
+        HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+        HttpServletResponse mockResponse = mock(HttpServletResponse.class);
+        ServletOutputStream responseOut = mock(ServletOutputStream.class);
+        when(mockResponse.getOutputStream()).thenReturn(responseOut);
+        File file = createTempPng();
+        ServletUtils.sendFile(mockRequest, mockResponse, file, null, true);
+        //Check that we have eTag
+        verify(mockResponse).setHeader("ETag", ServletUtils.getETag(file));
+        //Check that the mime type was set to the one passed in, instead of the one associated with the file
+        verify(mockResponse).setContentType("image/png");
+        //Check the file length is set right.
+        verify(mockResponse).setContentLength((int) file.length());
+        //Make sure the stream is written to.
+        verify(responseOut).write(any(), eq(0), anyInt());
     }
 
     /**
@@ -222,20 +222,20 @@ public class ServletUtilsTest {
      */
     @Test
     public void testSendFile_PNGNoMime_NoCache() throws IOException {
-       HttpServletRequest mockRequest = mock(HttpServletRequest.class);
-       HttpServletResponse mockResponse = mock(HttpServletResponse.class);
-       ServletOutputStream responseOut = mock(ServletOutputStream.class);
-       when(mockResponse.getOutputStream()).thenReturn(responseOut);
-       File file = createTempPng();
-       ServletUtils.sendFile(mockRequest, mockResponse, file, null, false);
-       //Check that we have eTag
-       verify(mockResponse, never()).setHeader(eq("ETag"), any());
-       //Check that the mime type was set to the one passed in, instead of the one associated with the file
-       verify(mockResponse).setContentType("image/png");
-       //Check the file length is set right.
-       verify(mockResponse).setContentLength((int) file.length());
-       //Make sure the stream is written to.
-       verify(responseOut).write(any(), eq(0), anyInt());
+        HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+        HttpServletResponse mockResponse = mock(HttpServletResponse.class);
+        ServletOutputStream responseOut = mock(ServletOutputStream.class);
+        when(mockResponse.getOutputStream()).thenReturn(responseOut);
+        File file = createTempPng();
+        ServletUtils.sendFile(mockRequest, mockResponse, file, null, false);
+        //Check that we have eTag
+        verify(mockResponse, never()).setHeader(eq("ETag"), any());
+        //Check that the mime type was set to the one passed in, instead of the one associated with the file
+        verify(mockResponse).setContentType("image/png");
+        //Check the file length is set right.
+        verify(mockResponse).setContentLength((int) file.length());
+        //Make sure the stream is written to.
+        verify(responseOut).write(any(), eq(0), anyInt());
     }
 
     private File createTempPng() throws IOException {
@@ -262,14 +262,14 @@ public class ServletUtilsTest {
      */
     @Test
     public void testSendFile_ETag_None() throws IOException {
-       HttpServletRequest mockRequest = mock(HttpServletRequest.class);
-       HttpServletResponse mockResponse = mock(HttpServletResponse.class);
-       ServletOutputStream responseOut = mock(ServletOutputStream.class);
-       when(mockResponse.getOutputStream()).thenReturn(responseOut);
-       File file = createTempPng();
-       ServletUtils.sendFile(mockRequest, mockResponse, file, null);
-       verify(mockResponse).setHeader("ETag", ServletUtils.getETag(file));
-       verify(responseOut).write(any(), eq(0), anyInt());
+        HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+        HttpServletResponse mockResponse = mock(HttpServletResponse.class);
+        ServletOutputStream responseOut = mock(ServletOutputStream.class);
+        when(mockResponse.getOutputStream()).thenReturn(responseOut);
+        File file = createTempPng();
+        ServletUtils.sendFile(mockRequest, mockResponse, file, null);
+        verify(mockResponse).setHeader("ETag", ServletUtils.getETag(file));
+        verify(responseOut).write(any(), eq(0), anyInt());
     }
 
     /**
@@ -277,15 +277,15 @@ public class ServletUtilsTest {
      */
     @Test
     public void testSendFile_ETag_Same() throws IOException {
-       HttpServletRequest mockRequest = mock(HttpServletRequest.class);
-       HttpServletResponse mockResponse = mock(HttpServletResponse.class);
-       ServletOutputStream responseOut = mock(ServletOutputStream.class);
-       File file = createTempPng();
-       when(mockResponse.getOutputStream()).thenReturn(responseOut);
-       when(mockRequest.getHeader("If-None-Match")).thenReturn(ServletUtils.getETag(file));
-       ServletUtils.sendFile(mockRequest, mockResponse, file, null);
-       verify(mockResponse).setHeader("ETag", ServletUtils.getETag(file));
-       verify(mockResponse).setStatus(HttpServletResponse.SC_NOT_MODIFIED);
+        HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+        HttpServletResponse mockResponse = mock(HttpServletResponse.class);
+        ServletOutputStream responseOut = mock(ServletOutputStream.class);
+        File file = createTempPng();
+        when(mockResponse.getOutputStream()).thenReturn(responseOut);
+        when(mockRequest.getHeader("If-None-Match")).thenReturn(ServletUtils.getETag(file));
+        ServletUtils.sendFile(mockRequest, mockResponse, file, null);
+        verify(mockResponse).setHeader("ETag", ServletUtils.getETag(file));
+        verify(mockResponse).setStatus(HttpServletResponse.SC_NOT_MODIFIED);
     }
 
     /**
@@ -293,15 +293,15 @@ public class ServletUtilsTest {
      */
     @Test
     public void testSendFile_ETag_All() throws IOException {
-       HttpServletRequest mockRequest = mock(HttpServletRequest.class);
-       HttpServletResponse mockResponse = mock(HttpServletResponse.class);
-       ServletOutputStream responseOut = mock(ServletOutputStream.class);
-       File file = createTempPng();
-       when(mockResponse.getOutputStream()).thenReturn(responseOut);
-       when(mockRequest.getHeader("If-None-Match")).thenReturn("*");
-       ServletUtils.sendFile(mockRequest, mockResponse, file, null);
-       verify(mockResponse).setHeader("ETag", ServletUtils.getETag(file));
-       verify(mockResponse).setStatus(HttpServletResponse.SC_PRECONDITION_FAILED);
+        HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+        HttpServletResponse mockResponse = mock(HttpServletResponse.class);
+        ServletOutputStream responseOut = mock(ServletOutputStream.class);
+        File file = createTempPng();
+        when(mockResponse.getOutputStream()).thenReturn(responseOut);
+        when(mockRequest.getHeader("If-None-Match")).thenReturn("*");
+        ServletUtils.sendFile(mockRequest, mockResponse, file, null);
+        verify(mockResponse).setHeader("ETag", ServletUtils.getETag(file));
+        verify(mockResponse).setStatus(HttpServletResponse.SC_PRECONDITION_FAILED);
     }
 
     /**
@@ -309,15 +309,15 @@ public class ServletUtilsTest {
      */
     @Test
     public void testSendFile_ETag_Different() throws IOException {
-       HttpServletRequest mockRequest = mock(HttpServletRequest.class);
-       HttpServletResponse mockResponse = mock(HttpServletResponse.class);
-       ServletOutputStream responseOut = mock(ServletOutputStream.class);
-       File file = createTempPng();
-       when(mockResponse.getOutputStream()).thenReturn(responseOut);
-       when(mockRequest.getHeader("If-None-Match")).thenReturn("xxxx");
-       ServletUtils.sendFile(mockRequest, mockResponse, file, null);
-       verify(mockResponse).setHeader("ETag", ServletUtils.getETag(file));
-       verify(responseOut).write(any(), eq(0), anyInt());
+        HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+        HttpServletResponse mockResponse = mock(HttpServletResponse.class);
+        ServletOutputStream responseOut = mock(ServletOutputStream.class);
+        File file = createTempPng();
+        when(mockResponse.getOutputStream()).thenReturn(responseOut);
+        when(mockRequest.getHeader("If-None-Match")).thenReturn("xxxx");
+        ServletUtils.sendFile(mockRequest, mockResponse, file, null);
+        verify(mockResponse).setHeader("ETag", ServletUtils.getETag(file));
+        verify(responseOut).write(any(), eq(0), anyInt());
     }
 
     @Test

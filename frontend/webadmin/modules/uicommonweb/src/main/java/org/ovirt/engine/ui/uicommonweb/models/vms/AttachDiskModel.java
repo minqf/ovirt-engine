@@ -38,7 +38,6 @@ public class AttachDiskModel extends NewDiskModel {
         attachableDisksMap = new HashMap<>();
         attachableDisksMap.put(DiskStorageType.IMAGE, new ListModel<EntityModel<DiskModel>>());
         attachableDisksMap.put(DiskStorageType.LUN, new ListModel<EntityModel<DiskModel>>());
-        attachableDisksMap.put(DiskStorageType.CINDER, new ListModel<EntityModel<DiskModel>>());
         attachableDisksMap.put(DiskStorageType.MANAGED_BLOCK_STORAGE, new ListModel<EntityModel<DiskModel>>());
         setWarningLabel(new EntityModel<String>());
         getWarningLabel().setIsAvailable(false);
@@ -117,20 +116,16 @@ public class AttachDiskModel extends NewDiskModel {
     public void loadAttachableDisks() {
         doLoadAttachableDisks(new GetDisksCallback(DiskStorageType.IMAGE),
                 new GetDisksCallback(DiskStorageType.LUN),
-                new GetDisksCallback(DiskStorageType.CINDER),
                 new GetDisksCallback(DiskStorageType.MANAGED_BLOCK_STORAGE));
     }
 
     protected void doLoadAttachableDisks(GetDisksCallback imageCallback, GetDisksCallback lunCallback,
-                                         GetDisksCallback cinderCallback, GetDisksCallback managedBlockCallback) {
+            GetDisksCallback managedBlockCallback) {
         AsyncDataProvider.getInstance().getAllAttachableDisks(
                 new AsyncQuery<>(imageCallback), getVm().getStoragePoolId(), getVm().getId());
 
         AsyncDataProvider.getInstance().getAllAttachableDisks(
                 new AsyncQuery<>(lunCallback), null, getVm().getId());
-
-        AsyncDataProvider.getInstance().getAllAttachableDisks(
-                new AsyncQuery<>(cinderCallback), getVm().getStoragePoolId(), getVm().getId());
 
         AsyncDataProvider.getInstance().getAllAttachableDisks(
                 new AsyncQuery<>(managedBlockCallback), getVm().getStoragePoolId(), getVm().getId());
@@ -151,35 +146,35 @@ public class AttachDiskModel extends NewDiskModel {
             final List<DiskModel> diskModels = DiskModel.disksToDiskModelList(disks);
 
             AsyncDataProvider.getInstance().getDiskInterfaceList(getVm().getVmOsId(),
-                        getVm().getClusterCompatibilityVersion(), getVm().getEffectiveBiosType().getChipsetType(),
+                        getVm().getClusterCompatibilityVersion(), getVm().getBiosType().getChipsetType(),
                         new AsyncQuery<>(
-                    diskInterfaces -> AsyncDataProvider.getInstance().isVirtioScsiEnabledForVm(new AsyncQuery<>(
-                            virtioScsiEnabledReturnValue -> {
-                                boolean virtioScsiEnabled = Boolean.TRUE.equals(virtioScsiEnabledReturnValue);
-                                if (!virtioScsiEnabled) {
-                                    diskInterfaces.remove(DiskInterface.VirtIO_SCSI);
-                                }
-                                for (DiskModel diskModel : diskModels) {
-                                    diskModel.getDiskInterface().setItems(diskInterfaces);
-                                    diskModel.getDiskInterface().setSelectedItem(virtioScsiEnabled ? DiskInterface.VirtIO_SCSI : DiskInterface.VirtIO);
-                                    if (getIsBootable().getIsChangable()) { // no point in adding a listener if the value cam't be changed
-                                        diskModel.getIsBootable().getEntityChangedEvent().addListener((ev, sender, args) -> {
-                                            boolean isBootableMarked = (Boolean) ((EntityModel) sender).getEntity();
-                                            getIsBootable().setIsChangeable(!isBootableMarked);
-                                        });
-                                    } else {
-                                        diskModel.getIsBootable().setIsChangeable(false);
-                                        diskModel.getIsBootable().setChangeProhibitionReason(constants.onlyOneBootableDisk());
+                            diskInterfaces -> AsyncDataProvider.getInstance().isVirtioScsiEnabledForVm(new AsyncQuery<>(
+                                virtioScsiEnabledReturnValue -> {
+                                    boolean virtioScsiEnabled = Boolean.TRUE.equals(virtioScsiEnabledReturnValue);
+                                    if (!virtioScsiEnabled) {
+                                        diskInterfaces.remove(DiskInterface.VirtIO_SCSI);
                                     }
-                                }
-                                List<EntityModel<DiskModel>> entities =
+                                    for (DiskModel diskModel : diskModels) {
+                                        diskModel.getDiskInterface().setItems(diskInterfaces);
+                                        diskModel.getDiskInterface().setSelectedItem(virtioScsiEnabled ? DiskInterface.VirtIO_SCSI : DiskInterface.VirtIO);
+                                        if (getIsBootable().getIsChangable()) { // no point in adding a listener if the value cam't be changed
+                                            diskModel.getIsBootable().getEntityChangedEvent().addListener((ev, sender, args) -> {
+                                                boolean isBootableMarked = (Boolean) ((EntityModel) sender).getEntity();
+                                                getIsBootable().setIsChangeable(!isBootableMarked);
+                                            });
+                                        } else {
+                                            diskModel.getIsBootable().setIsChangeable(false);
+                                            diskModel.getIsBootable().setChangeProhibitionReason(constants.onlyOneBootableDisk());
+                                        }
+                                    }
+                                    List<EntityModel<DiskModel>> entities =
                                         diskModels.stream()
                                             .filter(m -> m.getDisk().getDiskStorageType() == diskStorageType)
                                             .map(EntityModel::new)
                                             .collect(Collectors.toList());
 
-                                initAttachableDisks(entities);
-                            }), getVmId())));
+                                    initAttachableDisks(entities);
+                                }), getVmId())));
 
 
         }
@@ -319,8 +314,6 @@ public class AttachDiskModel extends NewDiskModel {
     private void addSelectedItemsChangedListener() {
         IEventListener<EventArgs> selectionChangedListener = (ev, sender, args) -> updateWarningLabel();
         attachableDisksMap.get(DiskStorageType.IMAGE).
-                getSelectedItemsChangedEvent().addListener(selectionChangedListener);
-        attachableDisksMap.get(DiskStorageType.CINDER).
                 getSelectedItemsChangedEvent().addListener(selectionChangedListener);
         attachableDisksMap.get(DiskStorageType.LUN).
                 getSelectedItemsChangedEvent().addListener(selectionChangedListener);

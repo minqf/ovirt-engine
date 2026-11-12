@@ -7,9 +7,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-import org.codehaus.jackson.annotate.JsonIgnore;
 import org.ovirt.engine.core.common.businessentities.comparators.BusinessEntityComparator;
 import org.ovirt.engine.core.compat.Guid;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 public class VmDynamic implements BusinessEntityWithStatus<Guid, VMStatus>, Comparable<VmDynamic> {
     private static final long serialVersionUID = 7789482445091432555L;
@@ -97,6 +98,16 @@ public class VmDynamic implements BusinessEntityWithStatus<Guid, VMStatus>, Comp
     private Map<String, String> leaseInfo;
     @UnchangeableByVdsm
     private String runtimeName;
+    @UnchangeableByVdsm
+    private String currentCpuPinning;
+    @UnchangeableByVdsm
+    private int currentSockets;
+    @UnchangeableByVdsm
+    private int currentCoresPerSocket;
+    @UnchangeableByVdsm
+    private int currentThreadsPerCore;
+    @UnchangeableByVdsm
+    private String currentNumaPinning;
 
     public static final String APPLICATIONS_LIST_FIELD_NAME = "appList";
 
@@ -150,7 +161,12 @@ public class VmDynamic implements BusinessEntityWithStatus<Guid, VMStatus>, Comp
                 guestOsVersion,
                 guestOsType,
                 guestContainers,
-                leaseInfo
+                leaseInfo,
+                currentCpuPinning,
+                currentSockets,
+                currentCoresPerSocket,
+                currentThreadsPerCore,
+                currentNumaPinning
         );
     }
 
@@ -210,7 +226,12 @@ public class VmDynamic implements BusinessEntityWithStatus<Guid, VMStatus>, Comp
                 && Objects.equals(guestOsArch, other.guestOsArch)
                 && Objects.equals(guestOsType, other.guestOsType)
                 && Objects.equals(guestContainers, other.guestContainers)
-                && Objects.equals(leaseInfo, other.leaseInfo);
+                && Objects.equals(leaseInfo, other.leaseInfo)
+                && Objects.equals(currentCpuPinning, other.currentCpuPinning)
+                && Objects.equals(currentSockets, other.currentSockets)
+                && Objects.equals(currentCoresPerSocket, other.currentCoresPerSocket)
+                && Objects.equals(currentThreadsPerCore, other.currentThreadsPerCore)
+                && Objects.equals(currentNumaPinning, other.currentNumaPinning);
     }
 
     public Date getBootTime() {
@@ -327,6 +348,11 @@ public class VmDynamic implements BusinessEntityWithStatus<Guid, VMStatus>, Comp
         guestContainers = template.getGuestContainers();
         volatileRun = template.isVolatileRun();
         leaseInfo = template.leaseInfo;
+        currentCpuPinning = template.getCurrentCpuPinning();
+        currentSockets = template.getCurrentSockets();
+        currentCoresPerSocket = template.getCurrentCoresPerSocket();
+        currentThreadsPerCore = template.getCurrentThreadsPerCore();
+        currentNumaPinning = template.getCurrentNumaPinning();
     }
 
     public String getAppList() {
@@ -720,6 +746,46 @@ public class VmDynamic implements BusinessEntityWithStatus<Guid, VMStatus>, Comp
 
     public void setRuntimeName(String runtimeName) {
         this.runtimeName = runtimeName;
+    }
+
+    public String getCurrentCpuPinning() {
+        return currentCpuPinning;
+    }
+
+    public void setCurrentCpuPinning(String cpuPinning) {
+        this.currentCpuPinning = cpuPinning;
+    }
+
+    public int getCurrentSockets() {
+        return currentSockets;
+    }
+
+    public void setCurrentSockets(int sockets) {
+        this.currentSockets = sockets;
+    }
+
+    public int getCurrentCoresPerSocket() {
+        return currentCoresPerSocket;
+    }
+
+    public void setCurrentCoresPerSocket(int cores) {
+        currentCoresPerSocket = cores;
+    }
+
+    public int getCurrentThreadsPerCore() {
+        return currentThreadsPerCore;
+    }
+
+    public void setCurrentThreadsPerCore(int threads) {
+        this.currentThreadsPerCore = threads;
+    }
+
+    public String getCurrentNumaPinning() {
+        return currentNumaPinning;
+    }
+
+    public void setCurrentNumaPinning(String currentNumaPinning) {
+        this.currentNumaPinning = currentNumaPinning;
     }
 
     /**

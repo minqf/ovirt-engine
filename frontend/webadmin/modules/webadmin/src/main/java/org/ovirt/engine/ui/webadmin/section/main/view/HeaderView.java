@@ -67,7 +67,7 @@ public class HeaderView extends AbstractView implements HeaderPresenterWidget.Vi
     AnchorListItem tasks;
     private Span tasksBadge;
 
-    @UiField (provided=true)
+    @UiField (provided = true)
     @WithElementId
     EventsListPopover events;
     private NotificationListWidget eventsWidget;
@@ -106,7 +106,7 @@ public class HeaderView extends AbstractView implements HeaderPresenterWidget.Vi
     @Inject
     public HeaderView(ApplicationDynamicMessages dynamicMessages) {
         logoutLink = new AnchorListItem(constants.logoutLinkLabel());
-        optionsLink = new AnchorListItem(constants.optionsLinkLabel());
+        optionsLink = new AnchorListItem(constants.accountSettings());
         aboutLink = new AnchorListItem(constants.aboutLinkLabel());
         guideLink = new AnchorListItem(dynamicMessages.guideLinkLabel());
 
@@ -133,7 +133,7 @@ public class HeaderView extends AbstractView implements HeaderPresenterWidget.Vi
         // manage the Tasks badge explicity to allow fine control of the positioning
         tasksBadge = new Span();
         tasksBadge.setStyleName(Styles.BADGE);
-        Anchor tasksAnchor = (Anchor)tasks.getWidget(0);
+        Anchor tasksAnchor = (Anchor) tasks.getWidget(0);
         tasksAnchor.add(tasksBadge);
 
         // Put PF user icon on the drop down instead of the FA one.

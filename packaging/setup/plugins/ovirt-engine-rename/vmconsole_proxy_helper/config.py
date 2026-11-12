@@ -11,7 +11,10 @@
 
 
 import gettext
-import urlparse
+
+
+from urllib.parse import urlparse
+from urllib.parse import urlunparse
 
 from otopi import constants as otopicons
 from otopi import filetransaction
@@ -54,13 +57,13 @@ class Plugin(plugin.PluginBase):
         ],
     )
     def _misc(self):
-        with open(self._config, 'r') as f:
+        with open(self._config, 'r', encoding='utf-8') as f:
             content = []
             key = 'ENGINE_BASE_URL'
             for line in f:
                 line = line.rstrip('\n')
                 if line.startswith('%s=' % key):
-                    u = urlparse.urlparse(line[len('%s=' % key):])
+                    u = urlparse(line[len('%s=' % key):])
                     ulist = list(u)
                     ulist[1] = self.environment[osetupcons.RenameEnv.FQDN] + (
                         ':' + str(u.port) if u.port
@@ -68,7 +71,7 @@ class Plugin(plugin.PluginBase):
                     )
                     line = '{key}={url}'.format(
                         key=key,
-                        url=urlparse.urlunparse(ulist),
+                        url=urlunparse(ulist),
                     )
                 content.append(line)
 

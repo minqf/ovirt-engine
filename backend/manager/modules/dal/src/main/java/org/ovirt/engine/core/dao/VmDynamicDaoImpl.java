@@ -10,8 +10,7 @@ import java.util.Map;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
-import org.codehaus.jackson.map.ObjectMapper;
-import org.codehaus.jackson.type.TypeReference;
+import org.ovirt.engine.core.common.businessentities.ActionGroup;
 import org.ovirt.engine.core.common.businessentities.BootSequence;
 import org.ovirt.engine.core.common.businessentities.GraphicsInfo;
 import org.ovirt.engine.core.common.businessentities.GraphicsType;
@@ -31,6 +30,9 @@ import org.ovirt.engine.core.utils.SerializationFactory;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.SingleColumnRowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Named
 @Singleton
@@ -80,16 +82,13 @@ public class VmDynamicDaoImpl extends MassOperationsGenericDao<VmDynamic, Guid>
     }
 
     @Override
-    public boolean updateConsoleUserWithOptimisticLocking(VmDynamic vm) {
+    public void clearMigratingToVdsAndSetDynamicPinning(Guid id, String currentCpuPinning, String currentNumaPinning) {
         MapSqlParameterSource parameterSource = getCustomMapSqlParameterSource()
-                .addValue("vm_guid", vm.getId())
-                .addValue("console_user_id", vm.getConsoleUserId())
-                .addValue("guest_cur_user_name", vm.getGuestCurrentUserName())
-                .addValue("console_cur_user_name", vm.getConsoleCurrentUserName());
+                .addValue("vm_guid", id)
+                .addValue("current_cpu_pinning", currentCpuPinning)
+                .addValue("current_numa_pinning", currentNumaPinning);
 
-        Map<String, Object> results = getCallsHandler().executeModification("UpdateConsoleUserWithOptimisticLocking", parameterSource);
-
-        return (Boolean) results.get("updated");
+        getCallsHandler().executeModification("ClearMigratingToVdsAndSetDynamicPinning", parameterSource);
     }
 
     @Override
@@ -158,6 +157,13 @@ public class VmDynamicDaoImpl extends MassOperationsGenericDao<VmDynamic, Guid>
     }
 
     @Override
+    public List<VmDynamic> getAllRunningForUserAndActionGroup(Guid userID, ActionGroup actionGroup) {
+        return getCallsHandler().executeReadList("GetAllRunningVmsForUserAndActionGroup",
+                VmDynamicDaoImpl.getRowMapper(),
+                getCustomMapSqlParameterSource().addValue("user_id", userID).addValue("action_group_id", actionGroup.getId()));
+    }
+
+    @Override
     protected MapSqlParameterSource createIdParameterMapper(Guid id) {
         return getCustomMapSqlParameterSource().addValue("vm_guid", id);
     }
@@ -223,14 +229,19 @@ public class VmDynamicDaoImpl extends MassOperationsGenericDao<VmDynamic, Guid>
                 .addValue("guestos_kernel_version", vm.getGuestOsKernelVersion())
                 .addValue("guestos_type", vm.getGuestOsType().name())
                 .addValue("guestos_version", vm.getGuestOsVersion())
-                .addValue("guest_containers", toGuestContainersString(vm));
+                .addValue("guest_containers", toGuestContainersString(vm))
+                .addValue("current_cpu_pinning", vm.getCurrentCpuPinning())
+                .addValue("current_sockets", vm.getCurrentSockets())
+                .addValue("current_cores", vm.getCurrentCoresPerSocket())
+                .addValue("current_threads", vm.getCurrentThreadsPerCore())
+                .addValue("current_numa_pinning", vm.getCurrentNumaPinning());
     }
 
     private static ObjectMapper JSON_MAPPER = new ObjectMapper();
     private static String toGuestContainersString(VmDynamic vm) {
         try {
             return JSON_MAPPER.writeValueAsString(vm.getGuestContainers());
-        } catch(Exception e) {
+        } catch (Exception e) {
             return "[]";
         }
     }
@@ -238,8 +249,8 @@ public class VmDynamicDaoImpl extends MassOperationsGenericDao<VmDynamic, Guid>
     @SuppressWarnings("unchecked")
     private static List<GuestContainer> fromContainersString(String s) {
         try {
-            return (List<GuestContainer>) JSON_MAPPER.readValue(s, new TypeReference<List<GuestContainer>>() {});
-        } catch(Exception e) {
+            return (List<GuestContainer>) JSON_MAPPER.readValue(s, new TypeReference<List<GuestContainer>>() { });
+        } catch (Exception e) {
             return new ArrayList<>();
         }
     }
@@ -304,6 +315,11 @@ public class VmDynamicDaoImpl extends MassOperationsGenericDao<VmDynamic, Guid>
         entity.setGuestOsVersion(rs.getString("guestos_version"));
         entity.setGuestContainers(fromContainersString(rs.getString("guest_containers")));
         entity.setLeaseInfo(SerializationFactory.getDeserializer().deserialize(rs.getString("lease_info"), HashMap.class));
+        entity.setCurrentCpuPinning(rs.getString("current_cpu_pinning"));
+        entity.setCurrentSockets(rs.getInt("current_sockets"));
+        entity.setCurrentCoresPerSocket(rs.getInt("current_cores"));
+        entity.setCurrentThreadsPerCore(rs.getInt("current_threads"));
+        entity.setCurrentNumaPinning(rs.getString("current_numa_pinning"));
         return entity;
     };
 

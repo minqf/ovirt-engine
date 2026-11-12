@@ -87,7 +87,7 @@ public class HostedEngineImporter {
         StorageDomain sd = getHEStorageDomain(vm, storagePool, storageDomainId);
         // no point in trying this without the SD
         if (sd != null
-                && (sd.getStatus() == StorageDomainStatus.Active)
+                && sd.getStatus() == StorageDomainStatus.Active
                 && storagePool.getStatus() == StoragePoolStatus.Up) {
             log.info("Try to import the Hosted Engine VM '{}'", vm);
             if (vmStaticDAO.get(vm.getId()) == null || removedHEVM(vm)) {
@@ -164,8 +164,8 @@ public class HostedEngineImporter {
 
     private StorageDomain getHEStorageDomain(VM vm, StoragePool storagePool, Guid storageDomainId) {
         StorageDomain storageDomain = storageDomainDao.getForStoragePool(storageDomainId, storagePool.getId());
-        if(storageDomain != null){
-            return  storageDomain;
+        if (storageDomain != null) {
+            return storageDomain;
         }
         StorageDomainManagementParameter importParams = new StorageDomainManagementParameter();
         importParams.setStorageDomainId(storageDomainId);

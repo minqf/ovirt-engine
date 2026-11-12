@@ -1,0 +1,4 @@
+- name: Run ovn-certificates role
+  ansible.builtin.include_role:
+    name: ovirt-host-deploy-ovn-certificates
+    public: true

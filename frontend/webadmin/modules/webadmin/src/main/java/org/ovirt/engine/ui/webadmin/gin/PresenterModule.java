@@ -17,6 +17,7 @@ import org.ovirt.engine.core.common.businessentities.Snapshot;
 import org.ovirt.engine.core.common.businessentities.StorageDomain;
 import org.ovirt.engine.core.common.businessentities.StorageDomainDR;
 import org.ovirt.engine.core.common.businessentities.StoragePool;
+import org.ovirt.engine.core.common.businessentities.UserProfileProperty;
 import org.ovirt.engine.core.common.businessentities.UserSession;
 import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VM;
@@ -88,12 +89,14 @@ import org.ovirt.engine.ui.uicommonweb.models.hosts.HostInterfaceLineModel;
 import org.ovirt.engine.ui.uicommonweb.models.hosts.HostListModel;
 import org.ovirt.engine.ui.uicommonweb.models.networks.NetworkListModel;
 import org.ovirt.engine.ui.uicommonweb.models.pools.PoolListModel;
+import org.ovirt.engine.ui.uicommonweb.models.profiles.VnicProfileListModel;
 import org.ovirt.engine.ui.uicommonweb.models.providers.ProviderListModel;
 import org.ovirt.engine.ui.uicommonweb.models.quota.QuotaListModel;
 import org.ovirt.engine.ui.uicommonweb.models.storage.StorageListModel;
 import org.ovirt.engine.ui.uicommonweb.models.templates.TemplateListModel;
 import org.ovirt.engine.ui.uicommonweb.models.users.UserListModel;
 import org.ovirt.engine.ui.uicommonweb.models.vms.DiskModel;
+import org.ovirt.engine.ui.uicommonweb.models.vms.VmDeviceFeEntity;
 import org.ovirt.engine.ui.uicommonweb.models.vms.VmListModel;
 import org.ovirt.engine.ui.uicommonweb.models.volumes.VolumeListModel;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.AboutPopupPresenterWidget;
@@ -190,7 +193,6 @@ import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.host.NetworkAtt
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.host.SetupNetworksBondPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.host.VfsConfigPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.hostdev.AddVmHostDevicePopupPresenterWidget;
-import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.hostdev.VmRepinHostPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.instancetypes.InstanceTypesPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.label.AffinityLabelPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.macpool.SharedMacPoolPopupPresenterWidget;
@@ -257,6 +259,7 @@ import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.cluster.ClusterSu
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.cluster.SubTabClusterAffinityGroupPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.cluster.SubTabClusterAffinityLabelPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.cluster.SubTabClusterCpuProfilePresenter;
+import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.cluster.SubTabClusterEventPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.cluster.SubTabClusterGeneralPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.cluster.SubTabClusterGlusterHookPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.cluster.SubTabClusterHostPresenter;
@@ -342,7 +345,6 @@ import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.storage.SubTabSto
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.storage.SubTabStorageLeasePresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.storage.SubTabStoragePermissionPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.storage.SubTabStorageRegisterDiskImagePresenter;
-import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.storage.SubTabStorageRegisterDiskPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.storage.SubTabStorageRegisterTemplatePresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.storage.SubTabStorageRegisterVmPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.storage.SubTabStorageSnapshotPresenter;
@@ -364,6 +366,7 @@ import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.user.SubTabUserGe
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.user.SubTabUserGroupPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.user.SubTabUserPermissionPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.user.SubTabUserQuotaPresenter;
+import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.user.SubTabUserSettingsPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.user.UserSubTabPanelPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.virtualMachine.SubTabVirtualMachineAffinityGroupPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.virtualMachine.SubTabVirtualMachineAffinityLabelPresenter;
@@ -534,7 +537,6 @@ import org.ovirt.engine.ui.webadmin.section.main.view.popup.vm.VmNextRunConfigur
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.vm.VmPopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.vm.VmRemovePopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.vm.VmRemovePopupView;
-import org.ovirt.engine.ui.webadmin.section.main.view.popup.vm.VmRepinHostPopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.vm.VmRunOncePopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.vm.VmSnapshotCreatePopupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.popup.vm.VmSnapshotCustomPreviewPopupView;
@@ -545,6 +547,7 @@ import org.ovirt.engine.ui.webadmin.section.main.view.tab.cluster.ClusterSubTabP
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.cluster.SubTabClusterAffinityGroupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.cluster.SubTabClusterAffinityLabelView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.cluster.SubTabClusterCpuProfileView;
+import org.ovirt.engine.ui.webadmin.section.main.view.tab.cluster.SubTabClusterEventView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.cluster.SubTabClusterGeneralView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.cluster.SubTabClusterGlusterHookView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.cluster.SubTabClusterHostView;
@@ -630,7 +633,6 @@ import org.ovirt.engine.ui.webadmin.section.main.view.tab.storage.SubTabStorageI
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.storage.SubTabStorageLeaseView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.storage.SubTabStoragePermissionView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.storage.SubTabStorageRegisterDiskImageView;
-import org.ovirt.engine.ui.webadmin.section.main.view.tab.storage.SubTabStorageRegisterDiskView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.storage.SubTabStorageRegisterTemplateView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.storage.SubTabStorageRegisterVmView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.storage.SubTabStorageSnapshotView;
@@ -652,6 +654,7 @@ import org.ovirt.engine.ui.webadmin.section.main.view.tab.user.SubTabUserGeneral
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.user.SubTabUserGroupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.user.SubTabUserPermissionView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.user.SubTabUserQuotaView;
+import org.ovirt.engine.ui.webadmin.section.main.view.tab.user.SubTabUserSettingsView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.user.UserSubTabPanelView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.virtualMachine.SubTabVirtualMachineAffinityGroupView;
 import org.ovirt.engine.ui.webadmin.section.main.view.tab.virtualMachine.SubTabVirtualMachineAffinityLabelView;
@@ -843,17 +846,17 @@ public class PresenterModule extends BasePresenterModule {
                 RecoveryStoragePopupPresenterWidget.ViewDef.class,
                 RecoveryStorageConfirmationPopupView.class);
         bindSingletonPresenterWidget(
-                new TypeLiteral<SearchPanelPresenterWidget<StoragePool, DataCenterListModel>>(){},
-                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<DataCenterListModel>>(){},
-                new TypeLiteral<SearchPanelView<DataCenterListModel>>(){});
+                new TypeLiteral<SearchPanelPresenterWidget<StoragePool, DataCenterListModel>>() { },
+                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<DataCenterListModel>>() { },
+                new TypeLiteral<SearchPanelView<DataCenterListModel>>() { });
         bindPresenterWidget(
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<StoragePool, DataCenterListModel>>(){},
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<StoragePool>>(){},
-                new TypeLiteral<OvirtBreadCrumbsView<StoragePool, DataCenterListModel>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, StoragePool>>(){},
-            new TypeLiteral<ActionPanelView<Void, StoragePool>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Void, StoragePool>>(){},
-                new TypeLiteral<DetailActionPanelView<Void, StoragePool>>(){});
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<StoragePool, DataCenterListModel>>() { },
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<StoragePool>>() { },
+                new TypeLiteral<OvirtBreadCrumbsView<StoragePool, DataCenterListModel>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, StoragePool>>() { },
+            new TypeLiteral<ActionPanelView<Void, StoragePool>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Void, StoragePool>>() { },
+                new TypeLiteral<DetailActionPanelView<Void, StoragePool>>() { });
 
         // Storage
         bindPresenter(StorageSubTabPanelPresenter.class,
@@ -900,10 +903,6 @@ public class PresenterModule extends BasePresenterModule {
                 SubTabStorageDiskPresenter.ViewDef.class,
                 SubTabStorageDiskView.class,
                 SubTabStorageDiskPresenter.ProxyDef.class);
-        bindPresenter(SubTabStorageRegisterDiskPresenter.class,
-                SubTabStorageRegisterDiskPresenter.ViewDef.class,
-                SubTabStorageRegisterDiskView.class,
-                SubTabStorageRegisterDiskPresenter.ProxyDef.class);
         bindPresenter(SubTabStorageRegisterDiskImagePresenter.class,
                 SubTabStorageRegisterDiskImagePresenter.ViewDef.class,
                 SubTabStorageRegisterDiskImageView.class,
@@ -933,19 +932,19 @@ public class PresenterModule extends BasePresenterModule {
                 SubTabStorageDiskProfileView.class,
                 SubTabStorageDiskProfilePresenter.ProxyDef.class);
         bindSingletonPresenterWidget(
-                new TypeLiteral<SearchPanelPresenterWidget<StorageDomain, StorageListModel>>(){},
-                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<StorageListModel>>(){},
-                new TypeLiteral<SearchPanelView<StorageListModel>>(){});
+                new TypeLiteral<SearchPanelPresenterWidget<StorageDomain, StorageListModel>>() { },
+                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<StorageListModel>>() { },
+                new TypeLiteral<SearchPanelView<StorageListModel>>() { });
         bindPresenterWidget(
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<StorageDomain, StorageListModel>>(){},
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<StorageDomain>>(){},
-                new TypeLiteral<OvirtBreadCrumbsView<StorageDomain, StorageListModel>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, StorageDomain>>(){},
-                new TypeLiteral<ActionPanelView<Void, StorageDomain>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<StorageDomain, StorageDomain>>(){},
-            new TypeLiteral<ActionPanelView<StorageDomain, StorageDomain>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StorageDomain, StorageDomain>>(){},
-                new TypeLiteral<DetailActionPanelView<StorageDomain, StorageDomain>>(){});
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<StorageDomain, StorageListModel>>() { },
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<StorageDomain>>() { },
+                new TypeLiteral<OvirtBreadCrumbsView<StorageDomain, StorageListModel>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, StorageDomain>>() { },
+                new TypeLiteral<ActionPanelView<Void, StorageDomain>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<StorageDomain, StorageDomain>>() { },
+            new TypeLiteral<ActionPanelView<StorageDomain, StorageDomain>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StorageDomain, StorageDomain>>() { },
+                new TypeLiteral<DetailActionPanelView<StorageDomain, StorageDomain>>() { });
 
         // Cluster
         bindPresenter(ClusterSubTabPanelPresenter.class,
@@ -1001,18 +1000,22 @@ public class PresenterModule extends BasePresenterModule {
                 SubTabClusterAffinityLabelPresenter.ViewDef.class,
                 SubTabClusterAffinityLabelView.class,
                 SubTabClusterAffinityLabelPresenter.ProxyDef.class);
+        bindPresenter(SubTabClusterEventPresenter.class,
+                SubTabClusterEventPresenter.ViewDef.class,
+                SubTabClusterEventView.class,
+                SubTabClusterEventPresenter.ProxyDef.class);
         bindSingletonPresenterWidget(
-                new TypeLiteral<SearchPanelPresenterWidget<Cluster, ClusterListModel<Void>>>(){},
-                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<ClusterListModel<Void>>>(){},
-                new TypeLiteral<SearchPanelView<ClusterListModel<Void>>>(){});
+                new TypeLiteral<SearchPanelPresenterWidget<Cluster, ClusterListModel<Void>>>() { },
+                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<ClusterListModel<Void>>>() { },
+                new TypeLiteral<SearchPanelView<ClusterListModel<Void>>>() { });
         bindPresenterWidget(
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<Cluster, ClusterListModel<Void>>>(){},
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<Cluster>>(){},
-                new TypeLiteral<OvirtBreadCrumbsView<Cluster, ClusterListModel<Void>>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, Cluster>>(){},
-            new TypeLiteral<ActionPanelView<Void, Cluster>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Void, Cluster>>(){},
-                new TypeLiteral<DetailActionPanelView<Void, Cluster>>(){});
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<Cluster, ClusterListModel<Void>>>() { },
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<Cluster>>() { },
+                new TypeLiteral<OvirtBreadCrumbsView<Cluster, ClusterListModel<Void>>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, Cluster>>() { },
+            new TypeLiteral<ActionPanelView<Void, Cluster>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Void, Cluster>>() { },
+                new TypeLiteral<DetailActionPanelView<Void, Cluster>>() { });
 
         // Host
         bindPresenter(HostSubTabPanelPresenter.class,
@@ -1064,19 +1067,19 @@ public class PresenterModule extends BasePresenterModule {
                 SubTabHostGlusterStorageDevicesView.class,
                 SubTabHostGlusterStorageDevicesPresenter.ProxyDef.class);
         bindSingletonPresenterWidget(
-                new TypeLiteral<SearchPanelPresenterWidget<VDS, HostListModel<Void>>>(){},
-                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<HostListModel<Void>>>(){},
-                new TypeLiteral<SearchPanelView<HostListModel<Void>>>(){});
+                new TypeLiteral<SearchPanelPresenterWidget<VDS, HostListModel<Void>>>() { },
+                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<HostListModel<Void>>>() { },
+                new TypeLiteral<SearchPanelView<HostListModel<Void>>>() { });
         bindPresenterWidget(
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<VDS, HostListModel<Void>>>(){},
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<VDS>>(){},
-                new TypeLiteral<OvirtBreadCrumbsView<VDS, HostListModel<Void>>>(){});
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<VDS, HostListModel<Void>>>() { },
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<VDS>>() { },
+                new TypeLiteral<OvirtBreadCrumbsView<VDS, HostListModel<Void>>>() { });
         bindPresenter(SubTabHostAffinityLabelPresenter.class,
                 SubTabHostAffinityLabelPresenter.ViewDef.class,
                 SubTabHostAffinityLabelView.class,
                 SubTabHostAffinityLabelPresenter.ProxyDef.class);
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, VDS>>(){},
-            new TypeLiteral<ActionPanelView<Void, VDS>>(){});
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, VDS>>() { },
+            new TypeLiteral<ActionPanelView<Void, VDS>>() { });
 
         // VirtualMachine
         bindPresenter(VirtualMachineSubTabPanelPresenter.class,
@@ -1136,19 +1139,19 @@ public class PresenterModule extends BasePresenterModule {
                 SubTabVirtualMachineErrataView.class,
                 SubTabVirtualMachineErrataPresenter.ProxyDef.class);
         bindSingletonPresenterWidget(
-                new TypeLiteral<SearchPanelPresenterWidget<VM, VmListModel<Void>>>(){},
-                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<VmListModel<Void>>>(){},
-                new TypeLiteral<SearchPanelView<VmListModel<Void>>>(){});
+                new TypeLiteral<SearchPanelPresenterWidget<VM, VmListModel<Void>>>() { },
+                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<VmListModel<Void>>>() { },
+                new TypeLiteral<SearchPanelView<VmListModel<Void>>>() { });
         bindPresenterWidget(
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<VM, VmListModel<Void>>>(){},
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<VM>>(){},
-                new TypeLiteral<OvirtBreadCrumbsView<VM, VmListModel<Void>>>(){});
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<VM, VmListModel<Void>>>() { },
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<VM>>() { },
+                new TypeLiteral<OvirtBreadCrumbsView<VM, VmListModel<Void>>>() { });
         bindPresenter(SubTabVirtualMachineAffinityLabelPresenter.class,
                 SubTabVirtualMachineAffinityLabelPresenter.ViewDef.class,
                 SubTabVirtualMachineAffinityLabelView.class,
                 SubTabVirtualMachineAffinityLabelPresenter.ProxyDef.class);
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, VM>>(){},
-            new TypeLiteral<ActionPanelView<Void, VM>>(){});
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, VM>>() { },
+            new TypeLiteral<ActionPanelView<Void, VM>>() { });
 
         // Pool
         bindPresenter(PoolSubTabPanelPresenter.class,
@@ -1174,15 +1177,15 @@ public class PresenterModule extends BasePresenterModule {
                 PoolEditPopupPresenterWidget.ViewDef.class,
                 PoolEditPopupView.class);
         bindSingletonPresenterWidget(
-                new TypeLiteral<SearchPanelPresenterWidget<VmPool, PoolListModel>>(){},
-                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<PoolListModel>>(){},
-                new TypeLiteral<SearchPanelView<PoolListModel>>(){});
+                new TypeLiteral<SearchPanelPresenterWidget<VmPool, PoolListModel>>() { },
+                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<PoolListModel>>() { },
+                new TypeLiteral<SearchPanelView<PoolListModel>>() { });
         bindPresenterWidget(
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<VmPool, PoolListModel>>(){},
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<VmPool>>(){},
-                new TypeLiteral<OvirtBreadCrumbsView<VmPool, PoolListModel>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, VmPool>>(){},
-            new TypeLiteral<ActionPanelView<Void, VmPool>>(){});
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<VmPool, PoolListModel>>() { },
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<VmPool>>() { },
+                new TypeLiteral<OvirtBreadCrumbsView<VmPool, PoolListModel>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, VmPool>>() { },
+            new TypeLiteral<ActionPanelView<Void, VmPool>>() { });
 
         // Template
         bindPresenter(TemplateSubTabPanelPresenter.class,
@@ -1218,16 +1221,16 @@ public class PresenterModule extends BasePresenterModule {
                 SubTabTemplateEventView.class,
                 SubTabTemplateEventPresenter.ProxyDef.class);
         bindSingletonPresenterWidget(
-                new TypeLiteral<SearchPanelPresenterWidget<VmTemplate, TemplateListModel>>(){},
-                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<TemplateListModel>>(){},
-                new TypeLiteral<SearchPanelView<TemplateListModel>>(){});
+                new TypeLiteral<SearchPanelPresenterWidget<VmTemplate, TemplateListModel>>() { },
+                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<TemplateListModel>>() { },
+                new TypeLiteral<SearchPanelView<TemplateListModel>>() { });
         bindPresenterWidget(TemplateBreadCrumbsPresenterWidget.class,
                 TemplateBreadCrumbsPresenterWidget.TemplateBreadCrumbsViewDef.class,
                 TemplateBreadCrumbsView.class);
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, VmTemplate>>(){},
-            new TypeLiteral<ActionPanelView<Void, VmTemplate>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Void, VmTemplate>>(){},
-                new TypeLiteral<DetailActionPanelView<Void, VmTemplate>>(){});
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, VmTemplate>>() { },
+            new TypeLiteral<ActionPanelView<Void, VmTemplate>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Void, VmTemplate>>() { },
+                new TypeLiteral<DetailActionPanelView<Void, VmTemplate>>() { });
 
         // User
         bindPresenter(UserSubTabPanelPresenter.class,
@@ -1238,6 +1241,10 @@ public class PresenterModule extends BasePresenterModule {
                 SubTabUserGeneralPresenter.ViewDef.class,
                 SubTabUserGeneralView.class,
                 SubTabUserGeneralPresenter.ProxyDef.class);
+        bindPresenter(SubTabUserSettingsPresenter.class,
+                SubTabUserSettingsPresenter.ViewDef.class,
+                SubTabUserSettingsView.class,
+                SubTabUserSettingsPresenter.ProxyDef.class);
         bindPresenter(SubTabUserPermissionPresenter.class,
                 SubTabUserPermissionPresenter.ViewDef.class,
                 SubTabUserPermissionView.class,
@@ -1261,15 +1268,17 @@ public class PresenterModule extends BasePresenterModule {
         bindPresenterWidget(UserRolesPopupPresenterWidget.class, UserRolesPopupPresenterWidget.ViewDef.class,
                 UserRolesPopupView.class);
         bindSingletonPresenterWidget(
-                new TypeLiteral<SearchPanelPresenterWidget<DbUser, UserListModel>>(){},
-                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<UserListModel>>(){},
-                new TypeLiteral<SearchPanelView<UserListModel>>(){});
+                new TypeLiteral<SearchPanelPresenterWidget<DbUser, UserListModel>>() { },
+                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<UserListModel>>() { },
+                new TypeLiteral<SearchPanelView<UserListModel>>() { });
         bindPresenterWidget(
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<DbUser, UserListModel>>(){},
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<DbUser>>(){},
-                new TypeLiteral<OvirtBreadCrumbsView<DbUser, UserListModel>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, DbUser>>(){},
-            new TypeLiteral<ActionPanelView<Void, DbUser>>(){});
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<DbUser, UserListModel>>() { },
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<DbUser>>() { },
+                new TypeLiteral<OvirtBreadCrumbsView<DbUser, UserListModel>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, DbUser>>() { },
+            new TypeLiteral<ActionPanelView<Void, DbUser>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<DbUser, UserProfileProperty>>() { },
+                new TypeLiteral<DetailActionPanelView<DbUser, UserProfileProperty>>() { });
 
         // Quota
         bindPresenter(QuotaSubTabPanelPresenter.class,
@@ -1305,14 +1314,14 @@ public class PresenterModule extends BasePresenterModule {
                 SubTabQuotaEventView.class,
                 SubTabQuotaEventPresenter.ProxyDef.class);
         bindSingletonPresenterWidget(
-                new TypeLiteral<SearchPanelPresenterWidget<Quota, QuotaListModel>>(){},
-                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<QuotaListModel>>(){},
-                new TypeLiteral<SearchPanelView<QuotaListModel>>(){});
+                new TypeLiteral<SearchPanelPresenterWidget<Quota, QuotaListModel>>() { },
+                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<QuotaListModel>>() { },
+                new TypeLiteral<SearchPanelView<QuotaListModel>>() { });
         bindPresenterWidget(QuotaBreadCrumbsPresenterWidget.class,
                 QuotaBreadCrumbsPresenterWidget.QuotaBreadCrumbsViewDef.class,
                 QuotaBreadCrumbsView.class);
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, Quota>>(){},
-            new TypeLiteral<ActionPanelView<Void, Quota>>(){});
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, Quota>>() { },
+            new TypeLiteral<ActionPanelView<Void, Quota>>() { });
 
         // Disk
         bindPresenter(DiskSubTabPanelPresenter.class,
@@ -1340,15 +1349,15 @@ public class PresenterModule extends BasePresenterModule {
                 SubTabDiskPermissionView.class,
                 SubTabDiskPermissionPresenter.ProxyDef.class);
         bindSingletonPresenterWidget(
-                new TypeLiteral<SearchPanelPresenterWidget<Disk, DiskListModel>>(){},
-                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<DiskListModel>>(){},
-                new TypeLiteral<SearchPanelView<DiskListModel>>(){});
+                new TypeLiteral<SearchPanelPresenterWidget<Disk, DiskListModel>>() { },
+                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<DiskListModel>>() { },
+                new TypeLiteral<SearchPanelView<DiskListModel>>() { });
         bindPresenterWidget(DisksBreadCrumbsPresenterWidget.class,
                 DisksBreadCrumbsPresenterWidget.DiskBreadCrumbsViewDef.class,
                 DisksBreadCrumbsView.class);
 
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, Disk>>(){},
-            new TypeLiteral<ActionPanelView<Void, Disk>>(){});
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, Disk>>() { },
+            new TypeLiteral<ActionPanelView<Void, Disk>>() { });
 
         // Network
         bindPresenter(NetworkSubTabPanelPresenter.class,
@@ -1388,14 +1397,14 @@ public class PresenterModule extends BasePresenterModule {
                 SubTabNetworkPermissionView.class,
                 SubTabNetworkPermissionPresenter.ProxyDef.class);
         bindSingletonPresenterWidget(
-                new TypeLiteral<SearchPanelPresenterWidget<NetworkView, NetworkListModel>>(){},
-                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<NetworkListModel>>(){},
-                new TypeLiteral<SearchPanelView<NetworkListModel>>(){});
+                new TypeLiteral<SearchPanelPresenterWidget<NetworkView, NetworkListModel>>() { },
+                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<NetworkListModel>>() { },
+                new TypeLiteral<SearchPanelView<NetworkListModel>>() { });
         bindPresenterWidget(NetworkBreadCrumbsPresenterWidget.class,
                 NetworkBreadCrumbsPresenterWidget.NetworkBreadCrumbsViewDef.class,
                 NetworkBreadCrumbsView.class);
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<NetworkView, NetworkView>>(){},
-            new TypeLiteral<ActionPanelView<NetworkView, NetworkView>>(){});
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<NetworkView, NetworkView>>() { },
+            new TypeLiteral<ActionPanelView<NetworkView, NetworkView>>() { });
 
         // Provider
         bindPresenter(ProviderSubTabPanelPresenter.class,
@@ -1415,15 +1424,15 @@ public class PresenterModule extends BasePresenterModule {
                 SubTabProviderSecretView.class,
                 SubTabProviderSecretPresenter.ProxyDef.class);
         bindSingletonPresenterWidget(
-                new TypeLiteral<SearchPanelPresenterWidget<Provider, ProviderListModel>>(){},
-                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<ProviderListModel>>(){},
-                new TypeLiteral<SearchPanelView<ProviderListModel>>(){});
+                new TypeLiteral<SearchPanelPresenterWidget<Provider, ProviderListModel>>() { },
+                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<ProviderListModel>>() { },
+                new TypeLiteral<SearchPanelView<ProviderListModel>>() { });
         bindPresenterWidget(
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<Provider, ProviderListModel>>(){},
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<Provider>>(){},
-                new TypeLiteral<OvirtBreadCrumbsView<Provider, ProviderListModel>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, Provider>>(){},
-            new TypeLiteral<ActionPanelView<Void, Provider>>(){});
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<Provider, ProviderListModel>>() { },
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<Provider>>() { },
+                new TypeLiteral<OvirtBreadCrumbsView<Provider, ProviderListModel>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, Provider>>() { },
+            new TypeLiteral<ActionPanelView<Void, Provider>>() { });
 
         // Errata
         bindPresenter(ErrataSubTabPanelPresenter.class,
@@ -1435,9 +1444,9 @@ public class PresenterModule extends BasePresenterModule {
                 SubTabEngineErrataDetailsView.class,
                 SubTabEngineErrataDetailsPresenter.ProxyDef.class);
         bindPresenterWidget(
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<Erratum, EngineErrataListModel>>(){},
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<Erratum>>(){},
-                new TypeLiteral<OvirtBreadCrumbsView<Erratum, EngineErrataListModel>>(){});
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<Erratum, EngineErrataListModel>>() { },
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<Erratum>>() { },
+                new TypeLiteral<OvirtBreadCrumbsView<Erratum, EngineErrataListModel>>() { });
 
         // Profile
         bindPresenter(VnicProfileSubTabPanelPresenter.class,
@@ -1459,36 +1468,40 @@ public class PresenterModule extends BasePresenterModule {
         bindPresenterWidget(VnicProfileBreadCrumbsPresenterWidget.class,
                 VnicProfileBreadCrumbsPresenterWidget.VnicProfileBreadCrumbsViewDef.class,
                 VnicProfileBreadCrumbsView.class);
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<VnicProfileView, VnicProfileView>>(){},
-            new TypeLiteral<ActionPanelView<VnicProfileView, VnicProfileView>>(){});
+        bindSingletonPresenterWidget(
+                new TypeLiteral<SearchPanelPresenterWidget<VnicProfileView, VnicProfileListModel>>() { },
+                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<VnicProfileListModel>>() { },
+                new TypeLiteral<SearchPanelView<VnicProfileListModel>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<VnicProfileView, VnicProfileView>>() { },
+            new TypeLiteral<ActionPanelView<VnicProfileView, VnicProfileView>>() { });
 
         // User Sessions
         bindSingletonPresenterWidget(
-                new TypeLiteral<SearchPanelPresenterWidget<UserSession, SessionListModel>>(){},
-                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<SessionListModel>>(){},
-                new TypeLiteral<SearchPanelView<SessionListModel>>(){});
+                new TypeLiteral<SearchPanelPresenterWidget<UserSession, SessionListModel>>() { },
+                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<SessionListModel>>() { },
+                new TypeLiteral<SearchPanelView<SessionListModel>>() { });
         bindPresenterWidget(
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<UserSession, SessionListModel>>(){},
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<UserSession>>(){},
-                new TypeLiteral<OvirtBreadCrumbsView<UserSession, SessionListModel>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<UserSession, UserSession>>(){},
-            new TypeLiteral<ActionPanelView<UserSession, UserSession>>(){});
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<UserSession, SessionListModel>>() { },
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<UserSession>>() { },
+                new TypeLiteral<OvirtBreadCrumbsView<UserSession, SessionListModel>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<UserSession, UserSession>>() { },
+            new TypeLiteral<ActionPanelView<UserSession, UserSession>>() { });
 
         // Volume
         bindSingletonPresenterWidget(
-                new TypeLiteral<SearchPanelPresenterWidget<GlusterVolumeEntity, VolumeListModel>>(){},
-                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<VolumeListModel>>(){},
-                new TypeLiteral<SearchPanelView<VolumeListModel>>(){});
+                new TypeLiteral<SearchPanelPresenterWidget<GlusterVolumeEntity, VolumeListModel>>() { },
+                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<VolumeListModel>>() { },
+                new TypeLiteral<SearchPanelView<VolumeListModel>>() { });
         bindPresenterWidget(
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<GlusterVolumeEntity, VolumeListModel>>(){},
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<GlusterVolumeEntity>>(){},
-                new TypeLiteral<OvirtBreadCrumbsView<GlusterVolumeEntity, VolumeListModel>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, GlusterVolumeEntity>>(){},
-            new TypeLiteral<ActionPanelView<Void, GlusterVolumeEntity>>(){});
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<GlusterVolumeEntity, VolumeListModel>>() { },
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<GlusterVolumeEntity>>() { },
+                new TypeLiteral<OvirtBreadCrumbsView<GlusterVolumeEntity, VolumeListModel>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, GlusterVolumeEntity>>() { },
+            new TypeLiteral<ActionPanelView<Void, GlusterVolumeEntity>>() { });
 
         // Events
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, AuditLog>>(){},
-                new TypeLiteral<ActionPanelView<Void, AuditLog>>(){});
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, AuditLog>>() { },
+                new TypeLiteral<ActionPanelView<Void, AuditLog>>() { });
 
         // Main section: popups
 
@@ -1893,10 +1906,6 @@ public class PresenterModule extends BasePresenterModule {
                 AddVmHostDevicePopupPresenterWidget.ViewDef.class,
                 AddVmHostDevicePopupView.class);
 
-        bindPresenterWidget(VmRepinHostPopupPresenterWidget.class,
-                VmRepinHostPopupPresenterWidget.ViewDef.class,
-                VmRepinHostPopupView.class);
-
         // Volume
         bindPresenter(VolumeSubTabPanelPresenter.class,
                 VolumeSubTabPanelPresenter.ViewDef.class,
@@ -1978,13 +1987,13 @@ public class PresenterModule extends BasePresenterModule {
                 EventPopupPresenterWidget.ViewDef.class,
                 EventPopupView.class);
         bindSingletonPresenterWidget(
-                new TypeLiteral<SearchPanelPresenterWidget<AuditLog, EventListModel<Void>>>(){},
-                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<EventListModel<Void>>>(){},
-                new TypeLiteral<SearchPanelView<EventListModel<Void>>>(){});
+                new TypeLiteral<SearchPanelPresenterWidget<AuditLog, EventListModel<Void>>>() { },
+                new TypeLiteral<SearchPanelPresenterWidget.ViewDef<EventListModel<Void>>>() { },
+                new TypeLiteral<SearchPanelView<EventListModel<Void>>>() { });
         bindPresenterWidget(
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<AuditLog, EventListModel<Void>>>(){},
-                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<AuditLog>>(){},
-                new TypeLiteral<OvirtBreadCrumbsView<AuditLog, EventListModel<Void>>>(){});
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget<AuditLog, EventListModel<Void>>>() { },
+                new TypeLiteral<OvirtBreadCrumbsPresenterWidget.ViewDef<AuditLog>>() { },
+                new TypeLiteral<OvirtBreadCrumbsView<AuditLog, EventListModel<Void>>>() { });
 
         // Provider
         bindPresenterWidget(ProviderPopupPresenterWidget.class,
@@ -2049,183 +2058,187 @@ public class PresenterModule extends BasePresenterModule {
                 TagsView.class);
 
         // Popup/detail Action panels
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Role, Permission>>(){},
-            new TypeLiteral<ActionPanelView<Role, Permission>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, Permission>>(){},
-                new TypeLiteral<ActionPanelView<Void, Permission>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, MacPool>>(){},
-            new TypeLiteral<ActionPanelView<Void, MacPool>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, Role>>(){},
-            new TypeLiteral<ActionPanelView<Void, Role>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Object, ClusterPolicy>>(){},
-            new TypeLiteral<ActionPanelView<Object, ClusterPolicy>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, InstanceType>>(){},
-            new TypeLiteral<ActionPanelView<Void, InstanceType>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<StoragePool, CpuQos>>(){},
-            new TypeLiteral<ActionPanelView<StoragePool, CpuQos>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<StoragePool, NetworkQoS>>(){},
-            new TypeLiteral<ActionPanelView<StoragePool, NetworkQoS>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<StoragePool, HostNetworkQos>>(){},
-            new TypeLiteral<ActionPanelView<StoragePool, HostNetworkQos>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<?, DiskProfile>>(){},
-            new TypeLiteral<ActionPanelView<?, DiskProfile>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<?, CpuProfile>>(){},
-            new TypeLiteral<ActionPanelView<?, CpuProfile>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<VmTemplate, VmNetworkInterface>>(){},
-            new TypeLiteral<ActionPanelView<VmTemplate, VmNetworkInterface>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<VM, VmNetworkInterface>>(){},
-                new TypeLiteral<ActionPanelView<VM, VmNetworkInterface>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<?, Snapshot>>(){},
-            new TypeLiteral<ActionPanelView<?, Snapshot>>(){});
-        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<?, HostDeviceView>>(){},
-            new TypeLiteral<ActionPanelView<?, HostDeviceView>>(){});
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Role, Permission>>() { },
+            new TypeLiteral<ActionPanelView<Role, Permission>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, Permission>>() { },
+                new TypeLiteral<ActionPanelView<Void, Permission>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, MacPool>>() { },
+            new TypeLiteral<ActionPanelView<Void, MacPool>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, Role>>() { },
+            new TypeLiteral<ActionPanelView<Void, Role>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Object, ClusterPolicy>>() { },
+            new TypeLiteral<ActionPanelView<Object, ClusterPolicy>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<Void, InstanceType>>() { },
+            new TypeLiteral<ActionPanelView<Void, InstanceType>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<StoragePool, CpuQos>>() { },
+            new TypeLiteral<ActionPanelView<StoragePool, CpuQos>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<StoragePool, NetworkQoS>>() { },
+            new TypeLiteral<ActionPanelView<StoragePool, NetworkQoS>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<StoragePool, HostNetworkQos>>() { },
+            new TypeLiteral<ActionPanelView<StoragePool, HostNetworkQos>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<?, DiskProfile>>() { },
+            new TypeLiteral<ActionPanelView<?, DiskProfile>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<?, CpuProfile>>() { },
+            new TypeLiteral<ActionPanelView<?, CpuProfile>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<VmTemplate, VmNetworkInterface>>() { },
+            new TypeLiteral<ActionPanelView<VmTemplate, VmNetworkInterface>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<VM, VmNetworkInterface>>() { },
+                new TypeLiteral<ActionPanelView<VM, VmNetworkInterface>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<?, Snapshot>>() { },
+            new TypeLiteral<ActionPanelView<?, Snapshot>>() { });
+        bindActionPanel(new TypeLiteral<ActionPanelPresenterWidget.ViewDef<?, HostDeviceView>>() { },
+            new TypeLiteral<ActionPanelView<?, HostDeviceView>>() { });
 
         // Label action panels
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VDS, Label>>(){},
-            new TypeLiteral<DetailActionPanelView<VDS, Label>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Cluster, Label>>(){},
-                new TypeLiteral<DetailActionPanelView<Cluster, Label>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VM, Label>>(){},
-                new TypeLiteral<DetailActionPanelView<VM, Label>>(){});
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VDS, Label>>() { },
+            new TypeLiteral<DetailActionPanelView<VDS, Label>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Cluster, Label>>() { },
+                new TypeLiteral<DetailActionPanelView<Cluster, Label>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VM, Label>>() { },
+                new TypeLiteral<DetailActionPanelView<VM, Label>>() { });
 
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Cluster, GlusterHookEntity>>(){},
-            new TypeLiteral<DetailActionPanelView<Cluster, GlusterHookEntity>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Cluster, Network>>(){},
-            new TypeLiteral<DetailActionPanelView<Cluster, Network>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, Network>>(){},
-                new TypeLiteral<DetailActionPanelView<StoragePool, Network>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, IscsiBond>>(){},
-            new TypeLiteral<DetailActionPanelView<StoragePool, IscsiBond>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<GlusterVolumeEntity, GlusterBrickEntity>>(){},
-            new TypeLiteral<DetailActionPanelView<GlusterVolumeEntity, GlusterBrickEntity>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<GlusterVolumeEntity, GlusterVolumeOptionEntity>>(){},
-            new TypeLiteral<DetailActionPanelView<GlusterVolumeEntity, GlusterVolumeOptionEntity>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VDS, StorageDevice>>(){},
-            new TypeLiteral<DetailActionPanelView<VDS, StorageDevice>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<GlusterVolumeEntity, GlusterVolumeSnapshotEntity>>(){},
-            new TypeLiteral<DetailActionPanelView<GlusterVolumeEntity, GlusterVolumeSnapshotEntity>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VDS, GlusterServerService>>(){},
-            new TypeLiteral<DetailActionPanelView<VDS, GlusterServerService>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<?, NetworkCluster>>(){},
-            new TypeLiteral<DetailActionPanelView<?, NetworkCluster>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<NetworkView, ExternalSubnet>>(){},
-            new TypeLiteral<DetailActionPanelView<NetworkView, ExternalSubnet>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Provider, LibvirtSecret>>(){},
-            new TypeLiteral<DetailActionPanelView<Provider, LibvirtSecret>>(){});
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Cluster, GlusterHookEntity>>() { },
+            new TypeLiteral<DetailActionPanelView<Cluster, GlusterHookEntity>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Cluster, Network>>() { },
+            new TypeLiteral<DetailActionPanelView<Cluster, Network>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, Network>>() { },
+                new TypeLiteral<DetailActionPanelView<StoragePool, Network>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, IscsiBond>>() { },
+            new TypeLiteral<DetailActionPanelView<StoragePool, IscsiBond>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<GlusterVolumeEntity, GlusterBrickEntity>>() { },
+            new TypeLiteral<DetailActionPanelView<GlusterVolumeEntity, GlusterBrickEntity>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<GlusterVolumeEntity, GlusterVolumeOptionEntity>>() { },
+            new TypeLiteral<DetailActionPanelView<GlusterVolumeEntity, GlusterVolumeOptionEntity>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VDS, StorageDevice>>() { },
+            new TypeLiteral<DetailActionPanelView<VDS, StorageDevice>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<GlusterVolumeEntity, GlusterVolumeSnapshotEntity>>() { },
+            new TypeLiteral<DetailActionPanelView<GlusterVolumeEntity, GlusterVolumeSnapshotEntity>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VDS, GlusterServerService>>() { },
+            new TypeLiteral<DetailActionPanelView<VDS, GlusterServerService>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<?, NetworkCluster>>() { },
+            new TypeLiteral<DetailActionPanelView<?, NetworkCluster>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<NetworkView, ExternalSubnet>>() { },
+            new TypeLiteral<DetailActionPanelView<NetworkView, ExternalSubnet>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Provider, LibvirtSecret>>() { },
+            new TypeLiteral<DetailActionPanelView<Provider, LibvirtSecret>>() { });
 
         // Permission action panels
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Void, Permission>>(){},
-                new TypeLiteral<DetailActionPanelView<Void, Permission>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Quota, Permission>>(){},
-                new TypeLiteral<DetailActionPanelView<Quota, Permission>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Role, Permission>>(){},
-            new TypeLiteral<DetailActionPanelView<Role, Permission>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<DbUser, Permission>>(){},
-                new TypeLiteral<DetailActionPanelView<DbUser, Permission>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<DiskProfile, Permission>>(){},
-                new TypeLiteral<DetailActionPanelView<DiskProfile, Permission>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, Permission>>(){},
-                new TypeLiteral<DetailActionPanelView<StoragePool, Permission>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StorageDomain, Permission>>(){},
-                new TypeLiteral<DetailActionPanelView<StorageDomain, Permission>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Cluster, Permission>>(){},
-                new TypeLiteral<DetailActionPanelView<Cluster, Permission>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Disk, Permission>>(){},
-                new TypeLiteral<DetailActionPanelView<Disk, Permission>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VDS, Permission>>(){},
-                new TypeLiteral<DetailActionPanelView<VDS, Permission>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VM, Permission>>(){},
-                new TypeLiteral<DetailActionPanelView<VM, Permission>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VmPool, Permission>>(){},
-                new TypeLiteral<DetailActionPanelView<VmPool, Permission>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VnicProfileView, Permission>>(){},
-                new TypeLiteral<DetailActionPanelView<VnicProfileView, Permission>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<NetworkView, Permission>>(){},
-                new TypeLiteral<DetailActionPanelView<NetworkView, Permission>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VmTemplate, Permission>>(){},
-                new TypeLiteral<DetailActionPanelView<VmTemplate, Permission>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<GlusterVolumeEntity, Permission>>(){},
-                new TypeLiteral<DetailActionPanelView<GlusterVolumeEntity, Permission>>(){});
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Void, Permission>>() { },
+                new TypeLiteral<DetailActionPanelView<Void, Permission>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Quota, Permission>>() { },
+                new TypeLiteral<DetailActionPanelView<Quota, Permission>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Role, Permission>>() { },
+            new TypeLiteral<DetailActionPanelView<Role, Permission>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<DbUser, Permission>>() { },
+                new TypeLiteral<DetailActionPanelView<DbUser, Permission>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<DiskProfile, Permission>>() { },
+                new TypeLiteral<DetailActionPanelView<DiskProfile, Permission>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, Permission>>() { },
+                new TypeLiteral<DetailActionPanelView<StoragePool, Permission>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StorageDomain, Permission>>() { },
+                new TypeLiteral<DetailActionPanelView<StorageDomain, Permission>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Cluster, Permission>>() { },
+                new TypeLiteral<DetailActionPanelView<Cluster, Permission>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Disk, Permission>>() { },
+                new TypeLiteral<DetailActionPanelView<Disk, Permission>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VDS, Permission>>() { },
+                new TypeLiteral<DetailActionPanelView<VDS, Permission>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VM, Permission>>() { },
+                new TypeLiteral<DetailActionPanelView<VM, Permission>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VmPool, Permission>>() { },
+                new TypeLiteral<DetailActionPanelView<VmPool, Permission>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VnicProfileView, Permission>>() { },
+                new TypeLiteral<DetailActionPanelView<VnicProfileView, Permission>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<NetworkView, Permission>>() { },
+                new TypeLiteral<DetailActionPanelView<NetworkView, Permission>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VmTemplate, Permission>>() { },
+                new TypeLiteral<DetailActionPanelView<VmTemplate, Permission>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<GlusterVolumeEntity, Permission>>() { },
+                new TypeLiteral<DetailActionPanelView<GlusterVolumeEntity, Permission>>() { });
 
 
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<GlusterVolumeEntity, GlusterGeoRepSession>>(){},
-            new TypeLiteral<DetailActionPanelView<GlusterVolumeEntity, GlusterGeoRepSession>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<NetworkView, PairQueryable<Cluster, NetworkCluster>>>(){},
-            new TypeLiteral<DetailActionPanelView<NetworkView, PairQueryable<Cluster, NetworkCluster>>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<NetworkView, PairQueryable<VdsNetworkInterface, VDS>>>(){},
-            new TypeLiteral<DetailActionPanelView<NetworkView, PairQueryable<VdsNetworkInterface, VDS>>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<NetworkView, PairQueryable<VmNetworkInterface, VM>>>(){},
-            new TypeLiteral<DetailActionPanelView<NetworkView, PairQueryable<VmNetworkInterface, VM>>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<NetworkView, PairQueryable<VmNetworkInterface, VmTemplate>>>(){},
-            new TypeLiteral<DetailActionPanelView<NetworkView, PairQueryable<VmNetworkInterface, VmTemplate>>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, StorageDomainDR>>(){},
-            new TypeLiteral<DetailActionPanelView<StoragePool, StorageDomainDR>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StorageDomain, StorageDomainDR>>(){},
-                new TypeLiteral<DetailActionPanelView<StorageDomain, StorageDomainDR>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StorageDomain, RepoImage>>(){},
-            new TypeLiteral<DetailActionPanelView<StorageDomain, RepoImage>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VmTemplate, DiskModel>>(){},
-            new TypeLiteral<DetailActionPanelView<VmTemplate, DiskModel>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<DbUser, EventSubscriber>>(){},
-            new TypeLiteral<DetailActionPanelView<DbUser, EventSubscriber>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Cluster, AffinityGroup>>(){},
-            new TypeLiteral<DetailActionPanelView<Cluster, AffinityGroup>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VM, AffinityGroup>>(){},
-                new TypeLiteral<DetailActionPanelView<VM, AffinityGroup>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<?, MacPool>>(){},
-            new TypeLiteral<DetailActionPanelView<?, MacPool>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<?, Role>>(){},
-            new TypeLiteral<DetailActionPanelView<?, Role>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<?, ClusterPolicy>>(){},
-            new TypeLiteral<DetailActionPanelView<?, ClusterPolicy>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Void, InstanceType>>(){},
-            new TypeLiteral<DetailActionPanelView<Void, InstanceType>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, CpuQos>>(){},
-            new TypeLiteral<DetailActionPanelView<StoragePool, CpuQos>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, NetworkQoS>>(){},
-            new TypeLiteral<DetailActionPanelView<StoragePool, NetworkQoS>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, HostNetworkQos>>(){},
-            new TypeLiteral<DetailActionPanelView<StoragePool, HostNetworkQos>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StorageDomain, DiskProfile>>(){},
-            new TypeLiteral<DetailActionPanelView<StorageDomain, DiskProfile>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Cluster, CpuProfile>>(){},
-            new TypeLiteral<DetailActionPanelView<Cluster, CpuProfile>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VmTemplate, VmNetworkInterface>>(){},
-            new TypeLiteral<DetailActionPanelView<VmTemplate, VmNetworkInterface>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VM, VmNetworkInterface>>(){},
-                new TypeLiteral<DetailActionPanelView<VM, VmNetworkInterface>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VM, Snapshot>>(){},
-            new TypeLiteral<DetailActionPanelView<VM, Snapshot>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VM, HostDeviceView>>(){},
-            new TypeLiteral<DetailActionPanelView<VM, HostDeviceView>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VDS, HostInterfaceLineModel>>(){},
-            new TypeLiteral<DetailActionPanelView<VDS, HostInterfaceLineModel>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, StorageQos>>(){},
-            new TypeLiteral<DetailActionPanelView<StoragePool, StorageQos>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Cluster, VDS>>(){},
-                new TypeLiteral<DetailActionPanelView<Cluster, VDS>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, Quota>>(){},
-                new TypeLiteral<DetailActionPanelView<StoragePool, Quota>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VDS, VM>>(){},
-                new TypeLiteral<DetailActionPanelView<VDS, VM>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VmPool, VM>>(){},
-                new TypeLiteral<DetailActionPanelView<VmPool, VM>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StorageDomain, VM>>(){},
-                new TypeLiteral<DetailActionPanelView<StorageDomain, VM>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<NetworkView, VnicProfileView>>(){},
-                new TypeLiteral<DetailActionPanelView<NetworkView, VnicProfileView>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Provider, NetworkView>>(){},
-                new TypeLiteral<DetailActionPanelView<Provider, NetworkView>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StorageDomain, Disk>>(){},
-                new TypeLiteral<DetailActionPanelView<StorageDomain, Disk>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VM, Disk>>(){},
-                new TypeLiteral<DetailActionPanelView<VM, Disk>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StorageDomain, VmTemplate>>(){},
-                new TypeLiteral<DetailActionPanelView<StorageDomain, VmTemplate>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VmTemplate, StorageDomain>>(){},
-                new TypeLiteral<DetailActionPanelView<VmTemplate, StorageDomain>>(){});
-        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, StorageDomain>>(){},
-                new TypeLiteral<DetailActionPanelView<StoragePool, StorageDomain>>(){});
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<GlusterVolumeEntity, GlusterGeoRepSession>>() { },
+            new TypeLiteral<DetailActionPanelView<GlusterVolumeEntity, GlusterGeoRepSession>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<NetworkView, PairQueryable<Cluster, NetworkCluster>>>() { },
+            new TypeLiteral<DetailActionPanelView<NetworkView, PairQueryable<Cluster, NetworkCluster>>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<NetworkView, PairQueryable<VdsNetworkInterface, VDS>>>() { },
+            new TypeLiteral<DetailActionPanelView<NetworkView, PairQueryable<VdsNetworkInterface, VDS>>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<NetworkView, PairQueryable<VmNetworkInterface, VM>>>() { },
+            new TypeLiteral<DetailActionPanelView<NetworkView, PairQueryable<VmNetworkInterface, VM>>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<NetworkView, PairQueryable<VmNetworkInterface, VmTemplate>>>() { },
+            new TypeLiteral<DetailActionPanelView<NetworkView, PairQueryable<VmNetworkInterface, VmTemplate>>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, StorageDomainDR>>() { },
+            new TypeLiteral<DetailActionPanelView<StoragePool, StorageDomainDR>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StorageDomain, StorageDomainDR>>() { },
+                new TypeLiteral<DetailActionPanelView<StorageDomain, StorageDomainDR>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StorageDomain, RepoImage>>() { },
+            new TypeLiteral<DetailActionPanelView<StorageDomain, RepoImage>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VmTemplate, DiskModel>>() { },
+            new TypeLiteral<DetailActionPanelView<VmTemplate, DiskModel>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<DbUser, EventSubscriber>>() { },
+            new TypeLiteral<DetailActionPanelView<DbUser, EventSubscriber>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Cluster, AffinityGroup>>() { },
+            new TypeLiteral<DetailActionPanelView<Cluster, AffinityGroup>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VM, AffinityGroup>>() { },
+                new TypeLiteral<DetailActionPanelView<VM, AffinityGroup>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<?, MacPool>>() { },
+            new TypeLiteral<DetailActionPanelView<?, MacPool>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<?, Role>>() { },
+            new TypeLiteral<DetailActionPanelView<?, Role>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<?, ClusterPolicy>>() { },
+            new TypeLiteral<DetailActionPanelView<?, ClusterPolicy>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Void, InstanceType>>() { },
+            new TypeLiteral<DetailActionPanelView<Void, InstanceType>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, CpuQos>>() { },
+            new TypeLiteral<DetailActionPanelView<StoragePool, CpuQos>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, NetworkQoS>>() { },
+            new TypeLiteral<DetailActionPanelView<StoragePool, NetworkQoS>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, HostNetworkQos>>() { },
+            new TypeLiteral<DetailActionPanelView<StoragePool, HostNetworkQos>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StorageDomain, DiskProfile>>() { },
+            new TypeLiteral<DetailActionPanelView<StorageDomain, DiskProfile>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Cluster, CpuProfile>>() { },
+            new TypeLiteral<DetailActionPanelView<Cluster, CpuProfile>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VmTemplate, VmNetworkInterface>>() { },
+            new TypeLiteral<DetailActionPanelView<VmTemplate, VmNetworkInterface>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VM, VmNetworkInterface>>() { },
+                new TypeLiteral<DetailActionPanelView<VM, VmNetworkInterface>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VM, Snapshot>>() { },
+            new TypeLiteral<DetailActionPanelView<VM, Snapshot>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VM, HostDeviceView>>() { },
+            new TypeLiteral<DetailActionPanelView<VM, HostDeviceView>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VM, VmDeviceFeEntity>>() { },
+                new TypeLiteral<DetailActionPanelView<VM, VmDeviceFeEntity>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VDS, HostInterfaceLineModel>>() { },
+            new TypeLiteral<DetailActionPanelView<VDS, HostInterfaceLineModel>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VDS, HostDeviceView>>() { },
+                new TypeLiteral<DetailActionPanelView<VDS, HostDeviceView>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, StorageQos>>() { },
+            new TypeLiteral<DetailActionPanelView<StoragePool, StorageQos>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Cluster, VDS>>() { },
+                new TypeLiteral<DetailActionPanelView<Cluster, VDS>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, Quota>>() { },
+                new TypeLiteral<DetailActionPanelView<StoragePool, Quota>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VDS, VM>>() { },
+                new TypeLiteral<DetailActionPanelView<VDS, VM>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VmPool, VM>>() { },
+                new TypeLiteral<DetailActionPanelView<VmPool, VM>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StorageDomain, VM>>() { },
+                new TypeLiteral<DetailActionPanelView<StorageDomain, VM>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<NetworkView, VnicProfileView>>() { },
+                new TypeLiteral<DetailActionPanelView<NetworkView, VnicProfileView>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<Provider, NetworkView>>() { },
+                new TypeLiteral<DetailActionPanelView<Provider, NetworkView>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StorageDomain, Disk>>() { },
+                new TypeLiteral<DetailActionPanelView<StorageDomain, Disk>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VM, Disk>>() { },
+                new TypeLiteral<DetailActionPanelView<VM, Disk>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StorageDomain, VmTemplate>>() { },
+                new TypeLiteral<DetailActionPanelView<StorageDomain, VmTemplate>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<VmTemplate, StorageDomain>>() { },
+                new TypeLiteral<DetailActionPanelView<VmTemplate, StorageDomain>>() { });
+        bindActionPanel(new TypeLiteral<DetailActionPanelPresenterWidget.ViewDef<StoragePool, StorageDomain>>() { },
+                new TypeLiteral<DetailActionPanelView<StoragePool, StorageDomain>>() { });
     }
 
     <P extends PresenterWidget<?>, V extends View> void bindSingletonPresenterWidget(

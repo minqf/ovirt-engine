@@ -12,12 +12,15 @@ import org.ovirt.engine.core.common.businessentities.StorageFormatType;
 import org.ovirt.engine.core.common.businessentities.storage.ManagedBlockStorage;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.compat.Guid;
-import org.ovirt.engine.core.dao.CinderStorageDao;
+import org.ovirt.engine.core.dao.ManagedBlockStorageDao;
 
 public class AddManagedBlockStorageDomainCommand<T extends AddManagedBlockStorageDomainParameters> extends AddStorageDomainCommand<T> {
 
     @Inject
-    private CinderStorageDao cinderStorageDao;
+    private ManagedBlockStorageDao managedBlockStorageDao;
+
+    @Inject
+    private ManagedBlockStorageDomainStatsRefresher mbsStatsRefresher;
 
     public AddManagedBlockStorageDomainCommand(Guid commandId) {
         super(commandId);
@@ -52,21 +55,22 @@ public class AddManagedBlockStorageDomainCommand<T extends AddManagedBlockStorag
         managedBlockStorage.setId(getStorageDomainId());
         managedBlockStorage.setDriverOptions(parameters.getDriverOptions());
         managedBlockStorage.setDriverSensitiveOptions(parameters.getDriverSensitiveOptions());
-        cinderStorageDao.save(managedBlockStorage);
+        managedBlockStorageDao.save(managedBlockStorage);
+        mbsStatsRefresher.refresh(getStorageDomainId());
         setSucceeded(true);
     }
 
     @Override
     protected boolean canAddDomain() {
         if (!validate(ManagedBlockStorageDomainValidator.isOperationSupportedByManagedBlockStorage(getActionType()))) {
-            return failValidation(EngineMessage.ACTION_TYPE_FAILED_CINDERLIB_DATA_BASE_REQUIRED);
+            return failValidation(EngineMessage.ACTION_TYPE_FAILED_MANAGEDBLOCK_DATA_BASE_REQUIRED);
         }
         return testStorageConnection();
     }
 
     private boolean testStorageConnection() {
         ActionReturnValue actionReturnValue = runInternalAction(ActionType.GetManagedBlockStorageStats, getParameters());
-        return (actionReturnValue.getSucceeded() && actionReturnValue.getActionReturnValue() != null) ||
+        return actionReturnValue.getSucceeded() && actionReturnValue.getActionReturnValue() != null ||
                 failValidation(EngineMessage.FAILED_TO_CONNECT_MANAGED_BLOCK_DOMAIN);
     }
 

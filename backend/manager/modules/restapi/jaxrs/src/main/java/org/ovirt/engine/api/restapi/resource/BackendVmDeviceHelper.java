@@ -39,13 +39,13 @@ public class BackendVmDeviceHelper {
                 payloads.getPayloads().add(p);
                 vm.setPayloads(payloads);
             }
-        } catch(WebApplicationException ex) {
-            if (ex.getResponse().getStatus()== Response.Status.NOT_FOUND.getStatusCode()) {
+        } catch (WebApplicationException ex) {
+            if (ex.getResponse().getStatus() == Response.Status.NOT_FOUND.getStatusCode()) {
                 //It's legal to not receive a payload for this VM, so the exception is caught and ignored.
                 //(TODO: 'getEntity()' should be refactored to make it the programmer's decision,
                 //whether to throw an exception or not in case the entity is not found.) Then
                 //this try-catch won't be necessary.
-            } else{
+            } else {
                 throw ex;
             }
         }
@@ -89,5 +89,9 @@ public class BackendVmDeviceHelper {
         if (rngDevices != null && !rngDevices.isEmpty()) {
             vm.setRngDevice(RngDeviceMapper.map(rngDevices.get(0), null));
         }
+    }
+
+    public static void setTpmDevice(BackendResource resource, Vm vm) {
+        vm.setTpmEnabled(!VmHelper.getTpmDevicesForEntity(resource, new Guid(vm.getId())).isEmpty());
     }
 }

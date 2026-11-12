@@ -5,9 +5,16 @@ import java.util.Arrays;
 public enum VmBackupPhase {
 
     INITIALIZING("Initializing"),
+    CREATING_SCRATCH_DISKS("Creating scratch disks"),
     STARTING("Starting"),
+    ADDING_BITMAPS("Adding volume bitmaps"),
+    WAITING_FOR_BITMAPS("Waiting for bitmaps"),
     READY("Ready"),
-    FINALIZING("Finalizing");
+    FINALIZING("Finalizing"),
+    FINALIZING_FAILURE("Finalizing Failure"),
+    SUCCEEDED("Succeeded"),
+    FAILED("Failed"),
+    REMOVING_SNAPSHOT("Removing snapshot");
 
     private String name;
 
@@ -17,6 +24,14 @@ public enum VmBackupPhase {
 
     public String getName() {
         return name;
+    }
+
+    public boolean isBackupFinished() {
+        return this == SUCCEEDED || this == FAILED;
+    }
+
+    public boolean isBackupFinalizing() {
+        return this == FINALIZING || this == FINALIZING_FAILURE || this == REMOVING_SNAPSHOT;
     }
 
     public static VmBackupPhase forName(String name) {

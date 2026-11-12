@@ -522,13 +522,13 @@ public class FixturesTool {
      */
     protected static final String LUN_ID_OF_DOMAIN_VG_METADATA = "VG_DOMAIN_METADATA_LUN-1";
 
-    protected static final String LUN_ID1= "1IET_00180001";
+    protected static final String LUN_ID1 = "1IET_00180001";
 
-    protected static final String LUN_ID2= "1IET_00180003";
+    protected static final String LUN_ID2 = "1IET_00180003";
 
-    protected static final String ORPHAN_LUN_ID1= "1IET_00180005";
+    protected static final String ORPHAN_LUN_ID1 = "1IET_00180005";
 
-    protected static final String ORPHAN_LUN_ID2= "1IET_00180006";
+    protected static final String ORPHAN_LUN_ID2 = "1IET_00180006";
 
     /**
      * Predefined boot LUN disk attached to VM_RHEL5_POOL_57
@@ -969,5 +969,24 @@ public class FixturesTool {
     public static final String PROVIDER_BINDING_HOST_PLUGIN_ID = "1ce-c01d-bee2-15-a5-900d-a5-11fe";
 
     public static final Guid PROVIDER_BINDING_HOST_ID_HOST_ID2 = new Guid("3001751e-549b-4e7a-aff6-12336856ce45");
+
+    public static final String IPV6_ADDR_EXISTS = "1::2";
+
+    public static final String IPV6_ADDR_NOT_EXIST = "2::3";
+
+    /**
+     * Predefined storage domain with ISO
+     */
+    protected static final Guid STORAGE_DOMAIN_WITH_ISO = new Guid("bee623f3-9174-4ffd-aa30-4fb0dc0aa2f6");
+
+    /**
+     * Predefined VM with mounted ISO
+     */
+    protected static final String VM_NAME_WITH_MOUNTED_ISO = "vm1-with-iso";
+
+    /**
+     * Predefined checkpoint ID that is linked to one disk
+     */
+    public static final Guid CHECKPOINT_ID_1 = new Guid("e28a8195-1659-42fc-a94c-59f744687124");
 
 }

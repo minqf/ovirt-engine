@@ -293,30 +293,30 @@ public class DataCenterModule extends AbstractGinModule {
             final Provider<DataCenterListModel> mainModelProvider,
             final Provider<DataCenterHostNetworkQosListModel> modelProvider) {
         SearchableDetailTabModelProvider<HostNetworkQos, DataCenterListModel, DataCenterHostNetworkQosListModel> result =
-                new SearchableDetailTabModelProvider<HostNetworkQos, DataCenterListModel, DataCenterHostNetworkQosListModel>(eventBus,
-                        defaultConfirmPopupProvider) {
-            @Override
-            public AbstractModelBoundPopupPresenterWidget<? extends Model, ?> getModelPopup(DataCenterHostNetworkQosListModel source,
+            new SearchableDetailTabModelProvider<HostNetworkQos, DataCenterListModel, DataCenterHostNetworkQosListModel>(eventBus,
+            defaultConfirmPopupProvider) {
+                @Override
+                public AbstractModelBoundPopupPresenterWidget<? extends Model, ?> getModelPopup(DataCenterHostNetworkQosListModel source,
                     UICommand lastExecutedCommand,
                     Model windowModel) {
-                if (lastExecutedCommand.equals(getModel().getNewCommand())
-                        || lastExecutedCommand.equals(getModel().getEditCommand())) {
-                    return hostNetworkQosPopupProvider.get();
-                } else {
-                    return super.getModelPopup(source, lastExecutedCommand, windowModel);
+                        if (lastExecutedCommand.equals(getModel().getNewCommand())
+                            || lastExecutedCommand.equals(getModel().getEditCommand())) {
+                            return hostNetworkQosPopupProvider.get();
+                        } else {
+                            return super.getModelPopup(source, lastExecutedCommand, windowModel);
+                        }
                 }
-            }
 
-            @Override
-            public AbstractModelBoundPopupPresenterWidget<? extends ConfirmationModel, ?> getConfirmModelPopup(DataCenterHostNetworkQosListModel source,
+                @Override
+                public AbstractModelBoundPopupPresenterWidget<? extends ConfirmationModel, ?> getConfirmModelPopup(DataCenterHostNetworkQosListModel source,
                     UICommand lastExecutedCommand) {
-                if (lastExecutedCommand.equals(getModel().getRemoveCommand())) {
-                    return removeConfirmPopupProvider.get();
-                } else {
-                    return super.getConfirmModelPopup(source, lastExecutedCommand);
+                        if (lastExecutedCommand.equals(getModel().getRemoveCommand())) {
+                            return removeConfirmPopupProvider.get();
+                        } else {
+                            return super.getConfirmModelPopup(source, lastExecutedCommand);
+                        }
                 }
-            }
-        };
+            };
         result.setMainModelProvider(mainModelProvider);
         result.setModelProvider(modelProvider);
         return result;
@@ -480,15 +480,15 @@ public class DataCenterModule extends AbstractGinModule {
         bind(DataCenterIscsiBondListModel.class).in(Singleton.class);
         bind(DataCenterStorageQosListModel.class).in(Singleton.class);
         bind(DataCenterCpuQosListModel.class).in(Singleton.class);
-        bind(new TypeLiteral<PermissionListModel<StoragePool>>(){}).in(Singleton.class);
+        bind(new TypeLiteral<PermissionListModel<StoragePool>>() { }).in(Singleton.class);
         bind(DataCenterMainSelectedItems.class).asEagerSingleton();
 
         // Search-able Detail Models
-        bind(new TypeLiteral<SearchableDetailModelProvider<Cluster, DataCenterListModel, DataCenterClusterListModel>>(){})
-            .to(new TypeLiteral<SearchableDetailTabModelProvider<Cluster, DataCenterListModel, DataCenterClusterListModel>>(){})
+        bind(new TypeLiteral<SearchableDetailModelProvider<Cluster, DataCenterListModel, DataCenterClusterListModel>>() { })
+            .to(new TypeLiteral<SearchableDetailTabModelProvider<Cluster, DataCenterListModel, DataCenterClusterListModel>>() { })
             .in(Singleton.class);
         // Permission Detail Model
-        bind(new TypeLiteral<SearchableDetailModelProvider<Permission, DataCenterListModel, PermissionListModel<StoragePool>>>(){})
-            .to(new TypeLiteral<PermissionModelProvider<StoragePool, DataCenterListModel>>(){}).in(Singleton.class);
+        bind(new TypeLiteral<SearchableDetailModelProvider<Permission, DataCenterListModel, PermissionListModel<StoragePool>>>() { })
+            .to(new TypeLiteral<PermissionModelProvider<StoragePool, DataCenterListModel>>() { }).in(Singleton.class);
     }
 }

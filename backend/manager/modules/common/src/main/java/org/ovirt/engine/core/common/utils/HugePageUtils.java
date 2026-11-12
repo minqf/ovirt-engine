@@ -4,9 +4,11 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 import org.ovirt.engine.core.common.businessentities.HugePage;
+import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VmBase;
 import org.ovirt.engine.core.common.utils.customprop.SimpleCustomPropertiesUtil;
 
@@ -31,7 +33,7 @@ public class HugePageUtils {
         }
 
         // Make sure we do not overflow when big memory VM is used
-        int fullPages = (int)((KIB_IN_MIB * vm.getMemSizeMb() + hugePageSize.get() - 1) / hugePageSize.get());
+        int fullPages = (int) ((KIB_IN_MIB * vm.getMemSizeMb() + hugePageSize.get() - 1) / hugePageSize.get());
         return Collections.singletonMap(hugePageSize.get(), fullPages);
     }
 
@@ -77,16 +79,49 @@ public class HugePageUtils {
     public static Map<Integer, Integer> hugePagesToMap(List<HugePage> hugePages) {
         Map<Integer, Integer> hugePageMap = new HashMap<>(hugePages.size());
         for (HugePage hp: hugePages) {
-            hugePageMap.put(hp.getSizeKB(), hp.getAmount());
+            hugePageMap.put(hp.getSizeKB(), hp.getFree());
         }
         return hugePageMap;
     }
 
     public static int totalHugePageMemMb(Map<Integer, Integer> hugepages) {
         long hugePageMemKb = hugepages.entrySet().stream()
-                .mapToLong(entry -> entry.getKey() * entry.getValue())
+                .mapToLong(entry -> (long) entry.getKey() * (long) entry.getValue())
                 .sum();
 
-        return (int)((hugePageMemKb + KIB_IN_MIB - 1) / KIB_IN_MIB);
+        return (int) ((hugePageMemKb + KIB_IN_MIB - 1) / KIB_IN_MIB);
+    }
+
+    public static int totalHugePageMemMb(VDS vds) {
+        if (vds.getHugePages() == null) {
+            return 0;
+        }
+
+        long hugePageMemKb = vds.getHugePages().stream()
+                .mapToLong(hugePage -> (long) hugePage.getTotal() * (long) hugePage.getSizeKB())
+                .sum();
+
+        return (int) ((hugePageMemKb + KIB_IN_MIB - 1) / KIB_IN_MIB);
+    }
+
+    public static int totalHugePageFreeMemMb(VDS vds) {
+        if (vds.getHugePages() == null) {
+            return 0;
+        }
+
+        long hugePageMemKb = vds.getHugePages().stream()
+                .mapToLong(hugePage -> (long) hugePage.getFree() * (long) hugePage.getSizeKB())
+                .sum();
+
+        return (int) ((hugePageMemKb + KIB_IN_MIB - 1) / KIB_IN_MIB);
+    }
+
+    public static void updateHugePages(List<HugePage> hugePages, Integer sizeKb, Integer amount) {
+        for (HugePage hugePage : hugePages) {
+            if (Objects.equals(hugePage.getSizeKB(), sizeKb)) {
+                hugePage.setFree(amount);
+                break;
+            }
+        }
     }
 }

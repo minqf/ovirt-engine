@@ -7,7 +7,6 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
@@ -171,7 +170,7 @@ public abstract class CommandBase<T extends ActionParametersBase>
 
     @Named
     @Inject
-    private Predicate<Guid> isSystemSuperUserPredicate;
+    private Predicate<DbUser> isSystemSuperUserPredicate;
 
     /** Indicates whether the acquired locks should be released after the execute method or not */
     private boolean releaseLocksAtEndOfExecute = true;
@@ -311,8 +310,8 @@ public abstract class CommandBase<T extends ActionParametersBase>
      * @return true if it is possible to run rollback using command
      */
     protected boolean canPerformRollbackUsingCommand
-            (ActionType commandType,
-                    ActionParametersBase params) {
+    (ActionType commandType,
+        ActionParametersBase params) {
         return true;
     }
 
@@ -330,6 +329,7 @@ public abstract class CommandBase<T extends ActionParametersBase>
             return NoOpCompensationContext.getInstance();
         }
 
+        setCompensationPhaseEndCommand();
         return createDefaultCompensationContext();
     }
 
@@ -349,6 +349,11 @@ public abstract class CommandBase<T extends ActionParametersBase>
      */
     protected boolean isCompensationEnabledByCaller() {
         return getParameters().isCompensationEnabled();
+    }
+
+    private void setCompensationPhaseEndCommand() {
+        getParameters().setCompensationPhaseEndCommand(
+                getCommandCompensationPhase() == CommandCompensationPhase.END_COMMAND);
     }
 
     /**
@@ -397,7 +402,7 @@ public abstract class CommandBase<T extends ActionParametersBase>
         String tempVar = getDescription();
         getReturnValue().setDescription((tempVar != null) ? tempVar : getReturnValue().getDescription());
         setActionMessageParameters();
-        Step validatingStep=null;
+        Step validatingStep = null;
         boolean actionAllowed;
         boolean isExternal = this.getParameters().getJobId() != null || this.getParameters().getStepId() != null;
         if (!isExternal) {
@@ -520,8 +525,8 @@ public abstract class CommandBase<T extends ActionParametersBase>
             } catch (TransactionRolledbackLocalException e) {
                 log.info("endAction: Transaction was aborted in {}", this.getClass().getName());
             } finally {
-                endStepsAndJobIfNeeded();
                 freeLockEndAction();
+                endStepsAndJobIfNeeded();
                 // NOTE: this update persists updates made during the endSuccessfully()/endWithFailure() execution.
                 // The update is done intentionally after the freeLock() call, change with care.
                 updateCommandIfNeeded();
@@ -601,7 +606,7 @@ public abstract class CommandBase<T extends ActionParametersBase>
     public void handleChildCommands() {
         if (getCallback() != null) {
             List<Guid> childCommands = commandCoordinatorUtil.getChildCommandIds(getCommandId());
-            List<ActionParametersBase> parameters = new LinkedList<>();
+            ArrayList<ActionParametersBase> parameters = new ArrayList<>();
             for (Guid id : childCommands) {
                 CommandBase<?> command = commandCoordinatorUtil.retrieveCommand(id);
                 if (command.getParameters().getEndProcedure() == EndProcedure.PARENT_MANAGED
@@ -1158,7 +1163,7 @@ public abstract class CommandBase<T extends ActionParametersBase>
     }
 
     public boolean isSystemSuperUser() {
-        return isSystemSuperUserPredicate.test(getCurrentUser().getId());
+        return isSystemSuperUserPredicate.test(getCurrentUser());
     }
 
     private boolean executeWithoutTransaction() {
@@ -1310,7 +1315,7 @@ public abstract class CommandBase<T extends ActionParametersBase>
     }
 
     private void executeActionInTransactionScope() {
-        registerRollbackHandler((TransactionRollbackListener)() -> {
+        registerRollbackHandler((TransactionRollbackListener) () -> {
             log.error("Transaction rolled-back for command '{}'.", getClass().getName());
             try {
                 if (isQuotaDependant()) {
@@ -1445,7 +1450,9 @@ public abstract class CommandBase<T extends ActionParametersBase>
             try {
                 auditLogDirector.log(this, getAuditLogTypeValue());
             } catch (final RuntimeException ex) {
-                log.error("Error during log command: {}. Exception {}", getClass().getName(), ex.getMessage());
+                log.error("Error during log command: {}: '{}'",
+                        getClass().getName(),
+                        ExceptionUtils.getRootCauseMessage(ex));
                 log.debug("Exception", ex);
             }
             return null;
@@ -1934,7 +1941,7 @@ public abstract class CommandBase<T extends ActionParametersBase>
 
     private void freeLockExecute() {
         if (releaseLocksAtEndOfExecute || !getSucceeded() ||
-                (noAsyncOperations() && !(this instanceof IVdsAsyncCommand))) {
+                noAsyncOperations() && !(this instanceof IVdsAsyncCommand)) {
             freeLock();
         }
     }

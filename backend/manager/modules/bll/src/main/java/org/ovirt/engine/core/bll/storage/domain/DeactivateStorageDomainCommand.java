@@ -217,8 +217,8 @@ public class DeactivateStorageDomainCommand<T extends StorageDomainPoolParameter
         // Internal execution means that the domain status is being set to Inactive - therefore it's applicable for
         // the Active/Unknown statuses.
         // On user initiated execution, we allow to deactivate domain which is monitored.
-        if (!((getParameters().getIsInternal() && checkStorageDomainStatus(StorageDomainStatus.Active,
-                StorageDomainStatus.Unknown))
+        if (!(getParameters().getIsInternal() && checkStorageDomainStatus(StorageDomainStatus.Active,
+                StorageDomainStatus.Unknown)
                 || checkStorageDomainStatus(StorageConstants.monitoredDomainStatuses))) {
             return false;
         }
@@ -227,9 +227,9 @@ public class DeactivateStorageDomainCommand<T extends StorageDomainPoolParameter
     }
 
     private boolean isNoRunningVmsWithLeasesExist() {
-        List<VmStatic> runningVmsWithLeases = vmStaticDao.getAllRunningWithLeaseOnStorageDomain(getStorageDomain().getId());
+        List<String> runningVmsWithLeases = vmStaticDao.getAllRunningNamesWithLeaseOnStorageDomain(getStorageDomain().getId());
         if (!runningVmsWithLeases.isEmpty()) {
-            String vmNames = runningVmsWithLeases.stream().map(VmStatic::getName).collect(Collectors.joining(", "));
+            String vmNames = String.join(", ", runningVmsWithLeases);
             return failValidation(EngineMessage.ERROR_CANNOT_DEACTIVATE_DOMAIN_WITH_RUNNING_VMS_WITH_LEASES,
                     String.format("$vmNames %s", vmNames));
         }
@@ -518,9 +518,13 @@ public class DeactivateStorageDomainCommand<T extends StorageDomainPoolParameter
                     storagePoolIsoMapDao.updateStatus(newMasterMap.getId(), newMasterMap.getStatus());
                 }
                 updateStorageDomainStaticData(newMaster.getStorageStaticData());
-                getCompensationContext().snapshotEntityUpdated(getStorageDomain().getStorageStaticData());
-                getStorageDomain().setStorageDomainType(StorageDomainType.Data);
-                updateStorageDomainStaticData(getStorageDomain().getStorageStaticData());
+                // Not having a master storage domain may result in an arbitrary storage domain selected as the master,
+                // and we do not want to override its type.
+                if (!newMaster.getId().equals(getStorageDomain().getId())) {
+                    getCompensationContext().snapshotEntityUpdated(getStorageDomain().getStorageStaticData());
+                    getStorageDomain().setStorageDomainType(StorageDomainType.Data);
+                    updateStorageDomainStaticData(getStorageDomain().getStorageStaticData());
+                }
                 getCompensationContext().stateChanged();
                 return null;
             });

@@ -121,20 +121,20 @@ public class GlusterTaskUtils {
 
     public boolean isTaskSuccess(JobExecutionStatus status) {
         switch (status) {
-        case ABORTED:
-        case FAILED:
-            return false;
-        case FINISHED:
-            return true;
-        default:
-            return false;
+            case ABORTED:
+            case FAILED:
+                return false;
+            case FINISHED:
+                return true;
+            default:
+                return false;
         }
     }
 
     public boolean hasTaskCompleted(GlusterAsyncTask task) {
         // Remove brick task is marked completed only if committed or aborted.
         return JobExecutionStatus.ABORTED == task.getStatus() ||
-                (JobExecutionStatus.FINISHED == task.getStatus() && task.getType() != GlusterTaskType.REMOVE_BRICK)
+                JobExecutionStatus.FINISHED == task.getStatus() && task.getType() != GlusterTaskType.REMOVE_BRICK
                 || JobExecutionStatus.FAILED == task.getStatus();
     }
 
@@ -162,26 +162,26 @@ public class GlusterTaskUtils {
         String jobStatus = task.getStatus().toString();
         if (task.getType() == GlusterTaskType.REMOVE_BRICK) {
             switch (task.getStatus()) {
-            case FINISHED:
-                jobStatus = REMOVE_BRICK_FINISHED;
-                break;
-            case STARTED:
-                jobStatus = REMOVE_BRICK_IN_PROGRESS;
-                break;
-            case FAILED:
-                jobStatus = REMOVE_BRICK_FAILED;
-                break;
-            default:
-                break;
+                case FINISHED:
+                    jobStatus = REMOVE_BRICK_FINISHED;
+                    break;
+                case STARTED:
+                    jobStatus = REMOVE_BRICK_IN_PROGRESS;
+                    break;
+                case FAILED:
+                    jobStatus = REMOVE_BRICK_FAILED;
+                    break;
+                default:
+                    break;
             }
         }
         if (task.getType() == GlusterTaskType.REBALANCE) {
             switch (task.getStatus()) {
-            case STARTED:
-                jobStatus = REBALANCE_IN_PROGRESS;
-                break;
-            default:
-                break;
+                case STARTED:
+                    jobStatus = REBALANCE_IN_PROGRESS;
+                    break;
+                default:
+                    break;
             }
         }
         return jobStatus;
@@ -210,16 +210,16 @@ public class GlusterTaskUtils {
 
     public void logEventMessage(GlusterAsyncTask task, JobExecutionStatus oldStatus, Cluster cluster) {
         GlusterVolumeEntity volume = volumeDao.getVolumeByGlusterTask(task.getTaskId());
-        if ( volume == null){
-            if(task.getTaskParameters() != null) {
+        if (volume == null) {
+            if (task.getTaskParameters() != null) {
                 String volName = task.getTaskParameters().getVolumeName();
                 volume = volumeDao.getByName(cluster.getId(), volName);
             } else {
                 return;
             }
         }
-        if (JobExecutionStatus.ABORTED == task.getStatus() || JobExecutionStatus.FINISHED == task.getStatus() || JobExecutionStatus.FAILED == task.getStatus()){
-            if(oldStatus != task.getStatus()){
+        if (JobExecutionStatus.ABORTED == task.getStatus() || JobExecutionStatus.FINISHED == task.getStatus() || JobExecutionStatus.FAILED == task.getStatus()) {
+            if (oldStatus != task.getStatus()) {
                 logMessage(cluster.getId(), volume , taskTypeStrMap.get(task.getType()), task.getStatus().name().toLowerCase(), taskTypeAuditMsg.get(task.getType()));
             }
         }

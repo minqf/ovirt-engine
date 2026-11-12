@@ -131,9 +131,9 @@ public class VmSnapshotListViewItem extends PatternflyListViewItem<Snapshot> {
                     SafeHtmlUtils.fromString(rateRenderer.render(new Double[] { nic.getStatistics().getTransmitRate(),
                             nic.hasSpeed() ? nic.getSpeed().doubleValue() : 0})), dl);
             addDetailItem(templates.sub(constants.dropsInterface(), constants.pkts()),
-                    SafeHtmlUtils.fromString(String.valueOf(nic.getStatistics().getReceiveDropRate() != null ?
-                            nic.getStatistics().getReceiveDropRate() : ""
-                            + nic.getStatistics().getTransmitDropRate())), dl);
+                    SafeHtmlUtils.fromString(String.valueOf(nic.getStatistics().getReceiveDrops() != null ?
+                            nic.getStatistics().getReceiveDrops() : ""
+                            + nic.getStatistics().getTransmitDrops())), dl);
             column.getElement().appendChild(dl);
             i++;
         }
@@ -152,7 +152,7 @@ public class VmSnapshotListViewItem extends PatternflyListViewItem<Snapshot> {
         Container container = createItemContainerPanel(content);
 
         CellTable<DiskImage> disksTable = new CellTable<>(1000,
-                (CellTable.Resources)GWT.create(CellTablePopupTableResources.class));
+                (CellTable.Resources) GWT.create(CellTablePopupTableResources.class));
 
         disksTable.setWidth("98%"); // $NON-NLS-1$
 
@@ -257,14 +257,14 @@ public class VmSnapshotListViewItem extends PatternflyListViewItem<Snapshot> {
 
     private String getImageStatus(ImageStatus status) {
         switch (status) {
-        case OK:
-            return constants.up();
-        case LOCKED:
-            return constants.imageLocked();
-        case ILLEGAL:
-            return constants.illegalStatus();
-        default:
-            return constants.notAvailableLabel();
+            case OK:
+                return constants.up();
+            case LOCKED:
+                return constants.imageLocked();
+            case ILLEGAL:
+                return constants.illegalStatus();
+            default:
+                return constants.notAvailableLabel();
         }
     }
 

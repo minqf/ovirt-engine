@@ -87,13 +87,12 @@ public enum VMStatus implements Identifiable {
 
     /**
      * This method reflects whether the VM is qualified to start a backup operation (full/incremental).
-     * For this to be true, the VM must up.
+     * For this to be true, the VM should be either up or powered-off.
      *
-     * @return true if this status indicates that the VM status indicates that snapshot live merge
-     * may be possible, otherwise false
+     * @return true if the VM is qualified for backup operation, false otherwise
      */
     public boolean isQualifiedForVmBackup() {
-        return this == Up;
+        return this == Up || this == Down;
     }
 
     /**
@@ -199,27 +198,36 @@ public enum VMStatus implements Identifiable {
      */
     public boolean isPoweringUpOrMigrating() {
         switch (this) {
-        // VM is powering UP
-        case WaitForLaunch:
-        case PoweringUp:
+            // VM is powering UP
+            case WaitForLaunch:
+            case PoweringUp:
 
-        // If there is a reason why the VM was paused,
-        // others should wait for it.
-        case Paused:
+            // If there is a reason why the VM was paused,
+            // others should wait for it.
+            case Paused:
 
-        // The VM was restarted during startup,
-        case RebootInProgress:
+            // The VM was restarted during startup,
+            case RebootInProgress:
 
-        // User can trigger a migration when the VM is 'PoweringUp'.
-        // Other VMs should wait for migration to finish.
-        case MigratingTo:
-        case MigratingFrom:
-        case RestoringState:
-            return true;
+            // User can trigger a migration when the VM is 'PoweringUp'.
+            // Other VMs should wait for migration to finish.
+            case MigratingTo:
+            case MigratingFrom:
+            case RestoringState:
+                return true;
 
-        default:
-            return false;
+            default:
+                return false;
         }
+    }
+
+    /**
+     * Check whether the VM is migrating to or from another host.
+     *
+     * @return true if the status is one of the Migrating* ones
+     */
+    public boolean isMigrating() {
+        return EnumSet.of(MigratingFrom, MigratingTo).contains(this);
     }
 
     /**

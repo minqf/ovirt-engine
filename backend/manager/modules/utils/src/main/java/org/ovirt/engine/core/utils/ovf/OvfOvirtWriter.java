@@ -2,9 +2,11 @@ package org.ovirt.engine.core.utils.ovf;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.apache.commons.lang.StringUtils;
+import org.ovirt.engine.core.common.action.VmExternalDataKind;
 import org.ovirt.engine.core.common.businessentities.StorageServerConnections;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
@@ -14,6 +16,7 @@ import org.ovirt.engine.core.common.businessentities.storage.LunDisk;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.osinfo.OsRepository;
+import org.ovirt.engine.core.common.utils.SecretValue;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.Version;
 
@@ -108,6 +111,7 @@ public abstract class OvfOvirtWriter extends OvfWriter {
         _writer.writeAttributeString(getOvfUri(), "shareable", String.valueOf(image.isShareable()));
         _writer.writeAttributeString(getOvfUri(), "boot", String.valueOf(dve.isBoot()));
         _writer.writeAttributeString(getOvfUri(), "pass-discard", String.valueOf(dve.isPassDiscard()));
+        _writer.writeAttributeString(getOvfUri(), "incremental-backup", String.valueOf(image.isIncrementalBackup()));
         if (image.getDiskAlias() != null) {
             _writer.writeAttributeString(getOvfUri(), "disk-alias", image.getDiskAlias());
         }
@@ -187,6 +191,7 @@ public abstract class OvfOvirtWriter extends OvfWriter {
         super.writeGeneralData();
         _writer.writeElement(CLUSTER_NAME, fullEntityOvfData.getClusterName());
         writeUserData();
+        writeVmExternalData();
     }
 
     private void writeUserData() {
@@ -216,15 +221,37 @@ public abstract class OvfOvirtWriter extends OvfWriter {
         _writer.writeEndElement();
     }
 
+    private void writeVmExternalData() {
+        Map<VmExternalDataKind, SecretValue<String>> vmExternalData = fullEntityOvfData.getVmExternalData();
+        if (vmExternalData.isEmpty()) {
+            return;
+        }
+
+        _writer.writeStartElement("Section");
+        _writer.writeAttributeString(XSI_URI, "type", OVF_PREFIX + ":VmExternalDataSection_Type");
+        vmExternalData.forEach((kind, data) -> {
+            _writer.writeStartElement(OvfProperties.VM_EXTERNAL_DATA_ITEM);
+            _writer.writeAttributeString(OvfProperties.VM_EXTERNAL_DATA_KIND, kind.getExternal());
+            _writer.writeElement(OvfProperties.VM_EXTERNAL_DATA_CONTENT, data.getValue());
+            _writer.writeEndElement();
+        });
+        _writer.writeEndElement();
+    }
+
     @Override
     protected String adjustHardwareResourceType(String resourceType) {
-        switch(resourceType) {
-        case OvfHardware.Graphics:
-            return OvfHardware.OVIRT_Graphics;
-        case OvfHardware.Monitor:
-            return OvfHardware.OVIRT_Monitor;
-        default:
-            return super.adjustHardwareResourceType(resourceType);
+        switch (resourceType) {
+            case OvfHardware.Graphics:
+                return OvfHardware.OVIRT_Graphics;
+            case OvfHardware.Monitor:
+                return OvfHardware.OVIRT_Monitor;
+            default:
+                return super.adjustHardwareResourceType(resourceType);
         }
+    }
+
+    @Override
+    protected String getInstaceIdTag() {
+        return "InstanceId";
     }
 }

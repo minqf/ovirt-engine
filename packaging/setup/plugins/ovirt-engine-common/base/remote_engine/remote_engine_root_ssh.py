@@ -11,6 +11,8 @@ import gettext
 import socket
 import time
 
+import paramiko
+
 from otopi import plugin
 from otopi import util
 
@@ -57,7 +59,6 @@ class Plugin(plugin.PluginBase):
             return _('Access remote engine server using ssh as root')
 
         def _ssh_get_port(self):
-            import paramiko
             port_valid = False
             key = osetupcons.ConfigEnv.REMOTE_ENGINE_HOST_SSH_PORT
             port = self.environment[key]
@@ -90,7 +91,7 @@ class Plugin(plugin.PluginBase):
                     if interactive:
                         self.logger.error(msg)
                     else:
-                        raise RuntimeError(msg)
+                        raise RuntimeError(msg) from e
                 except (paramiko.SSHException, socket.gaierror) as e:
                     self.logger.debug('exception', exc_info=True)
                     msg = _(
@@ -103,10 +104,18 @@ class Plugin(plugin.PluginBase):
                     if interactive:
                         self.logger.error(msg)
                     else:
-                        raise RuntimeError(msg)
+                        raise RuntimeError(msg) from e
 
         def _ssh_connect(self):
-            import paramiko
+
+            logger = self.logger
+
+            class my_missing_key_policy(paramiko.MissingHostKeyPolicy):
+                def missing_host_key(self, client, hostname, key):
+                    logger.warn(
+                        f'Unknown {key.get_name()} host key for {hostname}'
+                    )
+
             connected = False
             interactive = False
             password = self.environment[
@@ -130,9 +139,7 @@ class Plugin(plugin.PluginBase):
                             default='',
                         )
                     client = paramiko.SSHClient()
-                    client.set_missing_host_key_policy(
-                        paramiko.WarningPolicy()
-                    )
+                    client.set_missing_host_key_policy(my_missing_key_policy)
                     # TODO Currently the warning goes only to the log file.
                     # We should probably write our own policy with a custom
                     # exception so that we can catch it below and verify with
@@ -165,7 +172,7 @@ class Plugin(plugin.PluginBase):
                     if interactive:
                         self.logger.error(msg)
                     else:
-                        raise RuntimeError(msg)
+                        raise RuntimeError(msg) from e
                     bad_password = True
             self.environment[
                 osetupcons.ConfigEnv.REMOTE_ENGINE_HOST_ROOT_PASSWORD
@@ -188,42 +195,60 @@ class Plugin(plugin.PluginBase):
                 )
             )
             stdin, stdout, stderr = self._client.exec_command(cmd)
-            stdin.channel.shutdown(2)
-            outbuf = ''
-            errbuf = ''
+            # exec_command creates a single new channel - stdin.channel,
+            # stdout.channel, stderr.channel point to the same object.
+            channel = stdin.channel
+            # We are not going to write to its stdin
+            channel.shutdown_write()
+            stdin.close()
+
+            outbuf = []
+            errbuf = []
             exited = False
             rc = None
+            outbuf.append(channel.recv(len(channel.in_buffer)))
+            errbuf.append(channel.recv_stderr(len(channel.in_stderr_buffer)))
             while (
-                (not stdout.channel.exit_status_ready()) and
-                (timeout > 0)
-            ):
+                not channel.closed or
+                channel.recv_ready() or
+                channel.recv_stderr_ready()
+            ) and (timeout > 0):
                 time.sleep(1)
                 timeout -= 1
-                while stdout.channel.recv_ready():
-                    outbuf += stdout.channel.recv(1000)
-                while stderr.channel.recv_ready():
-                    errbuf += stderr.channel.recv(1000)
+                got_data = False
+                if channel.recv_ready():
+                    got_data = True
+                    outbuf.append(channel.recv(len(channel.in_buffer)))
+                if channel.recv_stderr_ready():
+                    got_data = True
+                    errbuf.append(
+                        channel.recv_stderr(len(channel.in_stderr_buffer))
+                    )
+                if (
+                    not got_data and
+                    channel.exit_status_ready() and
+                    not channel.recv_ready()
+                ):
+                    channel.shutdown_read()
+                    channel.close()
+                    break
+            stdout.close()
+            stderr.close()
 
-            if not stdout.channel.exit_status_ready():
-                stdout.channel.close()
-                stderr.channel.close()
-                while stdout.channel.recv_ready():
-                    outbuf += stdout.channel.recv(1000)
-                while stderr.channel.recv_ready():
-                    errbuf += stderr.channel.recv(1000)
-                time.sleep(1)
-            if stdout.channel.exit_status_ready():
+            if channel.exit_status_ready():
                 exited = True
-                rc = stdout.channel.recv_exit_status()
+                rc = channel.recv_exit_status()
 
-            return {
+            res = {
                 'stdout': outbuf,
                 'stderr': errbuf,
                 'exited': exited,
                 'rc': rc,
             }
+            self.logger.debug('Executing on remote engine result: %s', res)
+            return res
 
-        def copy_from_engine(self, file_name):
+        def copy_from_engine(self, file_name, dialog_name=None):
             self.logger.debug(
                 'Copying data from remote engine %s:%s' %
                 (

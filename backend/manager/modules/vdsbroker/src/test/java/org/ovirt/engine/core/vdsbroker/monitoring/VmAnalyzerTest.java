@@ -10,6 +10,8 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.atMostOnce;
+import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
@@ -32,6 +34,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.ovirt.engine.core.common.AuditLogType;
+import org.ovirt.engine.core.common.businessentities.OriginType;
 import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VDSStatus;
 import org.ovirt.engine.core.common.businessentities.VMStatus;
@@ -47,6 +50,7 @@ import org.ovirt.engine.core.common.vdscommands.VDSReturnValue;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogableBase;
 import org.ovirt.engine.core.dao.VdsDynamicDao;
+import org.ovirt.engine.core.dao.VmDeviceDao;
 import org.ovirt.engine.core.utils.InjectorExtension;
 import org.ovirt.engine.core.vdsbroker.ResourceManager;
 import org.ovirt.engine.core.vdsbroker.VdsManager;
@@ -69,6 +73,8 @@ public class VmAnalyzerTest {
     private ArgumentCaptor<VDSParametersBase> vdsParamsCaptor;
     @Mock
     private VdsDynamicDao vdsDynamicDao;
+    @Mock
+    private VmDeviceDao vmDeviceDao;
     @Mock
     private VdsDynamic srcHost;
     @Mock
@@ -112,7 +118,7 @@ public class VmAnalyzerTest {
 
     @ParameterizedTest
     @EnumSource(VmTestPairs.class)
-    public void proceedDownVmsNormalExistReason_MIGRATION_HANDOVER(VmTestPairs data) {
+    public void proceedDownVmsNormalExitReason_MIGRATION_HANDOVER(VmTestPairs data) {
         //given
         initMocks(data, false);
 
@@ -134,7 +140,53 @@ public class VmAnalyzerTest {
 
     @ParameterizedTest
     @EnumSource(VmTestPairs.class)
-    public void proceedDownVmsNormalExistReason(VmTestPairs data) {
+    public void proceedDownVmsNormalExitReason_MIGRATION_UP_Early(VmTestPairs data) {
+        //given
+        initMocks(data, false);
+
+        when(vdsManager.getVdsId()).thenReturn(VmTestPairs.DST_HOST_ID);
+
+        //when
+        assumeTrue(data.dbVm() != null);
+        assumeTrue(data.vdsmVm() != null);
+        assumeTrue(data.dbVm().getStatus() == VMStatus.MigratingTo);
+        assumeTrue(data.vdsmVm().getVmDynamic().getStatus() == VMStatus.Up);
+        //then
+        vmAnalyzer.analyze();
+        verify(resourceManager, never()).removeAsyncRunningVm(data.dbVm().getId());
+        assertEquals(data.dbVm().getDynamicData(), vmAnalyzer.getVmDynamicToSave());
+        assertNull(data.dbVm().getMigratingToVds());
+        assertEquals(VmTestPairs.DST_HOST_ID, data.dbVm().getRunOnVds());
+    }
+
+    @ParameterizedTest
+    @EnumSource(VmTestPairs.class)
+    public void proceedDownVmsNormalExitReason_MIGRATION_DONE_Already_UP(VmTestPairs data) {
+        //given
+        initMocks(data, false);
+
+        //when
+        assumeTrue(data.dbVm() != null);
+        assumeTrue(data.vdsmVm() != null);
+        assumeTrue(data.dbVm().getStatus() == VMStatus.Up);
+        assumeTrue(data.vdsmVm().getVmDynamic().getStatus() == VMStatus.Down);
+        assumeTrue(data.vdsmVm().getVmDynamic().getExitReason() == VmExitReason.MigrationSucceeded);
+        assumeTrue(data.vdsmVm().getVmDynamic().getExitStatus() == VmExitStatus.Normal);
+        //then
+        vmAnalyzer.analyze();
+        verify(resourceManager, never()).internalSetVmStatus(data.dbVm().getDynamicData(), VMStatus.Down);
+        verify(vmAnalyzer).runVdsCommand(vdsCommandTypeCaptor.capture(), vdsParamsCaptor.capture());
+        verify(auditLogDirector, never()).log(loggableCaptor.capture(), logTypeCaptor.capture());
+        assertEquals(VDSCommandType.Destroy, vdsCommandTypeCaptor.getValue());
+        assertEquals(DestroyVmVDSCommandParameters.class, vdsParamsCaptor.getValue().getClass());
+        assertFalse(logTypeCaptor.getAllValues().contains(AuditLogType.VM_DOWN));
+        assertNull(data.dbVm().getMigratingToVds());
+        assertEquals(VmTestPairs.DST_HOST_ID, data.dbVm().getRunOnVds());
+    }
+
+    @ParameterizedTest
+    @EnumSource(VmTestPairs.class)
+    public void proceedDownVmsNormalExitReason(VmTestPairs data) {
         //given
         initMocks(data, false);
 
@@ -144,6 +196,7 @@ public class VmAnalyzerTest {
         assumeTrue(data.dbVm().getStatus() != VMStatus.MigratingFrom);
         assumeTrue(data.vdsmVm().getVmDynamic().getStatus() == VMStatus.Down);
         assumeTrue(data.vdsmVm().getVmDynamic().getExitStatus() == VmExitStatus.Normal);
+        assumeTrue(data.vdsmVm().getVmDynamic().getExitReason() != VmExitReason.MigrationSucceeded);
         //then
         vmAnalyzer.analyze();
         verify(auditLogDirector, atLeastOnce()).log(loggableCaptor.capture(), logTypeCaptor.capture());
@@ -328,6 +381,7 @@ public class VmAnalyzerTest {
         when(vmManager.isColdReboot()).thenReturn(false);
         when(vmManager.isAutoStart()).thenReturn(vmData.dbVm() != null ? vmData.dbVm().isAutoStartup() : false);
         when(vmManager.getStatistics()).thenReturn(new VmStatistics());
+        when(vmManager.getOrigin()).thenReturn(OriginType.OVIRT);
         when(resourceManager.getVdsManager(any())).thenReturn(vdsManager);
         // -- default behaviors --
         // dst host is up
@@ -347,6 +401,7 @@ public class VmAnalyzerTest {
         VDSReturnValue vdsReturnValue = new VDSReturnValue();
         vdsReturnValue.setSucceeded(true);
         doReturn(vdsReturnValue).when(vmAnalyzer).runVdsCommand(any(), any());
+        doReturn(true).when(vmAnalyzer).saveVmExternalData();
 
         if (run) {
             vmAnalyzer.analyze();
@@ -364,6 +419,90 @@ public class VmAnalyzerTest {
 
     private void mockDstHostStatus(VDSStatus status) {
         when(dstHost.getStatus()).thenReturn(status);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = VmTestPairs.class, names = "VM_UNKNOWN_ACTUALLY_RUNNING")
+    public void testVmRecoveryFromUnknownVmActuallyStarted(VmTestPairs data) {
+        // given
+        initMocks(data, false);
+
+        // when
+        assumeTrue(data.dbVm() != null);
+        assumeTrue(data.vdsmVm() != null);
+        assumeTrue(data.dbVm().getStatus() == VMStatus.Unknown);
+        assumeTrue(data.vdsmVm().getVmDynamic().getStatus() == VMStatus.Up);
+        vmAnalyzer.analyze();
+
+        // then
+        assertEquals(VMStatus.Up, vmAnalyzer.getVmDynamicToSave().getStatus());
+        verify(auditLogDirector, atLeastOnce()).log(loggableCaptor.capture(), logTypeCaptor.capture());
+        verify(resourceManager, atMostOnce()).removeAsyncRunningVm(data.dbVm().getId());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = VmTestPairs.class, names = "VM_UNKNOWN_NOT_FOUND_ON_HOST")
+    public void testVmInUnknownStateNotFoundOnHost(VmTestPairs data) {
+        // given
+        initMocks(data, false);
+        when(resourceManager.isVmInAsyncRunningList(data.dbVm().getId())).thenReturn(true);
+
+        // when
+        assumeTrue(data.dbVm() != null);
+        assumeTrue(data.vdsmVm() == null);
+        assumeTrue(data.dbVm().getStatus() == VMStatus.Unknown);
+
+        doCallRealMethod().when(resourceManager).internalSetVmStatus(any(), any(), any(), any(), any());
+        when(resourceManager.isVmInAsyncRunningList(data.dbVm().getId())).thenReturn(true);
+
+        vmAnalyzer.analyze();
+
+        // then
+        assertEquals(VMStatus.Down, vmAnalyzer.getVmDynamicToSave().getStatus());
+        assertNull(vmAnalyzer.getVmDynamicToSave().getRunOnVds());
+        assertFalse(vmAnalyzer.isMovedToDown());
+        assertTrue(vmAnalyzer.isRerun());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = VmTestPairs.class, names = "VM_UNKNOWN_CRASHED")
+    public void testVmInUnknownStateVmDissapeared(VmTestPairs data) {
+        // given
+        initMocks(data, false);
+
+        // when
+        assumeTrue(data.dbVm() != null);
+        assumeTrue(data.vdsmVm() != null);
+        assumeTrue(data.dbVm().getStatus() == VMStatus.Unknown);
+        assumeTrue(data.vdsmVm().getVmDynamic().getStatus() == VMStatus.Down);
+        assumeTrue(data.vdsmVm().getVmDynamic().getExitStatus() == VmExitStatus.Error);
+
+        doCallRealMethod().when(resourceManager).internalSetVmStatus(any(), any(), any(), any(), any());
+        when(resourceManager.isVmInAsyncRunningList(data.dbVm().getId())).thenReturn(true);
+
+        vmAnalyzer.analyze();
+
+        // then
+        assertEquals(VMStatus.Down, vmAnalyzer.getVmDynamicToSave().getStatus());
+        assertFalse(vmAnalyzer.isMovedToDown());
+        assertTrue(vmAnalyzer.isRerun());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = VmTestPairs.class, names = "VM_UNKNOWN_WAITING_FOR_LAUNCH")
+    public void testVmInUnknownStateStaysUnknownUntilConfirmed(VmTestPairs data) {
+        // given
+        initMocks(data, false);
+
+        // when
+        assumeTrue(data.dbVm() != null);
+        assumeTrue(data.vdsmVm() != null);
+        assumeTrue(data.dbVm().getStatus() == VMStatus.Unknown);
+        assumeTrue(data.vdsmVm().getVmDynamic().getStatus() == VMStatus.WaitForLaunch);
+
+        // then
+        vmAnalyzer.analyze();
+        assertEquals(VMStatus.WaitForLaunch, vmAnalyzer.getVmDynamicToSave().getStatus());
     }
 
 }

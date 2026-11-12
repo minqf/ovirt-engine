@@ -92,7 +92,7 @@ public class AddVmFromSnapshotCommandTest extends AddVmCommandTestBase<AddVmFrom
         DiskVmElement dve = new DiskVmElement(disk.getId(), vm.getId());
         dve.setDiskInterface(DiskInterface.VirtIO_SCSI);
         disk.setDiskVmElements(Collections.singletonList(dve));
-        doReturn(Collections.singletonList(disk)).when(cmd).getAdjustedDiskImagesFromConfiguration();
+        doReturn(Collections.singletonList(disk)).when(cmd).getSourceDisks();
 
         VmValidator vmValidator = spy(new VmValidator(vm));
         doReturn(vmValidator).when(cmd).createVmValidator(vm);
@@ -121,7 +121,6 @@ public class AddVmFromSnapshotCommandTest extends AddVmCommandTestBase<AddVmFrom
         Snapshot snap = new Snapshot();
         snap.setType(Snapshot.SnapshotType.REGULAR);
         when(snapshotDao.get(SOURCE_SNAPSHOT_ID)).thenReturn(snap);
-        ValidateTestUtils.runAndAssertValidateFailure
-                (cmd, EngineMessage.ACTION_TYPE_FAILED_VM_SNAPSHOT_HAS_NO_CONFIGURATION);
+        ValidateTestUtils.runAndAssertValidateFailure(cmd, EngineMessage.ACTION_TYPE_FAILED_VM_SNAPSHOT_HAS_NO_CONFIGURATION);
     }
 }

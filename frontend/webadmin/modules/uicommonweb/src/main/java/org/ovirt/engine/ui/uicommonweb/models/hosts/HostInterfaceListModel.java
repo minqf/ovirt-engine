@@ -172,12 +172,12 @@ public class HostInterfaceListModel extends SearchableListModel<VDS, HostInterfa
     }
 
     private void queryIsHostLockedOnNetworkOperation(IdQueryParameters idQueryParameters) {
-            Frontend.getInstance()
-                .runQuery(QueryType.IsHostLockedOnNetworkOperation,
-                        idQueryParameters,
-                        new AsyncQuery<QueryReturnValue>(returnValue ->
-                            isNetworkOperationInProgress = returnValue.getReturnValue())
-                        );
+        Frontend.getInstance()
+            .runQuery(QueryType.IsHostLockedOnNetworkOperation,
+                idQueryParameters,
+                new AsyncQuery<QueryReturnValue>(returnValue ->
+                isNetworkOperationInProgress = returnValue.getReturnValue())
+            );
     }
 
     private void queryVirtualFunctionMap(IdQueryParameters idQueryParameters) {
@@ -329,10 +329,10 @@ public class HostInterfaceListModel extends SearchableListModel<VDS, HostInterfa
         hi.setSpeed(nic.getSpeed());
         hi.setRxRate(nic.getStatistics().getReceiveRate());
         hi.setRxTotal(nic.getStatistics().getReceivedBytes());
-        hi.setRxDrop(nic.getStatistics().getReceiveDropRate());
+        hi.setRxDrop(nic.getStatistics().getReceiveDrops());
         hi.setTxRate(nic.getStatistics().getTransmitRate());
         hi.setTxTotal(nic.getStatistics().getTransmittedBytes());
-        hi.setTxDrop(nic.getStatistics().getTransmitDropRate());
+        hi.setTxDrop(nic.getStatistics().getTransmitDrops());
         hi.setStatus(nic.getStatistics().getStatus());
         hi.getPropertyChangedEvent().addListener(this);
 
@@ -427,7 +427,7 @@ public class HostInterfaceListModel extends SearchableListModel<VDS, HostInterfa
         model.getCommands().add(tempVar2);
     }
 
-    private void onSyncAllHostNetworkConfirm(){
+    private void onSyncAllHostNetworkConfirm() {
         ConfirmationModel model = (ConfirmationModel) getWindow();
         if (model.getProgress() != null) {
             return;
@@ -442,7 +442,7 @@ public class HostInterfaceListModel extends SearchableListModel<VDS, HostInterfa
                 null);
     }
 
-    private void onSyncAllHostNetworkCancelConfirm(){
+    private void onSyncAllHostNetworkCancelConfirm() {
         cancelConfirm();
     }
 

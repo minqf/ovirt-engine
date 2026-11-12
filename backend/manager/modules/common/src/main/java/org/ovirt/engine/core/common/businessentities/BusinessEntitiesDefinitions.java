@@ -15,6 +15,7 @@ public final class BusinessEntitiesDefinitions {
     public static final int VM_EMULATED_MACHINE_SIZE = 30;
     public static final int VM_CPU_NAME_SIZE = 255;
     public static final int VM_SERIAL_NUMBER_SIZE = 255;
+    public static final int VM_PAYLOAD_VOLUME_ID_SIZE = 32;
 
     // VM Pools (vm_pools)
     public static final int VM_POOL_NAME_SIZE = 255;
@@ -34,7 +35,8 @@ public final class BusinessEntitiesDefinitions {
     public static final int HOST_PM_TYPE_SIZE = 20;
     public static final int HOST_MIN_SPM_PRIORITY = -1;
     public static final int HOST_MAX_SPM_PRIORITY = 10;
-    public static final int SSH_KEY_FINGERPRINT_SIZE = 128;
+    public static final int SSH_KEY_FINGERPRINT_SIZE = 1024;
+    public static final int SSH_PUBLIC_KEY_SIZE = 8192;
 
     // Network Interface
     public static final int NETWORK_NAME_SIZE = 256;
@@ -70,7 +72,6 @@ public final class BusinessEntitiesDefinitions {
     public static final int LUN_VOLUME_GROUP_ID = 50;
     public static final int LUN_VENDOR_ID = 50;
     public static final int LUN_PRODUCT_ID = 50;
-    public static final String DUMMY_LUN_ID_PREFIX = "DUMMY_LUN_";
 
     // Roles (roles)
     public static final int ROLE_NAME_SIZE = 126;

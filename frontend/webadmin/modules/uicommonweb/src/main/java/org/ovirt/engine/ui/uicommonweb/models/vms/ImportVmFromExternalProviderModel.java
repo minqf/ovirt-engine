@@ -66,7 +66,7 @@ public abstract class ImportVmFromExternalProviderModel extends ImportVmModel {
         this.importInterfaceListModel = vmImportInterfaceListModel;
         setStorage(new ListModel<StorageDomain>());
         setAllocation(new ListModel<VolumeType>());
-        getAllocation().setItems(Arrays.asList(VolumeType.Sparse, VolumeType.Preallocated));
+        getAllocation().setItems(Arrays.asList(null, VolumeType.Sparse, VolumeType.Preallocated));
         sourceIsNotKvm = true;
         setIso(new SortedListModel<>(new LexoNumericNameableComparator()));
         setAttachDrivers(new EntityModel<>(false));
@@ -86,9 +86,9 @@ public abstract class ImportVmFromExternalProviderModel extends ImportVmModel {
         boolean someDriverSelected = getIso().getSelectedItem() != null;
         boolean isWindows = AsyncDataProvider.getInstance().isWindowsOsType(selectedOS);
 
-        if (isWindows && sourceIsNotKvm &&  (!attachDrivers || !someDriverSelected)) {
-                setWinWithoutVirtioMessage(ConstantsManager.getInstance()
-                    .getConstants().missingVirtioDriversForWindows());
+        if (isWindows && sourceIsNotKvm && (!attachDrivers || !someDriverSelected)) {
+            setWinWithoutVirtioMessage(ConstantsManager.getInstance()
+                .getConstants().missingVirtioDriversForWindows());
         }
     }
 
@@ -109,9 +109,9 @@ public abstract class ImportVmFromExternalProviderModel extends ImportVmModel {
     @Override
     public void init(final List<VM> externalVms, final Guid dataCenterId) {
         setCloseCommand(new UICommand(null, this)
-        .setTitle(ConstantsManager.getInstance().getConstants().close())
-        .setIsDefault(true)
-        .setIsCancel(true));
+            .setTitle(ConstantsManager.getInstance().getConstants().close())
+            .setIsDefault(true)
+            .setIsCancel(true));
 
         initIsoAndAttachDriversFields(externalVms);
         setTargetArchitecture(externalVms);
@@ -156,6 +156,7 @@ public abstract class ImportVmFromExternalProviderModel extends ImportVmModel {
         setStoragePool(dataCenter);
         getClusterQuota().setIsAvailable(dataCenter.getQuotaEnforcementType() != QuotaEnforcementTypeEnum.DISABLED);
         getCluster().getSelectedItemChangedEvent().addListener(clusterChangedListener);
+        getCluster().getSelectedItemChangedEvent().addListener(vmImportGeneralModel);
 
         // get cluster
         getCluster().setItems(null);
@@ -164,7 +165,7 @@ public abstract class ImportVmFromExternalProviderModel extends ImportVmModel {
             initNetworksList();
             initClusterAndStorage(dataCenter);
         }), dataCenter.getId());
-     }
+    }
 
     private void initClusterAndStorage(StoragePool dataCenter) {
         AsyncDataProvider.getInstance().getClusterByServiceList(new AsyncQuery<>(clusters -> {
@@ -193,9 +194,9 @@ public abstract class ImportVmFromExternalProviderModel extends ImportVmModel {
                                     initDisksStorageDomainsList();
                                 }
                             }),
-            getStoragePool().getId());
+                getStoragePool().getId());
         }),
-        dataCenter.getId(), true, false);
+            dataCenter.getId(), true, false);
     }
 
     protected void addDiskImportData(String alias,
@@ -279,7 +280,7 @@ public abstract class ImportVmFromExternalProviderModel extends ImportVmModel {
                     Iterator<QueryReturnValue> returnValuesIter = result.getReturnValues().iterator();
                     Iterator<StorageDomain> domainsIter = getStorage().getItems().iterator();
                     boolean noQuota = true;
-                    while(domainsIter.hasNext()) {
+                    while (domainsIter.hasNext()) {
                         ArrayList<Quota> quotaList = returnValuesIter.next().getReturnValue();
                         noQuota = noQuota && quotaList.isEmpty();
                         storageQuotaMap.put(

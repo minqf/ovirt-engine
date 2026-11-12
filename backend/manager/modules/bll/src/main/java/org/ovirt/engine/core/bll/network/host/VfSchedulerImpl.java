@@ -122,7 +122,7 @@ public class VfSchedulerImpl implements VfScheduler {
      * Not to query same nic multiple times from db.
      * Mapped by VdsNetworkInterface.getId() Map<Guid, VdsNetworkInterface> fetchedNics = new HashMap<>();
      */
-   private String findFreeVfForVnic(List<HostNicVfsConfig> vfsConfigs,
+    private String findFreeVfForVnic(List<HostNicVfsConfig> vfsConfigs,
             Map<Guid, List<String>> nicToUsedVfs,
             Map<Guid, VdsNetworkInterface> fetchedNics,
             Network vnicNetwork,
@@ -134,8 +134,8 @@ public class VfSchedulerImpl implements VfScheduler {
                 List<String> skipVfs = new ArrayList<>();
                 HostDevice freeVf = getFreeVf(nicId, nicToUsedVfs, fetchedNics, skipVfs);
                 while (freeVf != null && (isSharingIommuGroup(freeVf)
-                        || (shouldCheckDirectlyAttachedVmDevices
-                                && shouldBeDirectlyAttached(freeVf.getName(), vmId)))) {
+                        || shouldCheckDirectlyAttachedVmDevices
+                                && shouldBeDirectlyAttached(freeVf.getName(), vmId))) {
                     skipVfs.add(freeVf.getName());
                     freeVf = getFreeVf(nicId, nicToUsedVfs, fetchedNics, skipVfs);
                 }

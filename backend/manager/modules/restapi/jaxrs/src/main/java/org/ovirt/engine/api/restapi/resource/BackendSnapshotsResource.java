@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeSet;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import javax.ws.rs.core.Response;
@@ -37,10 +38,17 @@ public class BackendSnapshotsResource
     private static final Logger log = LoggerFactory.getLogger(BackendSnapshotsResource.class);
 
     protected Guid parentId;
+    private boolean parseVmConfiguration;
 
     public BackendSnapshotsResource(Guid parentId) {
         super(Snapshot.class, org.ovirt.engine.core.common.businessentities.Snapshot.class);
         this.parentId = parentId;
+        parseVmConfiguration = true;
+    }
+
+    protected BackendSnapshotsResource(Guid parentId, boolean parseVmConfiguration) {
+        this(parentId);
+        this.parseVmConfiguration = parseVmConfiguration;
     }
 
     @Override
@@ -62,27 +70,27 @@ public class BackendSnapshotsResource
             snapshotParams.setSaveMemory(snapshot.isPersistMemorystate());
         }
         if (snapshot.isSetDiskAttachments()) {
-            Map<Guid, Guid> diskToImageIds = mapDisks(snapshot.getDiskAttachments());
-            snapshotParams.setDiskIds(new TreeSet<>(diskToImageIds.keySet()));
-            snapshotParams.setDiskToImageIds(diskToImageIds);
+            Map<Guid, DiskImage> diskImagesMap = mapDisks(snapshot.getDiskAttachments());
+            snapshotParams.setDiskIds(new TreeSet<>(diskImagesMap.keySet()));
+            snapshotParams.setDiskImagesMap(diskImagesMap);
         }
         return performCreate(ActionType.CreateSnapshotForVm,
                                snapshotParams,
-                               new SnapshotIdResolver(),
+                               new QueryIdResolver<Guid>(QueryType.GetSnapshotBySnapshotId, IdQueryParameters.class),
                                block);
     }
 
-    private Map<Guid, Guid> mapDisks(DiskAttachments diskAttachments) {
-        Map<Guid, Guid> diskToImageIds = null;
+    private Map<Guid, DiskImage> mapDisks(DiskAttachments diskAttachments) {
+        Map<Guid, DiskImage> diskImagesMap = null;
         if (diskAttachments.isSetDiskAttachments()) {
-            diskToImageIds =
+            diskImagesMap =
                     diskAttachments.getDiskAttachments().stream()
                             .map(DiskAttachment::getDisk)
                             .filter(Objects::nonNull)
                             .map(disk -> (DiskImage) DiskMapper.map(disk, null))
-                            .collect(Collectors.toMap(BaseDisk::getId, DiskImage::getImageId));
+                            .collect(Collectors.toMap(BaseDisk::getId, Function.identity()));
         }
-        return diskToImageIds;
+        return diskImagesMap;
     }
 
     List<DiskImage> mapDisks(Disks disks) {
@@ -107,18 +115,20 @@ public class BackendSnapshotsResource
             Snapshot snapshot = map(entity, null);
             snapshot = populate(snapshot, entity);
             snapshot = addLinks(snapshot);
-            try {
-                snapshot = addVmConfiguration(entity, snapshot);
-            } catch (WebFaultException wfe) {
-                // Avoid adding the snapshot to the response if the VM configuration is missing.
-                // This scenario might be caused by initiating a snapshot deletion request
-                // right before listing the snapshots. See: https://bugzilla.redhat.com/1530603
-                if (Response.Status.NOT_FOUND.getStatusCode() == wfe.getResponse().getStatus()) {
-                    log.warn("Missing VM configuration for snapshot \"{}\". " +
-                             "Excluding the snapshot from response.", snapshot.getDescription());
-                    continue;
+            if (parseVmConfiguration) {
+                try {
+                    snapshot = addVmConfiguration(entity, snapshot);
+                } catch (WebFaultException wfe) {
+                    // Avoid adding the snapshot to the response if the VM configuration is missing.
+                    // This scenario might be caused by initiating a snapshot deletion request
+                    // right before listing the snapshots. See: https://bugzilla.redhat.com/1530603
+                    if (Response.Status.NOT_FOUND.getStatusCode() == wfe.getResponse().getStatus()) {
+                        log.warn("Missing VM configuration for snapshot \"{}\". " +
+                                "Excluding the snapshot from response.", snapshot.getDescription());
+                        continue;
+                    }
+                    throw wfe;
                 }
-                throw wfe;
             }
             snapshots.getSnapshots().add(snapshot);
         }
@@ -142,14 +152,10 @@ public class BackendSnapshotsResource
     }
 
     protected org.ovirt.engine.core.common.businessentities.Snapshot getSnapshotById(Guid id) {
-        //TODO: move to 'GetSnapshotBySnapshotId' once Backend supplies it.
-        for (org.ovirt.engine.core.common.businessentities.Snapshot snapshot : getBackendCollection(QueryType.GetAllVmSnapshotsByVmId,
-                new IdQueryParameters(parentId))) {
-            if (snapshot.getId().equals(id)) {
-                return snapshot;
-            }
-        }
-        return null;
+        return getEntity(org.ovirt.engine.core.common.businessentities.Snapshot.class,
+                QueryType.GetSnapshotBySnapshotId,
+                new IdQueryParameters(id),
+                String.format("GetSnapshotBySnapshotId: snapshot id=%s", id));
     }
 
     @Override
@@ -157,17 +163,6 @@ public class BackendSnapshotsResource
         snapshot.setVm(new Vm());
         snapshot.getVm().setId(parentId.toString());
         return snapshot;
-    }
-
-    protected class SnapshotIdResolver extends EntityIdResolver<Guid> {
-
-        SnapshotIdResolver() {}
-
-        @Override
-        public org.ovirt.engine.core.common.businessentities.Snapshot lookupEntity(
-                Guid id) throws BackendFailureException {
-            return getSnapshotById(id);
-        }
     }
 
     @Override

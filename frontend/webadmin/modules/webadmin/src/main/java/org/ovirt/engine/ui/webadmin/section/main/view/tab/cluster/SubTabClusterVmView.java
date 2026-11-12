@@ -1,6 +1,7 @@
 package org.ovirt.engine.ui.webadmin.section.main.view.tab.cluster;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import javax.inject.Inject;
@@ -23,6 +24,7 @@ import org.ovirt.engine.ui.webadmin.gin.AssetProvider;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.tab.cluster.SubTabClusterVmPresenter;
 import org.ovirt.engine.ui.webadmin.section.main.view.AbstractSubTabTableView;
 import org.ovirt.engine.ui.webadmin.widget.table.column.AbstractUptimeColumn;
+import org.ovirt.engine.ui.webadmin.widget.table.column.ColumnResizeTableLineChartProgressBar;
 import org.ovirt.engine.ui.webadmin.widget.table.column.VmStatusIconColumn;
 import org.ovirt.engine.ui.webadmin.widget.table.column.VmTypeColumn;
 
@@ -98,6 +100,61 @@ public class SubTabClusterVmView extends AbstractSubTabTableView<Cluster, VM, Cl
         };
         uptimeColumn.makeSortable(VmConditionFieldAutoCompleter.UPTIME);
         getTable().addColumn(uptimeColumn, constants.uptimeVm(), "220px"); //$NON-NLS-1$
-    }
 
+        getTable().addColumn(new ColumnResizeTableLineChartProgressBar<Cluster, VM>(
+                getTable(),
+                VmConditionFieldAutoCompleter.CPU_USAGE) {
+            @Override
+            protected List<Integer> getProgressValues(VM object) {
+                return object.getCpuUsageHistory();
+            }
+        }, constants.cpuVm(), "80px"); //$NON-NLS-1$
+
+        getTable().addColumn(new ColumnResizeTableLineChartProgressBar<Cluster, VM>(
+                getTable(),
+                VmConditionFieldAutoCompleter.MEM_USAGE) {
+            @Override
+            protected List<Integer> getProgressValues(VM object) {
+                return object.getMemoryUsageHistory();
+            }
+        }, constants.memoryVm(), "80px"); //$NON-NLS-1$
+
+        getTable().addColumn(new ColumnResizeTableLineChartProgressBar<Cluster, VM>(
+                getTable(),
+                VmConditionFieldAutoCompleter.NETWORK_USAGE) {
+            @Override
+            protected List<Integer> getProgressValues(VM object) {
+                return object.getNetworkUsageHistory();
+            }
+        }, constants.networkVm(), "80px"); //$NON-NLS-1$
+
+        AbstractTextColumn<VM> ipColumn = new AbstractTextColumn<VM>() {
+            @Override
+            public String getValue(VM object) {
+                return object.getIp();
+            }
+        };
+        ipColumn.makeSortable(VmConditionFieldAutoCompleter.IP);
+        getTable().addColumn(ipColumn, constants.ipVm(), "120px"); //$NON-NLS-1$
+
+        AbstractTextColumn<VM> vCpusColumn = new AbstractTextColumn<VM>() {
+            @Override
+            public String getValue(VM object) {
+                return Integer.toString(object.getNumOfCpus());
+            }
+        };
+        getTable().addColumn(vCpusColumn, constants.vcpus(), "80px"); //$NON-NLS-1$
+        vCpusColumn.makeSortable(VmConditionFieldAutoCompleter.VCPUS);
+        getTable().hideColumnByDefault(vCpusColumn);
+
+        AbstractTextColumn<VM> definedMemoryColumn = new AbstractTextColumn<VM>() {
+            @Override
+            public String getValue(VM object) {
+                return object.getMemSizeMb() + " MB"; //$NON-NLS-1$
+            }
+        };
+        getTable().addColumn(definedMemoryColumn, constants.memoryVmMB(), "100px"); //$NON-NLS-1$
+        definedMemoryColumn.makeSortable(VmConditionFieldAutoCompleter.MEMORY);
+        getTable().hideColumnByDefault(definedMemoryColumn);
+    }
 }

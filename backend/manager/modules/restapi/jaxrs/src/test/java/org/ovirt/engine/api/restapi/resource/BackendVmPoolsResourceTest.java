@@ -260,12 +260,6 @@ public class BackendVmPoolsResourceTest extends
                 new Object[] { GUIDS[0] },
                 new VmPayload());
 
-        setUpGetEntityExpectations(QueryType.IsBalloonEnabled,
-                IdQueryParameters.class,
-                new String[] { "Id" },
-                new Object[] { GUIDS[0] },
-                Boolean.FALSE);
-
         setUpGetEntityExpectations(QueryType.GetConsoleDevices,
                 IdQueryParameters.class,
                 new String[] { "Id" },
@@ -285,6 +279,12 @@ public class BackendVmPoolsResourceTest extends
                 new ArrayList<>());
 
         setUpGetEntityExpectations(QueryType.GetRngDevice,
+                IdQueryParameters.class,
+                new String[] { "Id" },
+                new Object[] { GUIDS[0] },
+                new ArrayList<>());
+
+        setUpGetEntityExpectations(QueryType.GetTpmDevices,
                 IdQueryParameters.class,
                 new String[] { "Id" },
                 new Object[] { GUIDS[0] },

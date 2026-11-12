@@ -17,11 +17,15 @@ public class ChangeDiskVDSCommand<P extends ChangeDiskVDSCommandParameters> exte
 
     @Override
     protected void executeVdsBrokerCommand() {
-        if (getParameters().getIface() != null)  {
+        if (getParameters().getIface() != null) {
             Map<String, Object> driveSpec = new HashMap<>();
             driveSpec.put(VdsProperties.INTERFACE, getParameters().getIface());
             driveSpec.put(VdsProperties.Index, Integer.toString(getParameters().getIndex()));
-            driveSpec.put(VdsProperties.Path, getParameters().getDiskPath());
+            if (getParameters().isUsingPdiv()) {
+                driveSpec.put(VdsProperties.drive_spec, getParameters().getDriveSpec());
+            } else {
+                driveSpec.put(VdsProperties.Path, getParameters().getDiskPath());
+            }
             vmReturn = getBroker().changeDisk(vmId.toString(), driveSpec);
         } else {
             vmReturn = getBroker().changeDisk(vmId.toString(), getParameters().getDiskPath());

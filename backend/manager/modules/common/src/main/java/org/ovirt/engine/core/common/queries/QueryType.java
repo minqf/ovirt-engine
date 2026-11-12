@@ -31,7 +31,6 @@ public enum QueryType implements Serializable {
     GetSnapshotBySnapshotId(QueryAuthType.User),
     GetVmsByDiskGuid,
     GetVmPayload(QueryAuthType.User),
-    IsBalloonEnabled(QueryAuthType.User),
     GetSoundDevices(QueryAuthType.User),
     GetVmsByVnicProfileId,
     GetTemplatesByVnicProfileId,
@@ -50,6 +49,8 @@ public enum QueryType implements Serializable {
     GetVmsPinnedToHost(QueryAuthType.User),
     GetAllVmsRunningForMultipleVds(QueryAuthType.User),
     GetVmByVmIdForUpdate(QueryAuthType.User),
+    HasTpmData,
+    HasNvramData,
 
     // Vds queries
     GetVdsByVdsId,
@@ -70,7 +71,7 @@ public enum QueryType implements Serializable {
     GetProviderCertificateChain,
     GetHostsForStorageOperation,
     GetEngineSSHPublicKey,
-    GetServerSSHKeyFingerprint,
+    GetServerSSHPublicKey,
     GetFenceAgentById,
     GetFenceAgentsByVdsId,
     GetHostDevicesByHostId,
@@ -202,7 +203,6 @@ public enum QueryType implements Serializable {
     GetSystemPermissions,
     GetVmTemplatesByBaseTemplateId,
     GetLatestTemplateInChain,
-    IsVmTemplateConflictsWithChipset(QueryAuthType.User),
 
     // VM Snapshot queries
     GetAllVmSnapshotsByVmId(QueryAuthType.User),
@@ -216,6 +216,7 @@ public enum QueryType implements Serializable {
     GetAllAttachableDisksForVm(QueryAuthType.User),
     GetAllDisksByStorageDomainId,
     GetAllDisksWithSnapshots(QueryAuthType.User),
+    GetAllDiskSnapshots(QueryAuthType.User),
     GetAllDiskSnapshotsByStorageDomainId,
     GetUnregisteredDisks,
     GetUnregisteredDisk,
@@ -227,7 +228,7 @@ public enum QueryType implements Serializable {
     GetAllImageTransfers(QueryAuthType.Admin),
     GetDiskImageByDiskAndImageIds(QueryAuthType.User),
     GetNumberOfImagesByStorageDomainId(QueryAuthType.Admin),
-
+    GetDiskIdBySnapshotId(QueryAuthType.User),
     GetDiskVmElementById(QueryAuthType.User),
     GetDiskVmElementsByVmId(QueryAuthType.User),
 
@@ -240,9 +241,9 @@ public enum QueryType implements Serializable {
     GetUserBySessionId(QueryAuthType.User),
     GetEngineSessionIdToken(QueryAuthType.User),
     GetEngineSessionIdForSsoToken(QueryAuthType.User),
-    GetUserProfile(QueryAuthType.User),
-    GetUserProfileAsList(QueryAuthType.User),
-    GetAllUserProfiles,
+    GetUserProfilePropertiesByUserId(QueryAuthType.User),
+    GetUserProfileProperty(QueryAuthType.User),
+    GetUserProfilePropertyByNameAndUserId(QueryAuthType.User),
     IsPasswordDelegationPossible(QueryAuthType.User),
     GetDefaultAllowedOrigins,
 
@@ -377,6 +378,9 @@ public enum QueryType implements Serializable {
     GetBlockStorageDomainsWithAttachedStoragePoolGuid,
     GetStorageDomainDefaultWipeAfterDelete,
     GetStorageDomainDR,
+    GetImageioProxyUri,
+    DoesStorageDomainContainEntityWithDisksOnMultipleSDs,
+    GetAllMetadataAndMemoryDisksOfSnapshotsOnDifferentStorageDomains,
 
     // Cinder
     GetCinderVolumeTypesByStorageDomainId(QueryAuthType.User),
@@ -388,6 +392,8 @@ public enum QueryType implements Serializable {
     // Incremental Backup
     GetVmBackupById,
     GetAllVmBackupsByVmId,
+    GetVmCheckpointById,
+    GetAllVmCheckpointsByVmId,
 
     // Event Notification
     GetEventSubscribersBySubscriberIdGrouped,
@@ -457,6 +463,7 @@ public enum QueryType implements Serializable {
     GetDefaultConfigurationVersion(QueryAuthType.User),
     GetProductVersion(QueryAuthType.User),
     OsRepository(QueryAuthType.User),
+    GetTimeZones(QueryAuthType.User),
     GetArchitectureCapabilities(QueryAuthType.User),
 
     // Providers
@@ -475,11 +482,14 @@ public enum QueryType implements Serializable {
     GetAllQosByType(QueryAuthType.User),
 
     GetWatchdog(QueryAuthType.User),
+    GetWatchdogs,
+    GetTpmDevices(QueryAuthType.User),
     GetConsoleDevices(QueryAuthType.User),
     GetRngDevice(QueryAuthType.User),
     GetGraphicsDevices(QueryAuthType.User),
     GetNextRunGraphicsDevices(QueryAuthType.User),
     GetGraphicsDevicesMultiple(QueryAuthType.User),
+    GetMdevs(QueryAuthType.User),
 
     GetVmHostDevices,
 
@@ -529,7 +539,10 @@ public enum QueryType implements Serializable {
     GetSystemOption(QueryAuthType.User),
 
     // Default type instead of having to null check
-    Unknown(QueryAuthType.User);
+    Unknown(QueryAuthType.User),
+
+    // Last Engine Backup
+    GetLastEngineBackup;
 
     /**
      * What kind of authorization the query requires. Although this is essentially a <code>boolean</code>, it's

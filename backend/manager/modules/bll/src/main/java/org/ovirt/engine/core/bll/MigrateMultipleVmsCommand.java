@@ -92,7 +92,7 @@ public class MigrateMultipleVmsCommand<T extends MigrateMultipleVmsParameters> e
             setVms(computeVmAffinityClosure());
 
             // The permissions have to be checked for the new VMs.
-            if(!hasPermissionToMigrateVms(getVms())) {
+            if (!hasPermissionToMigrateVms(getVms())) {
                 return failValidation(EngineMessage.USER_NOT_AUTHORIZED_TO_PERFORM_ACTION);
             }
         }
@@ -106,7 +106,7 @@ public class MigrateMultipleVmsCommand<T extends MigrateMultipleVmsParameters> e
                 .hostBlackList(getHostBlackList())
                 .hostWhiteList(getHostWhiteList())
                 .ignoreHardVmToVmAffinity(getParameters().isCanIgnoreHardVmAffinity())
-                // TODO - Use error messages from scheduling
+                .outputMessages(getReturnValue().getValidationMessages())
                 .canSchedule(getVms());
 
         possibleVmsToMigrate = new ArrayList<>(getVms().size());

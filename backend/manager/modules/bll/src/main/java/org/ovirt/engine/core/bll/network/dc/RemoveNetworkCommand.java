@@ -110,7 +110,7 @@ public class RemoveNetworkCommand<T extends RemoveNetworkParameters> extends Net
     }
 
     private Guid getProviderId() {
-        return (getNetwork()==null || !getNetwork().isExternal()) ?
+        return (getNetwork() == null || !getNetwork().isExternal()) ?
                 null : getNetwork().getProvidedBy().getProviderId();
     }
 
@@ -190,7 +190,7 @@ public class RemoveNetworkCommand<T extends RemoveNetworkParameters> extends Net
 
     private ValidationResult getRemoveExternalNetworkValidationResult() {
         ProviderNetwork providerNetwork = getNetwork().getProvidedBy();
-        if (providerNetwork == null || !getParameters().isRemoveFromNetworkProvider()){
+        if (providerNetwork == null || !getParameters().isRemoveFromNetworkProvider()) {
             return ValidationResult.VALID;
         }
         ProviderValidator providerValidator = new ProviderValidator(getProvider());
@@ -200,17 +200,17 @@ public class RemoveNetworkCommand<T extends RemoveNetworkParameters> extends Net
     @Override
     public AuditLogType getAuditLogTypeValue() {
         switch (getActionState()) {
-        case EXECUTE:
-            if (!getSucceeded()) {
-                return NETWORK_REMOVE_NETWORK_START_ERROR;
-            } else if (skipHostSetupNetworks()) {
-                return NETWORK_REMOVE_NOTHING_TO_DO;
-            } else {
-                return NETWORK_REMOVE_NETWORK_STARTED;
-            }
-        case END_SUCCESS:
-            addCustomValues();
-            return NETWORK_REMOVE_NETWORK;
+            case EXECUTE:
+                if (!getSucceeded()) {
+                    return NETWORK_REMOVE_NETWORK_START_ERROR;
+                } else if (skipHostSetupNetworks()) {
+                    return NETWORK_REMOVE_NOTHING_TO_DO;
+                } else {
+                    return NETWORK_REMOVE_NETWORK_STARTED;
+                }
+            case END_SUCCESS:
+                addCustomValues();
+                return NETWORK_REMOVE_NETWORK;
         }
         addCustomValues();
         return NETWORK_REMOVE_NETWORK_FAILED;

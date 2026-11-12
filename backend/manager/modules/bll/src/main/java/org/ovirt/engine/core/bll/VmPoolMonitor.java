@@ -50,11 +50,11 @@ public class VmPoolMonitor implements BackendService {
 
     private static final Logger log = LoggerFactory.getLogger(VmPoolMonitor.class);
 
-    private ScheduledFuture poolMonitoringJob;
+    private ScheduledFuture<?> poolMonitoringJob;
 
     private long vmPoolMonitorIntervalInMinutes;
 
-    private Set<Guid> startingVms = ConcurrentHashMap.newKeySet();
+    private final Set<Guid> startingVms = ConcurrentHashMap.newKeySet();
 
     @Inject
     private VmPoolHandler vmPoolHandler;
@@ -141,8 +141,8 @@ public class VmPoolMonitor implements BackendService {
         return vmsInPool == null ? 0
                 : (int) vmsInPool.stream()
                         .filter(vm -> startingVms.contains(vm.getId())
-                                || (vm.isStartingOrUp()
-                                        && vmPoolHandler.isPrestartedVmFree(vm.getId(), pool.isStateful(), null)))
+                                || vm.isStartingOrUp()
+                                        && vmPoolHandler.isPrestartedVmFree(vm.getId(), pool.isStateful(), null))
                         .count();
     }
 

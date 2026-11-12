@@ -17,7 +17,9 @@ import java.util.stream.Collectors;
 import org.ovirt.engine.core.common.businessentities.AdditionalFeature;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
 import org.ovirt.engine.core.common.businessentities.BiosType;
+import org.ovirt.engine.core.common.businessentities.ChipsetType;
 import org.ovirt.engine.core.common.businessentities.Cluster;
+import org.ovirt.engine.core.common.businessentities.FipsMode;
 import org.ovirt.engine.core.common.businessentities.LogMaxMemoryUsedThresholdType;
 import org.ovirt.engine.core.common.businessentities.MacPool;
 import org.ovirt.engine.core.common.businessentities.MigrateOnErrorOptions;
@@ -34,6 +36,7 @@ import org.ovirt.engine.core.common.businessentities.network.Network;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.migration.MigrationPolicy;
 import org.ovirt.engine.core.common.migration.NoMigrationPolicy;
+import org.ovirt.engine.core.common.migration.ParallelMigrationsType;
 import org.ovirt.engine.core.common.mode.ApplicationMode;
 import org.ovirt.engine.core.common.network.FirewallType;
 import org.ovirt.engine.core.common.network.SwitchType;
@@ -43,6 +46,7 @@ import org.ovirt.engine.core.common.queries.QueryReturnValue;
 import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.core.common.scheduling.ClusterPolicy;
 import org.ovirt.engine.core.common.scheduling.PolicyUnit;
+import org.ovirt.engine.core.common.utils.CpuUtils;
 import org.ovirt.engine.core.common.utils.Pair;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.StringHelper;
@@ -58,6 +62,7 @@ import org.ovirt.engine.ui.uicommonweb.models.FilteredListModel;
 import org.ovirt.engine.ui.uicommonweb.models.HasEntity;
 import org.ovirt.engine.ui.uicommonweb.models.HasValidatedTabs;
 import org.ovirt.engine.ui.uicommonweb.models.ListModel;
+import org.ovirt.engine.ui.uicommonweb.models.ModelWithMigrationsOptions;
 import org.ovirt.engine.ui.uicommonweb.models.SortedListModel;
 import org.ovirt.engine.ui.uicommonweb.models.TabName;
 import org.ovirt.engine.ui.uicommonweb.models.ValidationCompleteEvent;
@@ -76,7 +81,7 @@ import org.ovirt.engine.ui.uicompat.PropertyChangedEventArgs;
 import org.ovirt.engine.ui.uicompat.UIConstants;
 import org.ovirt.engine.ui.uicompat.UIMessages;
 
-public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTabs {
+public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTabs, ModelWithMigrationsOptions {
     private static final UIMessages messages = ConstantsManager.getInstance().getMessages();
     private static final UIConstants constants = ConstantsManager.getInstance().getConstants();
     private Map<Guid, PolicyUnit> policyUnitMap;
@@ -373,25 +378,23 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
     public void setGlusterHostAddress(EntityModel<String> glusterHostAddress) {
         this.glusterHostAddress = glusterHostAddress;
     }
+    private EntityModel<String> glusterHostSshPublicKey;
 
-    private EntityModel<String> glusterHostFingerprint;
-
-    public EntityModel<String> getGlusterHostFingerprint() {
-        return glusterHostFingerprint;
+    public EntityModel<String> getGlusterHostSshPublicKey() {
+        return glusterHostSshPublicKey;
+    }
+    public void setGlusterHostSshPublicKey(EntityModel<String> glusterHostSshPublicKey) {
+        this.glusterHostSshPublicKey = glusterHostSshPublicKey;
     }
 
-    public void setGlusterHostFingerprint(EntityModel<String> glusterHostFingerprint) {
-        this.glusterHostFingerprint = glusterHostFingerprint;
+    private Boolean hostSshPublicKeyVerified;
+
+    public Boolean isHostSshPublicKeyVerified() {
+        return hostSshPublicKeyVerified;
     }
 
-    private Boolean isFingerprintVerified;
-
-    public Boolean isFingerprintVerified() {
-        return isFingerprintVerified;
-    }
-
-    public void setIsFingerprintVerified(Boolean value) {
-        this.isFingerprintVerified = value;
+    public void setHostSshPublicKeyVerified(Boolean value) {
+        this.hostSshPublicKeyVerified = value;
     }
 
     private EntityModel<String> glusterHostPassword;
@@ -502,16 +505,6 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
 
     public void setSmtDisabled(EntityModel<Boolean> privateSmtEnabled) {
         this.privateSmtDisabled = privateSmtEnabled;
-    }
-
-    private EntityModel<Boolean> privateVersionSupportsCpuThreads;
-
-    public EntityModel<Boolean> getVersionSupportsCpuThreads() {
-        return privateVersionSupportsCpuThreads;
-    }
-
-    public void setVersionSupportsCpuThreads(EntityModel<Boolean> value) {
-        privateVersionSupportsCpuThreads = value;
     }
 
     /**
@@ -697,23 +690,23 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
 
             // webadmin use.
             switch (migrateOnErrorOption) {
-            case NO:
-                getMigrateOnErrorOption_NO().setEntity(true);
-                getMigrateOnErrorOption_YES().setEntity(false);
-                getMigrateOnErrorOption_HA_ONLY().setEntity(false);
-                break;
-            case YES:
-                getMigrateOnErrorOption_NO().setEntity(false);
-                getMigrateOnErrorOption_YES().setEntity(true);
-                getMigrateOnErrorOption_HA_ONLY().setEntity(false);
-                break;
-            case HA_ONLY:
-                getMigrateOnErrorOption_NO().setEntity(false);
-                getMigrateOnErrorOption_YES().setEntity(false);
-                getMigrateOnErrorOption_HA_ONLY().setEntity(true);
-                break;
-            default:
-                break;
+                case NO:
+                    getMigrateOnErrorOption_NO().setEntity(true);
+                    getMigrateOnErrorOption_YES().setEntity(false);
+                    getMigrateOnErrorOption_HA_ONLY().setEntity(false);
+                    break;
+                case YES:
+                    getMigrateOnErrorOption_NO().setEntity(false);
+                    getMigrateOnErrorOption_YES().setEntity(true);
+                    getMigrateOnErrorOption_HA_ONLY().setEntity(false);
+                    break;
+                case HA_ONLY:
+                    getMigrateOnErrorOption_NO().setEntity(false);
+                    getMigrateOnErrorOption_YES().setEntity(false);
+                    getMigrateOnErrorOption_HA_ONLY().setEntity(true);
+                    break;
+                default:
+                    break;
             }
             onPropertyChanged(new PropertyChangedEventArgs("MigrateOnErrorOption")); //$NON-NLS-1$
         }
@@ -929,6 +922,26 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
         this.migrationBandwidthLimitType = migrationBandwidthLimitType;
     }
 
+    private EntityModel<Integer> customParallelMigrations;
+
+    public EntityModel<Integer> getCustomParallelMigrations() {
+        return customParallelMigrations;
+    }
+
+    public void setCustomParallelMigrations(EntityModel<Integer> customParallelMigrations) {
+        this.customParallelMigrations = customParallelMigrations;
+    }
+
+    public ListModel<ParallelMigrationsType> parallelMigrationsType;
+
+    public ListModel<ParallelMigrationsType> getParallelMigrationsType() {
+        return parallelMigrationsType;
+    }
+
+    public void setParallelMigrationsType(ListModel<ParallelMigrationsType> parallelMigrationsType) {
+        this.parallelMigrationsType = parallelMigrationsType;
+    }
+
     private ListModel<MacPool> macPoolListModel;
 
     public ListModel<MacPool> getMacPoolListModel() {
@@ -967,6 +980,26 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
 
     public void setBiosType(ListModel<BiosType> biosType) {
         this.biosType = biosType;
+    }
+
+    private EntityModel<Boolean> changeToQ35;
+
+    public EntityModel<Boolean> getChangeToQ35() {
+        return changeToQ35;
+    }
+
+    public void setChangeToQ35(EntityModel<Boolean> changeToQ35) {
+        this.changeToQ35 = changeToQ35;
+    }
+
+    private ListModel<FipsMode> fipsMode;
+
+    public ListModel<FipsMode> getFipsMode() {
+        return fipsMode;
+    }
+
+    public void setFipsMode(ListModel<FipsMode> value) {
+        fipsMode = value;
     }
 
     @Override
@@ -1134,14 +1167,14 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
                     && getEnableGlusterService().getEntity()) {
                 getIsImportGlusterConfiguration().setIsAvailable(true);
                 getGlusterHostAddress().setIsAvailable(true);
-                getGlusterHostFingerprint().setIsAvailable(true);
+                getGlusterHostSshPublicKey().setIsAvailable(true);
                 getGlusterHostPassword().setIsAvailable(true);
             } else {
                 getIsImportGlusterConfiguration().setIsAvailable(false);
                 getIsImportGlusterConfiguration().setEntity(false);
 
                 getGlusterHostAddress().setIsAvailable(false);
-                getGlusterHostFingerprint().setIsAvailable(false);
+                getGlusterHostSshPublicKey().setIsAvailable(false);
                 getGlusterHostPassword().setIsAvailable(false);
             }
             if (getEnableGlusterService().getEntity() != null
@@ -1217,10 +1250,10 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
         getMigrateOnErrorOption_HA_ONLY().getEntityChangedEvent().addListener(this);
         // KSM feature
         setEnableKsm(new EntityModel<>());
-        getEnableKsm().setEntity(false);
-        getKsmPolicyForNumaSelection().setIsChangeable(false);
+        getEnableKsm().setEntity(true);
+        getKsmPolicyForNumaSelection().setIsChangeable(true);
         getEnableKsm().getEntityChangedEvent().addListener((ev, sender, args) -> {
-            if (getEnableKsm().getEntity() == null){
+            if (getEnableKsm().getEntity() == null) {
                 return;
             }
             if (getEnableKsm().getEntity()) {
@@ -1232,7 +1265,7 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
         });
 
         setEnableBallooning(new EntityModel<>());
-        getEnableBallooning().setEntity(false);
+        getEnableBallooning().setEntity(true);
         // Optimization methods:
         // default value =100;
         setDefaultMemoryOvercommit(AsyncDataProvider.getInstance().getClusterDefaultMemoryOverCommit());
@@ -1241,8 +1274,6 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
         setSmtDisabled(new EntityModel<>(AsyncDataProvider.getInstance().getClusterDefaultSmtDisabled()));
         getCountThreadsAsCores().setIsChangeable(!getSmtDisabled().getEntity());
         getSmtDisabled().getEntityChangedEvent().addListener(this);
-
-        setVersionSupportsCpuThreads(new EntityModel<>(true));
 
         setOptimizeForUtilization(new EntityModel<>());
         setOptimizeForSpeed(new EntityModel<>());
@@ -1340,7 +1371,12 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
         getCPU().getSelectedItemChangedEvent().addListener(this);
 
         setBiosType(new ListModel<>());
+        setChangeToQ35(new EntityModel<>(false));
+        getBiosType().getSelectedItemChangedEvent().addListener(this);
         initBiosType();
+
+        setFipsMode(new ListModel<>());
+        initFipsMode();
 
         setVersion(new ListModel<>());
         getVersion().getSelectedItemChangedEvent().addListener(this);
@@ -1374,30 +1410,49 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
                     Frontend.getInstance().runQuery(QueryType.GetClusterPolicies,
                             new QueryParametersBase(),
                             new AsyncQuery<QueryReturnValue>(retVal -> {
-                                        ArrayList<ClusterPolicy> list = retVal.getReturnValue();
-                                        getClusterPolicy().setItems(list);
-                                        ClusterPolicy defaultClusterPolicy = null;
-                                        ClusterPolicy selectedClusterPolicy = null;
-                                        for (ClusterPolicy clusterPolicy : list) {
-                                            if (getIsEdit() && getEntity() != null
-                                                    && clusterPolicy.getId()
-                                                    .equals(getEntity().getClusterPolicyId())) {
-                                                selectedClusterPolicy = clusterPolicy;
-                                            }
-                                            if (clusterPolicy.isDefaultPolicy()) {
-                                                defaultClusterPolicy = clusterPolicy;
-                                            }
-                                        }
-                                        if (selectedClusterPolicy != null) {
-                                            getClusterPolicy().setSelectedItem(selectedClusterPolicy);
-                                        } else {
-                                            getClusterPolicy().setSelectedItem(defaultClusterPolicy);
-                                        }
-                                        clusterPolicyChanged();
-                                    }));
+                                ArrayList<ClusterPolicy> list = retVal.getReturnValue();
+                                getClusterPolicy().setItems(list);
+                                ClusterPolicy defaultClusterPolicy = null;
+                                ClusterPolicy selectedClusterPolicy = null;
+                                for (ClusterPolicy clusterPolicy : list) {
+                                    if (getIsEdit() && getEntity() != null
+                                        && clusterPolicy.getId()
+                                        .equals(getEntity().getClusterPolicyId())) {
+                                        selectedClusterPolicy = clusterPolicy;
+                                    }
+                                    if (clusterPolicy.isDefaultPolicy()) {
+                                        defaultClusterPolicy = clusterPolicy;
+                                    }
+                                }
+                                if (selectedClusterPolicy != null) {
+                                    getClusterPolicy().setSelectedItem(selectedClusterPolicy);
+                                } else {
+                                    getClusterPolicy().setSelectedItem(defaultClusterPolicy);
+                                }
+                                clusterPolicyChanged();
+                            }));
                 }));
         setCustomMigrationNetworkBandwidth(new EntityModel<>());
         setMigrationBandwidthLimitType(new ListModel<>());
+
+        setParallelMigrationsType(new ListModel<>());
+        getParallelMigrationsType().setItems(new ArrayList<>(Arrays.asList(ParallelMigrationsType.values())));
+        updateParallelMigrationsChangeable();
+        setCustomParallelMigrations(new EntityModel<>());
+        getParallelMigrationsType().getSelectedItemChangedEvent().addListener((ev, sender, args) -> {
+            updateCustomParallelMigrations();
+        });
+        updateCustomParallelMigrations();
+    }
+
+    private void updateParallelMigrationsChangeable() {
+        final Version version = getEffectiveVersion();
+        if (version == null || AsyncDataProvider.getInstance().isParallelMigrationsSupportedByVersion(version)) {
+            getParallelMigrationsType().setIsChangeable(true);
+        } else {
+            getParallelMigrationsType().setIsChangeable(false,
+                    messages.availableInVersionOrHigher(Version.v4_7.toString()));
+        }
     }
 
     private List<SerialNumberPolicy> getSerialNumberPoliciesWithNull() {
@@ -1416,6 +1471,18 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
         } else {
             getCustomSerialNumber().setIsChangeable(false, constants.customSerialNumberDisabledReason());
             getCustomSerialNumber().setEntity(null);
+        }
+    }
+
+    private void updateCustomParallelMigrations() {
+        if (ParallelMigrationsType.CUSTOM.equals(getParallelMigrationsType().getSelectedItem())) {
+            getCustomParallelMigrations().setIsChangeable(true);
+            if (getCustomParallelMigrations().getEntity() == null) {
+                getCustomParallelMigrations().setEntity(ParallelMigrationsType.MIN_PARALLEL_CONNECTIONS);
+            }
+        } else {
+            getCustomParallelMigrations().setIsChangeable(false, constants.customParallelMigrationsDisabledReason());
+            getCustomParallelMigrations().setEntity(null);
         }
     }
 
@@ -1457,6 +1524,9 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
         }
 
         List<MigrationPolicy> policies = AsyncDataProvider.getInstance().getMigrationPolicies(version);
+        if (version == null || !AsyncDataProvider.getInstance().isParallelMigrationsSupportedByVersion(version)) {
+            policies = policies.stream().filter(policy -> !policy.isZeroCopy()).collect(Collectors.toList());
+        }
         getMigrationPolicies().setItems(policies);
 
         MigrationPolicy migrationPolicy;
@@ -1502,15 +1572,13 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
         return null;
     }
 
-    private void initBiosType() {
-        ListModel<BiosType> biosType = getBiosType();
-
-        List<BiosType> biosTypeList = AsyncDataProvider.getInstance()
-                .getBiosTypeList()
-                .stream()
-                .filter(bt -> bt != BiosType.CLUSTER_DEFAULT)
-                .collect(Collectors.toList());
-        biosType.setItems(biosTypeList);
+    public void initBiosType() {
+        boolean allowClusterDefault = getEntity() == null || getEntity().getBiosType() == null;
+        ArrayList<BiosType> items = AsyncDataProvider.getInstance().getBiosTypeList();
+        if (allowClusterDefault) {
+            items.add(0, null);
+        }
+        getBiosType().setItems(items);
         updateBiosType();
     }
 
@@ -1520,6 +1588,35 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
         firewallType.setItems(Arrays.asList(FirewallType.values()));
         firewallType.setIsChangeable(true);
         firewallType.setSelectedItem(FirewallType.FIREWALLD);
+    }
+
+    private void initFipsMode() {
+        ListModel<FipsMode> fipsModes = getFipsMode();
+
+        fipsModes.setItems(Arrays.asList(FipsMode.values()));
+        fipsModes.setIsChangeable(true);
+        if (getEntity() != null) {
+            fipsModes.setSelectedItem(getEntity().getFipsMode());
+        } else {
+            fipsModes.setSelectedItem(FipsMode.UNDEFINED);
+        }
+    }
+
+    private void updateFipsMode(Version version) {
+        ListModel<FipsMode> fipsModes = getFipsMode();
+        if (AsyncDataProvider.getInstance().isFipsModeSupportedByVersion(version)) {
+            fipsModes.setIsAvailable(true);
+            fipsModes.setIsChangeable(true);
+            if (getEntity() != null) {
+                fipsModes.setSelectedItem(getEntity().getFipsMode());
+            } else {
+                fipsModes.setSelectedItem(FipsMode.UNDEFINED);
+            }
+        } else {
+            fipsModes.setSelectedItem(FipsMode.UNDEFINED);
+            fipsModes.setIsAvailable(false);
+            fipsModes.setIsChangeable(false);
+        }
     }
 
     private void initLogMaxMemoryUsedThresholdType() {
@@ -1548,17 +1645,33 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
         } else {
             getBiosType().updateChangeability(ConfigValues.BiosTypeSupported, getEffectiveVersion());
         }
-        if (!getBiosType().getIsChangable()) {
-            getBiosType().setSelectedItem(BiosType.I440FX_SEA_BIOS);
+
+        if (architecture == ArchitectureType.undefined || !getBiosType().getIsChangable() && getBiosType().getSelectedItem() == null) {
+            getBiosType().setSelectedItem(null);
             return;
         }
+
+        if (getIsNew() &&
+                getBiosType().getIsChangable() &&
+                getBiosType().getSelectedItem() != null &&
+                Version.v4_6.less(getEffectiveVersion())) {
+            getBiosType().setSelectedItem(BiosType.Q35_OVMF);
+            return;
+        }
+
+        if (getIsEdit() &&
+                getBiosType().getIsChangable() &&
+                getBiosType().getSelectedItem() != null &&
+                !getEffectiveVersion().equals(getEntity().getCompatibilityVersion()) &&
+                Version.v4_6.less(getEffectiveVersion())) {
+            getBiosType().setSelectedItem(BiosType.Q35_OVMF);
+            return;
+        }
+
         if (getIsEdit() && architecture.equals(getEntity().getArchitecture())
                 && getEffectiveVersion().equals(getEntity().getCompatibilityVersion())) {
             getBiosType().setSelectedItem(getEntity().getBiosType());
             return;
-        }
-        if (getEffectiveVersion().greaterOrEquals(Version.v4_4)) {
-            getBiosType().setSelectedItem(BiosType.Q35_SEA_BIOS);
         }
     }
 
@@ -1615,20 +1728,20 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
     private void initImportCluster() {
         setGlusterHostAddress(new EntityModel<>());
         getGlusterHostAddress().getEntityChangedEvent().addListener((ev, sender, args) -> {
-            setIsFingerprintVerified(false);
+            setHostSshPublicKeyVerified(false);
             if (getGlusterHostAddress().getEntity() == null
                     || getGlusterHostAddress().getEntity().trim().length() == 0) {
-                getGlusterHostFingerprint().setEntity(""); //$NON-NLS-1$
+                getGlusterHostSshPublicKey().setEntity(""); //$NON-NLS-1$
                 return;
             }
-            fetchFingerprint(
+            fetchHostSshPublicKey(
                     getGlusterHostAddress().getEntity(),
                     VdsStatic.DEFAULT_SSH_PORT);
         });
 
-        setGlusterHostFingerprint(new EntityModel<>());
-        getGlusterHostFingerprint().setEntity(""); //$NON-NLS-1$
-        setIsFingerprintVerified(false);
+        setHostSshPublicKeyVerified(false);
+        setGlusterHostSshPublicKey(new EntityModel<>());
+        getGlusterHostSshPublicKey().setEntity(""); //$NON-NLS-1$
         setGlusterHostPassword(new EntityModel<>());
 
         setIsImportGlusterConfiguration(new EntityModel<>());
@@ -1645,25 +1758,26 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
 
         getIsImportGlusterConfiguration().setIsAvailable(false);
         getGlusterHostAddress().setIsAvailable(false);
-        getGlusterHostFingerprint().setIsAvailable(false);
+        getGlusterHostSshPublicKey().setIsAvailable(false);
         getGlusterHostPassword().setIsAvailable(false);
 
         getIsImportGlusterConfiguration().setEntity(false);
     }
 
-    private void fetchFingerprint(String hostAddress, Integer hostPort) {
-        AsyncDataProvider.getInstance().getHostFingerprint(new AsyncQuery<>(fingerprint -> {
-            if (fingerprint != null && fingerprint.length() > 0) {
-                getGlusterHostFingerprint().setEntity(fingerprint);
-                setIsFingerprintVerified(true);
+    private void fetchHostSshPublicKey(String hostAddress, Integer hostPort) {
+        AsyncDataProvider.getInstance().getHostSshPublicKey(new AsyncQuery<>(publicKey -> {
+            if (publicKey != null && publicKey.length() > 0) {
+                getGlusterHostSshPublicKey().setEntity(publicKey);
+                setHostSshPublicKeyVerified(true);
             } else {
-                getGlusterHostFingerprint().setEntity(ConstantsManager.getInstance()
+                getGlusterHostSshPublicKey().setEntity(ConstantsManager.getInstance()
                         .getConstants()
-                        .errorLoadingFingerprint());
-                setIsFingerprintVerified(false);
+                        .errorLoadingHostSshPublicKey());
+                setHostSshPublicKeyVerified(false);
             }
         }), hostAddress, hostPort);
-        getGlusterHostFingerprint().setEntity(ConstantsManager.getInstance().getConstants().loadingFingerprint());
+
+        getGlusterHostSshPublicKey().setEntity(ConstantsManager.getInstance().getConstants().loadingPublicKey());
     }
 
     private void postInit() {
@@ -1807,9 +1921,9 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
                 getOptimizeForSpeed().setEntity(false);
             } else if (senderEntityModel == getOptimizeForSpeed()) {
                 getOptimizeForUtilization().setEntity(false);
-            } else if(senderEntityModel == getGuarantyResources()) {
+            } else if (senderEntityModel == getGuarantyResources()) {
                 getAllowOverbooking().setEntity(false);
-            } else if(senderEntityModel == getAllowOverbooking()) {
+            } else if (senderEntityModel == getAllowOverbooking()) {
                 getGuarantyResources().setEntity(false);
             }
         }
@@ -1828,8 +1942,10 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
             architectureSelectedItemChanged();
         } else if (sender == getMacPoolListModel()) {
             getMacPoolModel().setEntity(getMacPoolListModel().getSelectedItem());
-        }  else if (sender == getMigrationPolicies()) {
+        } else if (sender == getMigrationPolicies()) {
             migrationPoliciesChanged();
+        } else if (sender == getBiosType()) {
+            updateChangeToQ35();
         }
     }
 
@@ -1876,6 +1992,7 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
 
                 AsyncDataProvider.getInstance().isClusterEmpty(new AsyncQuery<>(isEmpty -> {
                     if (isEmpty) {
+                        cpus.add(0, null);
                         populateCPUList(cpus, true);
                     } else {
                         ArrayList<ServerCpu> filteredCpus = new ArrayList<>();
@@ -1895,10 +2012,6 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
             }
         }), version);
 
-        getVersionSupportsCpuThreads().setEntity(true);
-        getEnableBallooning().setIsChangeable(true);
-        getEnableBallooning().setChangeProhibitionReason(ConstantsManager.getInstance().getConstants().ballooningNotAvailable());
-
         setRngSourcesCheckboxes(version);
 
         updateSwitchTypeUponVersionChange(version);
@@ -1912,6 +2025,8 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
 
         updateMigrateEncrypted(version);
 
+        updateFipsMode(version);
+
         refreshAdditionalClusterFeaturesList();
 
         if (getEnableGlusterService().getEntity()) {
@@ -1919,6 +2034,8 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
         }
 
         updateBiosType();
+
+        updateParallelMigrationsChangeable();
     }
 
     private void refreshAdditionalClusterFeaturesList() {
@@ -2087,16 +2204,19 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
         if (shouldFindEquivalentCpu) {
             String flags;
             if (oldSelectedCpu != null) {
-                flags = String.join(",", oldSelectedCpu.getFlags());//$NON-NLS-1$
-            } else if (getEntity() != null && getEntity().getCpuFlags() != null){
+                flags = String.join(",", oldSelectedCpu.getFlags()); //$NON-NLS-1$
+            } else if (getEntity() != null && getEntity().getCpuFlags() != null) {
                 flags = getEntity().getCpuFlags();
             } else {
                 return;
             }
 
             AsyncDataProvider.getInstance().getCpuByFlags(new AsyncQuery<>(cpu -> {
-                getCPU().setSelectedItem(cpu != null ?
-                        Linq.firstOrNull(getCPU().getItems(), new Linq.ServerCpuPredicate(cpu.getCpuName())) : null);
+                String cpuName = cpu != null ? cpu.getCpuName() : CpuUtils.getCpuNameInVersion(oldSelectedCpu, getEffectiveVersion());
+
+                getCPU().setSelectedItem(cpuName != null ?
+                        Linq.firstOrNull(getCPU().getItems(), new Linq.ServerCpuPredicate(cpuName)) : null);
+
             }), flags, getEffectiveVersion());
         }
     }
@@ -2122,6 +2242,9 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
             isCPUinitialized = true;
             getCPU().setSelectedItem(null);
             for (ServerCpu a : getCPU().getItems()) {
+                if (a == null) {
+                    continue;
+                }
                 if (Objects.equals(a.getCpuName(), getEntity().getCpuName())) {
                     getCPU().setSelectedItem(a);
                     break;
@@ -2233,66 +2356,37 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
         }
     }
 
-    public boolean validate() {
-        validateName();
 
-        getDataCenter().validateSelectedItem(new IValidation[] { new NotEmptyValidation() });
-
-        getCustomPropertySheet().setIsValid(getCustomPropertySheet().validate());
-        setValidTab(TabName.CLUSTER_POLICY_TAB, getCustomPropertySheet().getIsValid());
-
-        final IValidation[] versionValidations = new IValidation[] { new NotEmptyValidation() };
-        getVersion().validateSelectedItem(versionValidations);
-
-        getManagementNetwork().validateSelectedItem(new IValidation[] { new NotEmptyValidation() });
-
-        getRngHwrngSourceRequired().setIsValid(true);
-
-        boolean validService = true;
-        if (getEnableOvirtService().getIsAvailable() && getEnableGlusterService().getIsAvailable()) {
-            validService = getEnableOvirtService().getEntity()
-                            || getEnableGlusterService().getEntity();
+    private void updateChangeToQ35() {
+        getChangeToQ35().setIsChangeable(getIsEdit() && getBiosType().getSelectedItem() != null
+                && getBiosType().getSelectedItem().getChipsetType() == ChipsetType.Q35);
+        if (!getChangeToQ35().getIsChangable()) {
+            getChangeToQ35().setEntity(false);
         }
+    }
+
+    public boolean validate() {
+        // General tab
+        validateName();
+        getDataCenter().validateSelectedItem(new IValidation[] { new NotEmptyValidation() });
+        getVersion().validateSelectedItem(new IValidation[] { new NotEmptyValidation() });
+        getManagementNetwork().validateSelectedItem(new IValidation[] { new NotEmptyValidation() });
 
         getGlusterHostAddress().validateEntity(new IValidation[] { new NotEmptyValidation() });
         getGlusterHostPassword().validateEntity(new IValidation[] { new NotEmptyValidation() });
 
-        if (!validService) {
-            setMessage(ConstantsManager.getInstance().getConstants().clusterServiceValidationMsg());
-        } else if (getIsImportGlusterConfiguration().getEntity() && getGlusterHostAddress().getIsValid()
-                && getGlusterHostPassword().getIsValid()
-                && !isFingerprintVerified()) {
-            setMessage(ConstantsManager.getInstance().getConstants().fingerprintNotVerified());
-        } else {
-            setMessage(null);
-        }
-
-        if (getSpiceProxyEnabled().getEntity()) {
-            getSpiceProxy().validateEntity(new IValidation[] { new HostWithProtocolAndPortAddressValidation() });
-        } else {
-            getSpiceProxy().setIsValid(true);
-        }
-        setValidTab(TabName.CONSOLE_TAB, getSpiceProxy().getIsValid());
-
-        if (SerialNumberPolicy.CUSTOM.equals(getSerialNumberPolicy().getSelectedItem())) {
-            getCustomSerialNumber().validateEntity(new IValidation[] { new NotEmptyValidation() });
-        } else {
-            getCustomSerialNumber().setIsValid(true);
-        }
-
-        getMacPoolModel().validate();
-
-        boolean generalTabValid = getName().getIsValid() && getDataCenter().getIsValid() && getCPU().getIsValid()
+        boolean generalTabValid = getName().getIsValid()
+                && getDataCenter().getIsValid()
                 && getManagementNetwork().getIsValid()
-                && getVersion().getIsValid() && validService && getGlusterHostAddress().getIsValid()
-                && getRngHwrngSourceRequired().getIsValid()
+                && getVersion().getIsValid()
+                && getGlusterHostAddress().getIsValid()
                 && getGlusterHostPassword().getIsValid()
-                && (!getIsImportGlusterConfiguration().getEntity() || (getGlusterHostAddress().getIsValid()
-                && getGlusterHostPassword().getIsValid()
-                && getCustomSerialNumber().getIsValid()
-                && isFingerprintVerified()));
+                && (!getIsImportGlusterConfiguration().getEntity() || getGlusterHostAddress().getIsValid()
+                        && isHostSshPublicKeyVerified());
+
         setValidTab(TabName.GENERAL_TAB, generalTabValid);
 
+        // Migration Policy tab
         if (getVersion().getSelectedItem() != null) {
             if (MigrationBandwidthLimitType.CUSTOM.equals(getMigrationBandwidthLimitType().getSelectedItem())) {
                 getCustomMigrationNetworkBandwidth().validateEntity(
@@ -2301,22 +2395,64 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
                 getCustomMigrationNetworkBandwidth().setIsValid(true);
             }
         }
-        final boolean migrationTabValid =
-                getMigrationBandwidthLimitType().getIsValid() && getCustomMigrationNetworkBandwidth().getIsValid();
+
+        if (ParallelMigrationsType.CUSTOM.equals(getParallelMigrationsType().getSelectedItem())) {
+            getCustomParallelMigrations().validateEntity(
+                    new IValidation[] { new NotNullIntegerValidation(ParallelMigrationsType.MIN_PARALLEL_CONNECTIONS,
+                            ParallelMigrationsType.MAX_PARALLEL_CONNECTIONS) });
+        } else {
+            getCustomParallelMigrations().setIsValid(true);
+        }
+        final boolean migrationTabValid = getMigrationBandwidthLimitType().getIsValid()
+                && getCustomMigrationNetworkBandwidth().getIsValid() && getParallelMigrationsType().getIsValid()
+                && getCustomParallelMigrations().getIsValid();
         setValidTab(TabName.MIGRATION_TAB, migrationTabValid);
 
+        // Scheduling tab
+        getCustomPropertySheet().setIsValid(getCustomPropertySheet().validate());
+
+        if (SerialNumberPolicy.CUSTOM.equals(getSerialNumberPolicy().getSelectedItem())) {
+            getCustomSerialNumber().validateEntity(new IValidation[] { new NotEmptyValidation() });
+        } else {
+            getCustomSerialNumber().setIsValid(true);
+        }
+
+        final boolean schedullingTabValid = getCustomPropertySheet().getIsValid()
+                && getCustomSerialNumber().getIsValid();
+
+        setValidTab(TabName.CLUSTER_POLICY_TAB, schedullingTabValid);
+
+        // Console tab
+        if (getSpiceProxyEnabled().getEntity()) {
+            getSpiceProxy().validateEntity(new IValidation[] { new HostWithProtocolAndPortAddressValidation() });
+        } else {
+            getSpiceProxy().setIsValid(true);
+        }
+
+        boolean consoleTablValid = getSpiceProxy().getIsValid();
+
+        setValidTab(TabName.CONSOLE_TAB, consoleTablValid);
+
+        // MAC Address Pool tab
+        getMacPoolModel().validate();
+
         boolean macPoolTabValid = getMacPoolModel().getIsValid();
+
         setValidTab(TabName.MAC_POOL_TAB, macPoolTabValid);
 
         ValidationCompleteEvent.fire(getEventBus(), this);
-        return generalTabValid && macPoolTabValid && getCustomPropertySheet().getIsValid() && getSpiceProxy().getIsValid() && migrationTabValid;
+        return generalTabValid
+                && migrationTabValid
+                && schedullingTabValid
+                && consoleTablValid
+                && macPoolTabValid;
     }
 
     public void validateName() {
         getName().validateEntity(new IValidation[] {
-                new NotEmptyValidation(),
-                new LengthValidation(40),
-                new I18NNameValidation() });
+            new NotEmptyValidation(),
+            new LengthValidation(40),
+            new I18NNameValidation() });
     }
 
     private String defaultClusterRngSourcesCsv(Version ver) {
@@ -2328,10 +2464,10 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
 
     public boolean getKsmPolicyForNuma() {
         switch (getKsmPolicyForNumaSelection().getSelectedItem()) {
-        case shareAcrossNumaNodes:
-            return true;
-        case shareInsideEachNumaNode:
-            return false;
+            case shareAcrossNumaNodes:
+                return true;
+            case shareInsideEachNumaNode:
+                return false;
         }
         return true;
     }
@@ -2364,5 +2500,4 @@ public class ClusterModel extends EntityModel<Cluster> implements HasValidatedTa
             return description;
         }
     }
-
 }

@@ -12,7 +12,7 @@ import org.ovirt.engine.core.compat.Guid;
 
 public class HostNicStatisticalQuery extends AbstractStatisticalQuery<HostNic, VdsNetworkInterface> {
 
-    private static final Statistic DATA_RX = create("data.current.rx", "Receive data rate",  GAUGE, BYTES_PER_SECOND, DECIMAL);
+    private static final Statistic DATA_RX = create("data.current.rx", "Receive data rate", GAUGE, BYTES_PER_SECOND, DECIMAL);
     private static final Statistic DATA_TX = create("data.current.tx", "Transmit data rate", GAUGE, BYTES_PER_SECOND, DECIMAL);
     private static final Statistic DATA_RX_BITS = create("data.current.rx.bps", "Receive data rate", GAUGE, BITS_PER_SECOND, DECIMAL);
     private static final Statistic DATA_TX_BITS = create("data.current.tx.bps", "Transmit data rate", GAUGE, BITS_PER_SECOND, DECIMAL);
@@ -40,8 +40,8 @@ public class HostNicStatisticalQuery extends AbstractStatisticalQuery<HostNic, V
                 setDatum(clone(DATA_TX_BITS), RxTxCalculator.percent2bits(iface.getSpeed(), s.getTransmitRate())),
                 setDatum(clone(TOTAL_RX), s.getReceivedBytes()),
                 setDatum(clone(TOTAL_TX), s.getTransmittedBytes()),
-                setDatum(clone(ERRS_RX), s.getReceiveDropRate()),
-                setDatum(clone(ERRS_TX), s.getTransmitDropRate()));
+                setDatum(clone(ERRS_RX), s.getReceiveDrops()),
+                setDatum(clone(ERRS_TX), s.getTransmitDrops()));
     }
 
     @Override

@@ -19,31 +19,23 @@ BUILD_JAVA_OPTS_MAVEN?=
 BUILD_JAVA_OPTS_GWT?=
 DEV_REBUILD=1
 DEV_BUILD_GWT_DRAFT=0
-DEV_BUILD_GWT_SUPER_DEV_MODE=0
+DEV_BUILD_GWT_SUPER_DEV_MODE=1
 DEV_EXTRA_BUILD_FLAGS=
 DEV_EXTRA_BUILD_FLAGS_GWT_DEFAULTS=
-DEV_BUILD_SCL_POSTGRESQL=0
+IMAGEIO_SYSCONF_DIR=/etc/ovirt-imageio
 VMCONSOLE_SYSCONF_DIR=/etc/ovirt-vmconsole
 VMCONSOLE_PKI_DIR=/etc/pki/ovirt-vmconsole
 
 PACKAGE_NAME=ovirt-engine
 ENGINE_NAME=$(PACKAGE_NAME)
 MVN=mvn
-PYTHON=$(shell which python2 2> /dev/null)
-PYTHON3=$(shell which python3 2> /dev/null)
-WITH_PYTHON2=0
-WITH_PYTHON3=0
-ifneq ($(PYTHON),)
-WITH_PYTHON2=1
-endif
-ifneq ($(PYTHON3),)
-WITH_PYTHON3=1
-endif
-PYFLAKES=$(shell which pyflakes 2> /dev/null)
-PY_VERSION=$(if $(PYTHON3),3,2)
-PEP8=pep8
+PYTHON=$(shell which python3 2> /dev/null)
+PYFLAKES=pyflakes
+PY_VERSION=3
+PEP8=pycodestyle
 ISORT=isort
-PREFIX=/usr/local
+PYLINT=pylint
+PREFIX?=/usr/local
 LOCALSTATE_DIR=$(PREFIX)/var
 BIN_DIR=$(PREFIX)/bin
 PID_DIR=$(LOCALSTATE_DIR)/run
@@ -71,21 +63,23 @@ PKG_TMP_DIR=$(LOCALSTATE_DIR)/tmp/$(ENGINE_NAME)
 JBOSS_HOME=/usr/share/ovirt-engine-wildfly
 JBOSS_RUNTIME=$(PKG_STATE_DIR)/jboss_runtime
 PYTHON_DIR=$(PYTHON_SYS_DIR)
-PYTHON3_DIR=$(PYTHON3_SYS_DIR)
 DEV_PYTHON_DIR=
-DEV_PYTHON3_DIR=
 DEV_SETUP_ENV_DIR=
 PKG_USER=ovirt
 PKG_GROUP=ovirt
 WILDFLY_OVERLAY_MODULES=/usr/share/ovirt-engine-wildfly-overlay/modules
+
+# Used for offline build as a part of RPM build
+OFFLINE_BUILD=1
+OFFLINE_BUILD_MAVEN_SETTINGS=$(shell pwd)/build/offline-build-maven-settings.xml
+
 #
 # CUSTOMIZATION-END
 #
 
 include version.mak
 # major, minor, seq
-ENGINE_VERSION:=$(shell cat pom.xml | head -n 20 | grep '<version>' | head -n 1 | sed -e 's/.*>\(.*\)<.*/\1/' -e 's/-SNAPSHOT//')
-PACKAGE_VERSION=$(ENGINE_VERSION)$(if $(MILESTONE),_$(MILESTONE))
+PACKAGE_VERSION=$(RPM_VERSION)$(if $(MILESTONE),_$(MILESTONE))
 DISPLAY_VERSION=$(PACKAGE_VERSION)
 
 DEV_BUILD_FLAGS:=-P brand-source-maps
@@ -112,7 +106,7 @@ endif
 
 ifneq ($(SKIP_CHECKS),0)
 BUILD_FLAGS:=$(BUILD_FLAGS) -D skipTests
-DEV_EXTRA_BUILD_FLAGS:=$(DEV_EXTRA_BUILD_FLAGS) -Danimal.sniffer.skip -Dcheckstyle.skip
+DEV_EXTRA_BUILD_FLAGS:=$(DEV_EXTRA_BUILD_FLAGS) -Dcheckstyle.skip
 endif
 
 DEV_BUILD_FLAGS:=$(DEV_BUILD_FLAGS) $(DEV_EXTRA_BUILD_FLAGS_GWT_DEFAULTS)
@@ -129,38 +123,18 @@ BUILD_FLAGS:=$(BUILD_FLAGS) -D gwt.jvmArgs="$(BUILD_JAVA_OPTS_GWT)"
 endif
 BUILD_FLAGS:=$(BUILD_FLAGS) $(EXTRA_BUILD_FLAGS)
 
-ifeq ($(WITH_PYTHON2),1)
+
+ifneq ($(OFFLINE_BUILD),0)
+BUILD_FLAGS:=$(BUILD_FLAGS) -s $(OFFLINE_BUILD_MAVEN_SETTINGS)
+endif
+
 PYTHON_SYS_DIR:=$(shell $(PYTHON) -c "from distutils.sysconfig import get_python_lib as f;print(f())")
-endif
-ifeq ($(WITH_PYTHON3),1)
-PYTHON3_SYS_DIR:=$(shell $(PYTHON3) -c "from distutils.sysconfig import get_python_lib as f;print(f())")
-endif
 TARBALL=$(PACKAGE_NAME)-$(PACKAGE_VERSION).tar.gz
 ARCH=noarch
 BUILD_FILE=tmp.built
 MAVEN_OUTPUT_DIR=.
 BUILD_TARGET=install
 
-# SCL rh-postgresql10 customization
-SCL_PG_BASE=rh-postgresql10
-define ENVFILEC
-RHPOSTGRESQLSCLROOT="/opt/rh/$(SCL_PG_BASE)/root"
-RHPOSTGRESQLSCLDATA="/var/opt/rh/$(SCL_PG_BASE)/lib/pgsql/data"
-if [ -e $${RHPOSTGRESQLSCLROOT}/usr/bin/postgresql-setup ]
-then
-  export sclenv="$(SCL_PG_BASE)"
-  export POSTGRESQLENV="COMMAND/pg_dump=str:$${RHPOSTGRESQLSCLROOT}/usr/bin/pg_dump \
-         COMMAND/psql=str:$${RHPOSTGRESQLSCLROOT}/usr/bin/psql \
-         COMMAND/pg_restore=str:$${RHPOSTGRESQLSCLROOT}/usr/bin/pg_restore \
-         COMMAND/postgresql-setup=str:$${RHPOSTGRESQLSCLROOT}/usr/bin/postgresql-setup \
-         OVESETUP_PROVISIONING/oldPostgresService=str:rh-postgresql95-postgresql \
-         OVESETUP_PROVISIONING/postgresService=str:$(SCL_PG_BASE)-postgresql \
-         OVESETUP_PROVISIONING/postgresConf=str:$${RHPOSTGRESQLSCLDATA}/postgresql.conf \
-         OVESETUP_PROVISIONING/postgresPgHba=str:$${RHPOSTGRESQLSCLDATA}/pg_hba.conf \
-         OVESETUP_PROVISIONING/postgresPgVersion=str:$${RHPOSTGRESQLSCLDATA}/PG_VERSION"
-fi
-endef
-export ENVFILEC
 
 # Don't use any of the bultin rules, in particular don't use the rule
 # for .sh files, as that means that we can't generate .sh files from
@@ -197,9 +171,9 @@ export ENVFILEC
 	-e "s|@SETUP_USR@|$(DATA_DIR)|g" \
 	-e "s|@SETUP_VAR@|$(PKG_STATE_DIR)|g" \
 	-e "s|@DEV_PYTHON_DIR@|$(DEV_PYTHON_DIR)|g" \
-	-e "s|@DEV_PYTHON3_DIR@|$(DEV_PYTHON3_DIR)|g" \
 	-e "s|@DEV_SETUP_ENV_DIR@|$(DEV_SETUP_ENV_DIR)|g" \
-	-e "s|@RPM_VERSION@|$(ENGINE_VERSION)|g" \
+	-e "s|@PREFIX@|$(PREFIX)|g" \
+	-e "s|@RPM_VERSION@|$(RPM_VERSION)|g" \
 	-e "s|@RPM_RELEASE@|$(RPM_RELEASE)|g" \
 	-e "s|@MILESTONE@|$(MILESTONE)|g" \
 	-e "s|@PACKAGE_NAME@|$(PACKAGE_NAME)|g" \
@@ -211,6 +185,7 @@ export ENVFILEC
 	-e "s|@PEP8@|$(PEP8)|g" \
 	-e "s|@PYFLAKES@|$(PYFLAKES)|g" \
 	-e "s|@ISORT@|$(ISORT)|g" \
+	-e "s|@PYLINT@|$(PYLINT)|g" \
 	-e "s|@DEVMODE@|$(BUILD_DEV)|g" \
 	-e "s|@VMCONSOLE_SYSCONF_DIR@|$(VMCONSOLE_SYSCONF_DIR)|g" \
 	-e "s|@VMCONSOLE_PKI_DIR@|$(VMCONSOLE_PKI_DIR)|g" \
@@ -220,6 +195,7 @@ export ENVFILEC
 	-e "s|@VMCONSOLE_PROXY_HELPER_DEFAULTS@|$(DATA_DIR)/conf/ovirt-vmconsole-proxy-helper.conf|g" \
 	-e "s|@BIN_DIR@|$(BIN_DIR)|g" \
 	-e "s|@AAA_JDBC_USR@|$(DATAROOT_DIR)/ovirt-engine-extension-aaa-jdbc|g" \
+	-e "s|@IMAGEIO_SYSCONF_DIR@|$(IMAGEIO_SYSCONF_DIR)|g" \
 	-e "s|@GENERATED_FILE_LIST@|$${GENERATED_FILE_LIST}|g" \
 	$< > $@
 
@@ -227,14 +203,12 @@ export ENVFILEC
 # Once add new template file, if required chmod, add it in generated-files target.
 GENERATED = \
 	.gitignore \
-	automation/milestone-config.sh \
 	ovirt-engine.spec \
 	build/helptag.py \
 	build/helptag_checker.py \
 	build/helptag-oneline-check.py \
 	build/python-check.sh \
 	build/shell-check.sh \
-	packaging/ansible-runner-service-project/project/roles/ovirt-to-vdsm-network/files/ovirt-to-vdsm-network.py \
 	packaging/bin/engine-backup.sh \
 	packaging/bin/engine-host-update.py \
 	packaging/bin/engine-migrate-he.py \
@@ -262,12 +236,12 @@ GENERATED = \
 	packaging/services/ovirt-engine/ovirt-engine.py \
 	packaging/services/ovirt-engine/ovirt-engine.systemd \
 	packaging/services/ovirt-engine/ovirt-engine.sysv \
-	packaging/services/ovirt-fence-kdump-listener/config.py \
+	packaging/services/ovirt-fence-kdump-listener/fence_kdump_config.py \
 	packaging/services/ovirt-fence-kdump-listener/ovirt-fence-kdump-listener.conf \
 	packaging/services/ovirt-fence-kdump-listener/ovirt-fence-kdump-listener.py \
 	packaging/services/ovirt-fence-kdump-listener/ovirt-fence-kdump-listener.systemd \
 	packaging/services/ovirt-fence-kdump-listener/ovirt-fence-kdump-listener.sysv \
-	packaging/services/ovirt-websocket-proxy/config.py \
+	packaging/services/ovirt-websocket-proxy/websocket_config.py \
 	packaging/services/ovirt-websocket-proxy/ovirt-websocket-proxy.conf \
 	packaging/services/ovirt-websocket-proxy/ovirt-websocket-proxy.py \
 	packaging/services/ovirt-websocket-proxy/ovirt-websocket-proxy.systemd \
@@ -279,13 +253,14 @@ GENERATED = \
 	packaging/setup/ovirt_engine_setup/config.py \
 	packaging/setup/ovirt_engine_setup/engine/config.py \
 	packaging/setup/ovirt_engine_setup/engine_common/config.py \
+	packaging/setup/ovirt_engine_setup/ovirt_imageio/config.py \
 	packaging/setup/ovirt_engine_setup/vmconsole_proxy_helper/config.py \
 	packaging/setup/ovirt_engine_setup/websocket_proxy/config.py \
 	packaging/sys-etc/logrotate.d/ovirt-engine \
 	packaging/sys-etc/logrotate.d/ovirt-engine-notifier \
 	packaging/sys-etc/logrotate.d/ovirt-engine-setup \
-	packaging/cinderlib/config.py \
-	packaging/cinderlib/cinderlib-client.py \
+	packaging/managedblock/config.py \
+	packaging/managedblock/cinderlib-client.py \
 	$(NULL)
 
 all: \
@@ -308,7 +283,6 @@ generated-files:	$(GENERATED)
 	chmod a+x packaging/ansible-runner-service-project/project/roles/ovirt-ova-query/files/query_ova.py
 	chmod a+x packaging/ansible-runner-service-project/project/roles/ovirt-ova-pack/files/pack_ova.py
 	chmod a+x packaging/ansible-runner-service-project/project/roles/ovirt-ova-extract/files/extract_ova.py
-	chmod a+x packaging/ansible-runner-service-project/project/roles/ovirt-to-vdsm-network/files/ovirt-to-vdsm-network.py
 	chmod a+x packaging/services/ovirt-engine/ovirt-engine.sysv
 	chmod a+x packaging/services/ovirt-engine-notifier/ovirt-engine-notifier.py
 	chmod a+x packaging/services/ovirt-engine-notifier/ovirt-engine-notifier.sysv
@@ -317,10 +291,27 @@ generated-files:	$(GENERATED)
 	chmod a+x packaging/services/ovirt-fence-kdump-listener/ovirt-fence-kdump-listener.sysv
 	chmod a+x packaging/services/ovirt-websocket-proxy/ovirt-websocket-proxy.py
 	chmod a+x packaging/services/ovirt-websocket-proxy/ovirt-websocket-proxy.sysv
-	chmod a+x packaging/cinderlib/cinderlib-client.py
 	chmod a+x packaging/setup/bin/ovirt-engine-health
 	chmod a+x packaging/setup/bin/ovirt-engine-upgrade-check
-	chmod a+x packaging/cinderlib/cinderlib-client.py
+	chmod a+x packaging/managedblock/cinderlib-client.py
+
+# ----------------------------------------------------------------------
+# install-setup-dev: regenerate templated files and copy ONLY the setup
+# (otopi/python) tree to the target share directory for rapid iteration.
+# Skips Maven/Java build & all other packaging artifacts.
+#
+# Destination: $(PREFIX)/share/ovirt-engine/setup (no DESTDIR; dev only).
+# Usage examples:
+#   make install-setup-dev PREFIX=/usr     # install to /usr/share/ovirt-engine/setup
+#   make install-setup-dev                 # /usr/local/share/ovirt-engine/setup (default PREFIX)
+#
+# ----------------------------------------------------------------------
+.PHONY: install-setup-dev
+install-setup-dev: generated-files
+	$(MAKE) copy-recursive SOURCEDIR=packaging/setup TARGETDIR="$(PREFIX)/share/ovirt-engine/setup" \
+		EXCLUDE_GEN="$(GENERATED)" \
+		EXCLUDE="packaging/setup/tests packaging/setup/plugins/README"
+	@echo 'Done. Updated setup code is in $(PREFIX)/share/ovirt-engine/setup'
 
 # support force run of maven
 maven:
@@ -340,6 +331,19 @@ clean:
 
 	# Clean files generated from templates:
 	rm -rf $$(echo $(GENERATED) | grep -v .gitignore)
+
+# ----------------------------------------------------------------------
+# clean-setup-conf: cleans up setup config files in PREFIX
+# Can be used to reset the setup state during development.
+# Keep in mind that this doesn't touch the postgresql database!
+#
+# Usage examples:
+#   make clean-setup-conf PREFIX=/usr
+#   make clean-setup-conf
+#
+# ----------------------------------------------------------------------
+clean-setup-conf:
+	find $(PREFIX) -type f -name '*.conf' -path '*setup*' -exec rm -v {} \;
 
 test:
 	$(MVN) install $(BUILD_FLAGS) $(EXTRA_BUILD_FLAGS)
@@ -452,34 +456,48 @@ install_artifacts:
 		"$(DESTDIR)$(PKG_DOC_DIR)/AuditLogMessages.properties"
 	chmod 0644 "$(DESTDIR)$(PKG_DOC_DIR)/AuditLogMessages.properties"
 
-install_poms:
-	install -dm 755 "$(DESTDIR)$(MAVENPOM_DIR)"
-	install -m 644 backend/manager/extensions-tool/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-extensions-tool.pom"
-	install -m 644 backend/manager/sso-client-registration-tool/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-sso-client-registration-tool.pom"
-	install -m 644 backend/manager/logutils/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-logutils.pom"
-	install -m 644 backend/manager/modules/aaa/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-aaa.pom"
-	install -m 644 backend/manager/modules/bll/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-bll.pom"
-	install -m 644 backend/manager/modules/branding/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-branding.pom"
-	install -m 644 backend/manager/modules/builtin-extensions/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-builtin.pom"
-	install -m 644 backend/manager/modules/common/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-common.pom"
-	install -m 644 backend/manager/modules/compat/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-compat.pom"
-	install -m 644 backend/manager/modules/dal/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-dal.pom"
-	install -m 644 backend/manager/modules/extensions-manager/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-extensions-manager.pom"
-	install -m 644 backend/manager/modules/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-manager-modules.pom"
-	install -m 644 backend/manager/modules/restapi/interface/common/jaxrs/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-interface-common-jaxrs.pom"
-	install -m 644 backend/manager/modules/restapi/interface/definition/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-restapi-definition.pom"
-	install -m 644 backend/manager/modules/restapi/jaxrs/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-restapi-jaxrs.pom"
-	install -m 644 backend/manager/modules/restapi/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-restapi-parent.pom"
-	install -m 644 backend/manager/modules/restapi/types/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-restapi-types.pom"
-	install -m 644 backend/manager/modules/scheduler/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-scheduler.pom"
-	install -m 644 backend/manager/modules/searchbackend/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-searchbackend.pom"
-	install -m 644 backend/manager/modules/utils/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-utils.pom"
-	install -m 644 backend/manager/modules/uutils/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-uutils.pom"
-	install -m 644 backend/manager/modules/vdsbroker/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-vdsbroker.pom"
-	install -m 644 backend/manager/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-manager.pom"
-	install -m 644 backend/manager/tools/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-tools.pom"
-	install -m 644 backend/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-backend.pom"
-	install -m 644 pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)-root.pom"
+install_maven_metadata:
+	install -dm 755 "$(DESTDIR)$(DATAROOT_DIR)/maven-metadata"
+	install -m 644 packaging/maven-metadata/ovirt-engine-base.xml "$(DESTDIR)$(DATAROOT_DIR)/maven-metadata/ovirt-engine-base.xml"
+	install -m 644 packaging/maven-metadata/ovirt-engine-backend.xml "$(DESTDIR)$(DATAROOT_DIR)/maven-metadata/ovirt-engine-backend.xml"
+	install -m 644 packaging/maven-metadata/ovirt-engine-restapi.xml "$(DESTDIR)$(DATAROOT_DIR)/maven-metadata/ovirt-engine-restapi.xml"
+	install -m 644 packaging/maven-metadata/ovirt-engine-tools.xml "$(DESTDIR)/$(DATAROOT_DIR)/maven-metadata/ovirt-engine-tools.xml"
+
+install_poms: \
+		install_maven_metadata \
+		$(NULL)
+	install -dm 755 "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)"
+	# base
+	install -m 644 pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/root.pom"
+	install -m 644 backend/manager/logutils/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/logutils.pom"
+	install -m 644 backend/manager/modules/branding/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/branding.pom"
+	install -m 644 backend/manager/modules/common/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/common.pom"
+	install -m 644 backend/manager/modules/compat/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/compat.pom"
+	install -m 644 backend/manager/modules/extensions-manager/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/extensions-manager.pom"
+	install -m 644 backend/manager/modules/utils/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/utils.pom"
+	install -m 644 backend/manager/modules/uutils/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/uutils.pom"
+	# backend
+	install -m 644 backend/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/backend.pom"
+	install -m 644 backend/manager/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/manager.pom"
+	install -m 644 backend/manager/modules/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/manager-modules.pom"
+	install -m 644 backend/manager/modules/aaa/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/aaa.pom"
+	install -m 644 backend/manager/modules/bll/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/bll.pom"
+	install -m 644 backend/manager/modules/builtin-extensions/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/builtin.pom"
+	install -m 644 backend/manager/modules/dal/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/dal.pom"
+	install -m 644 backend/manager/modules/searchbackend/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/searchbackend.pom"
+	install -m 644 backend/manager/modules/vdsbroker/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/vdsbroker.pom"
+	# restapi
+	install -m 644 backend/manager/modules/restapi/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/restapi-parent.pom"
+	install -m 644 backend/manager/modules/restapi/interface/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/interface.pom"
+	install -m 644 backend/manager/modules/restapi/interface/common/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/common-parent.pom"
+	install -m 644 backend/manager/modules/restapi/interface/common/jaxrs/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/interface-common-jaxrs.pom"
+	install -m 644 backend/manager/modules/restapi/interface/definition/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/restapi-definition.pom"
+	install -m 644 backend/manager/modules/restapi/jaxrs/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/restapi-jaxrs.pom"
+	install -m 644 backend/manager/modules/restapi/types/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/restapi-types.pom"
+	# tools
+	install -m 644 backend/manager/extensions-tool/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/extensions-tool.pom"
+	install -m 644 backend/manager/sso-client-registration-tool/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/sso-client-registration-tool.pom"
+	install -m 644 backend/manager/tools/pom.xml "$(DESTDIR)$(MAVENPOM_DIR)/$(PACKAGE_NAME)/tools.pom"
 
 install-packaging-files: \
 		$(GENERATED) \
@@ -487,7 +505,7 @@ install-packaging-files: \
 	$(MAKE) copy-recursive SOURCEDIR=packaging/sys-etc TARGETDIR="$(DESTDIR)$(SYSCONF_DIR)" EXCLUDE_GEN="$(GENERATED)"
 	$(MAKE) copy-recursive SOURCEDIR=packaging/etc TARGETDIR="$(DESTDIR)$(PKG_SYSCONF_DIR)" EXCLUDE_GEN="$(GENERATED)"
 	$(MAKE) copy-recursive SOURCEDIR=packaging/pki TARGETDIR="$(DESTDIR)$(PKG_PKI_DIR)" EXCLUDE_GEN="$(GENERATED)"
-	for d in bin conf files firewalld services playbooks cinderlib ansible-runner-service-project selinux; do \
+	for d in bin conf files firewalld services managedblock ansible-runner-service-project selinux; do \
 		$(MAKE) copy-recursive SOURCEDIR="packaging/$${d}" TARGETDIR="$(DESTDIR)$(DATA_DIR)/$${d}" EXCLUDE_GEN="$(GENERATED)" EXCLUDE="packaging/ansible-runner-service-project/env/.gitkeep"; \
 	done
 	$(MAKE) copy-recursive SOURCEDIR=packaging/doc TARGETDIR="$(DESTDIR)$(PKG_DOC_DIR)" EXCLUDE_GEN="$(GENERATED)"
@@ -503,12 +521,7 @@ install-packaging-files: \
 		EXCLUDE_GEN="$(GENERATED)" \
 		EXCLUDE="$$(echo $$(find packaging/setup/tests)) packaging/setup/plugins/README"
 
-ifeq ($(WITH_PYTHON3),1)
-	$(MAKE) copy-recursive SOURCEDIR=packaging/pythonlib TARGETDIR="$(DESTDIR)$(PYTHON3_DIR)" EXCLUDE_GEN="$(GENERATED)"
-endif
-ifeq ($(WITH_PYTHON2),1)
-	$(MAKE) copy-recursive SOURCEDIR=packaging/pythonlib TARGETDIR="$(DESTDIR)$(PYTHON_DIR)" EXCLUDE_GEN="$(GENERATED)"
-endif
+	$(MAKE) copy-recursive SOURCEDIR=packaging/pythonlib TARGETDIR="$(DESTDIR)$(PYTHON_DIR)" EXCLUDE="$$(echo $$(find packaging/pythonlib/tests))" EXCLUDE_GEN="$(GENERATED)"
 
 	# we should avoid make these directories dirty
 	$(MAKE) copy-recursive SOURCEDIR=packaging/dbscripts TARGETDIR="$(DESTDIR)$(DATA_DIR)/dbscripts" \
@@ -551,6 +564,7 @@ install-layout: \
 	install -d -m 755 "$(DESTDIR)$(PKG_PKI_DIR)/requests-qemu"
 	install -d -m 755 "$(DESTDIR)$(DATA_DIR)/ui-plugins"
 	install -d -m 755 "$(DESTDIR)$(PKG_SYSCONF_DIR)/branding"
+	install -d -m 750 "$(DESTDIR)$(PKG_STATE_DIR)"
 	install -d -m 750 "$(DESTDIR)$(PKG_STATE_DIR)/backups"
 	install -d -m 750 "$(DESTDIR)$(PKG_BACKUP_DEFAULT_DIR)"
 	install -d -m 750 "$(DESTDIR)$(PKG_BACKUP_LOG_DEFAULT_DIR)"
@@ -569,6 +583,8 @@ install-layout: \
 
 	ln -sf "$(DATA_DIR)/conf/osinfo-defaults.properties" "$(DESTDIR)$(PKG_SYSCONF_DIR)/osinfo.conf.d/00-defaults.properties"
 
+	ln -sf "$(DATA_DIR)/conf/timezones-defaults.properties" "$(DESTDIR)$(PKG_SYSCONF_DIR)/timezones/00-defaults.properties"
+
 gwt-debug:
 	$(MVN) -pl "frontend/webadmin/modules/webadmin" \
 		$(DEV_EXTRA_BUILD_FLAGS_GWT_DEFAULTS) \
@@ -584,9 +600,10 @@ all-dev:
 	$(MAKE) \
 		all \
 		BUILD_DEV=1 \
+		OFFLINE_BUILD=0 \
 		DEV_PYTHON_DIR="$(PREFIX)$(PYTHON_SYS_DIR)" \
-		DEV_PYTHON3_DIR="$(PREFIX)$(PYTHON3_SYS_DIR)" \
 		DEV_SETUP_ENV_DIR="$(PREFIX)/etc/ovirt-engine-setup.env.d" \
+		IMAGEIO_SYSCONF_DIR="$(PREFIX)/etc/ovirt-imageio" \
 		VMCONSOLE_SYSCONF_DIR="$(PREFIX)/etc/ovirt-vmconsole" \
 		VMCONSOLE_PKI_DIR="$(PREFIX)/etc/pki/ovirt-vmconsole" \
 		$(NULL)
@@ -611,14 +628,15 @@ install-dev:	\
 		BUILD_DEV=1 \
 		BUILD_VALIDATION=0 \
 		PYTHON_DIR="$(PREFIX)$(PYTHON_SYS_DIR)" \
-		PYTHON3_DIR="$(PREFIX)$(PYTHON3_SYS_DIR)" \
 		DEV_FLIST=tmp.dev.flist \
+		OFFLINE_BUILD=0 \
 		$(NULL)
 	cp tmp.dev.flist "$(DESTDIR)$(PREFIX)/dev.$(PACKAGE_NAME).flist"
 
 	install -d "$(DESTDIR)$(PKG_TMP_DIR)"
 	install -d "$(DESTDIR)$(PKG_CACHE_DIR)"
 	install -d "$(DESTDIR)$(PKG_STATE_DIR)/.ssh"
+	install -d "$(DESTDIR)$(PKG_STATE_DIR)/ansible-runner"
 	install -d "$(DESTDIR)$(PKG_STATE_DIR)/content"
 	install -d "$(DESTDIR)$(PKG_STATE_DIR)/setup/answers"
 	install -d "$(DESTDIR)$(PKG_LOG_DIR)/host-deploy"
@@ -627,7 +645,7 @@ install-dev:	\
 	install -d "$(DESTDIR)$(PKG_LOG_DIR)/dump"
 	install -d "$(DESTDIR)$(PKG_LOG_DIR)/ansible"
 	install -d "$(DESTDIR)$(PKG_LOG_DIR)/ova"
-	install -d "$(DESTDIR)$(PKG_LOG_DIR)/cinderlib"
+	install -d "$(DESTDIR)$(PKG_LOG_DIR)/managedblock"
 
 	touch "$(DESTDIR)$(PKG_STATE_DIR)/.ssh/config"
 
@@ -635,8 +653,3 @@ install-dev:	\
 		touch "$(DESTDIR)$(PKG_STATE_DIR)/jboss_runtime/deployments/engine.ear.deployed"; \
 	fi
 
-ifneq ($(DEV_BUILD_SCL_POSTGRESQL),0)
-	mkdir -p "$(PREFIX)/etc/ovirt-engine-setup.env.d"
-	echo "$$ENVFILEC" > "$(PREFIX)/etc/ovirt-engine-setup.env.d/10-setup-scl-postgres.env"
-	echo "sclenv=\"rh-postgresql10\"" > "$(PREFIX)/etc/ovirt-engine/engine.conf.d/10-scl-postgres.conf"
-endif

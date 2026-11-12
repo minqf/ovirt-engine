@@ -8,7 +8,6 @@ import javax.validation.constraints.Min;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Size;
 
-import org.codehaus.jackson.annotate.JsonIgnore;
 import org.ovirt.engine.core.common.businessentities.BusinessEntitiesDefinitions;
 import org.ovirt.engine.core.common.businessentities.BusinessEntity;
 import org.ovirt.engine.core.common.businessentities.Commented;
@@ -22,6 +21,8 @@ import org.ovirt.engine.core.common.validation.annotation.ValidName;
 import org.ovirt.engine.core.common.validation.group.CreateEntity;
 import org.ovirt.engine.core.common.validation.group.UpdateEntity;
 import org.ovirt.engine.core.compat.Guid;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 public class Network implements Queryable, BusinessEntity<Guid>, Nameable, Commented, HasStoragePool {
     private static final long serialVersionUID = 7357288865938773402L;
@@ -79,6 +80,8 @@ public class Network implements Queryable, BusinessEntity<Guid>, Nameable, Comme
 
     @Valid
     private DnsResolverConfiguration dnsResolverConfiguration;
+
+    private boolean portIsolation;
 
     public Network() {
         vmNetwork = true;
@@ -237,7 +240,7 @@ public class Network implements Queryable, BusinessEntity<Guid>, Nameable, Comme
     }
 
     public boolean isTunnelled() {
-        return isExternal() && getProvidedBy().getPhysicalNetworkId()==null;
+        return isExternal() && getProvidedBy().getPhysicalNetworkId() == null;
     }
 
     public String getLabel() {
@@ -246,6 +249,14 @@ public class Network implements Queryable, BusinessEntity<Guid>, Nameable, Comme
 
     public void setLabel(String label) {
         this.label = label;
+    }
+
+    public boolean isPortIsolation() {
+        return portIsolation;
+    }
+
+    public void setPortIsolation(boolean portIsolation) {
+        this.portIsolation = portIsolation;
     }
 
     @Override
@@ -273,6 +284,7 @@ public class Network implements Queryable, BusinessEntity<Guid>, Nameable, Comme
                 .append("label", getLabel())
                 .append("qosId", getQosId())
                 .append("dnsResolverConfiguration", dnsResolverConfiguration)
+                .append("portIsolation", isPortIsolation())
                 .build();
     }
 
@@ -297,7 +309,8 @@ public class Network implements Queryable, BusinessEntity<Guid>, Nameable, Comme
                 providedBy,
                 label,
                 qosId,
-                dnsResolverConfiguration
+                dnsResolverConfiguration,
+                portIsolation
         );
     }
 
@@ -328,7 +341,8 @@ public class Network implements Queryable, BusinessEntity<Guid>, Nameable, Comme
                 && Objects.equals(providedBy, other.providedBy)
                 && Objects.equals(label, other.label)
                 && Objects.equals(qosId, other.qosId)
-                && Objects.equals(dnsResolverConfiguration, other.dnsResolverConfiguration);
+                && Objects.equals(dnsResolverConfiguration, other.dnsResolverConfiguration)
+                && portIsolation == other.portIsolation;
     }
 
     public int getMtu() {

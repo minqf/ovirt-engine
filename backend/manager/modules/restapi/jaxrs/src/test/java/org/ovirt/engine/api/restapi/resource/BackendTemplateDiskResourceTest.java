@@ -137,10 +137,10 @@ public class BackendTemplateDiskResourceTest
                 getEntity(3));
         setUriInfo(setUpActionExpectations(ActionType.MoveOrCopyDisk,
                                            MoveOrCopyImageGroupParameters.class,
-                                           new String[] { "ImageId", "ImageGroupID", "SourceDomainId",
-                                                   "StorageDomainId", "Operation" },
-                                           new Object[] { GUIDS[1], GUIDS[3], Guid.Empty, GUIDS[3], ImageOperation
-                                                   .Copy }));
+                                            new String[] { "ImageId", "ImageGroupID", "SourceDomainId",
+                                                "StorageDomainId", "Operation" },
+                                            new Object[] { GUIDS[1], GUIDS[3], Guid.Empty, GUIDS[3], ImageOperation
+                                                    .Copy }));
 
         verifyActionResponse(resource.copy(setUpCopyParams(false)));
     }
@@ -349,11 +349,13 @@ public class BackendTemplateDiskResourceTest
     }
 
     private org.ovirt.engine.core.common.businessentities.storage.Disk setUpStatisticalEntityExpectations(DiskImage entity) {
-        when(entity.getReadRate()).thenReturn(1);
-        when(entity.getWriteRate()).thenReturn(2);
-        when(entity.getReadLatency()).thenReturn(3.0);
-        when(entity.getWriteLatency()).thenReturn(4.0);
-        when(entity.getFlushLatency()).thenReturn(5.0);
+        when(entity.getReadRate()).thenReturn(1L);
+        when(entity.getReadOps()).thenReturn(2L);
+        when(entity.getWriteRate()).thenReturn(3L);
+        when(entity.getWriteOps()).thenReturn(4L);
+        when(entity.getReadLatency()).thenReturn(5.0);
+        when(entity.getWriteLatency()).thenReturn(6.0);
+        when(entity.getFlushLatency()).thenReturn(7.0);
         return entity;
     }
 

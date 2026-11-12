@@ -114,6 +114,8 @@ public class VdsDynamic implements BusinessEntityWithStatus<Guid, VDSStatus> {
 
     private RpmVersion ovsVersion;
 
+    private RpmVersion nmstateVersion;
+
     private String iScsiInitiatorName;
 
     private KdumpStatus kdumpStatus;
@@ -212,6 +214,10 @@ public class VdsDynamic implements BusinessEntityWithStatus<Guid, VDSStatus> {
 
     private boolean backupEnabled;
 
+    private boolean coldBackupEnabled;
+
+    private boolean clearBitmapsEnabled;
+
     @Valid
     private DnsResolverConfiguration reportedDnsResolverConfiguration;
 
@@ -227,6 +233,14 @@ public class VdsDynamic implements BusinessEntityWithStatus<Guid, VDSStatus> {
 
     private String bootUuid;
 
+    private boolean cdChangePdiv;
+
+    private boolean ovnConfigured;
+
+    private List<VdsCpuUnit> cpuTopology;
+
+    private String vdsmCpusAffinity;
+
     public VdsDynamic() {
         rpmVersion = new RpmVersion();
         libvirtVersion = new RpmVersion();
@@ -234,6 +248,7 @@ public class VdsDynamic implements BusinessEntityWithStatus<Guid, VDSStatus> {
         librbdVersion = new RpmVersion();
         glusterfsCliVersion = new RpmVersion();
         ovsVersion = new RpmVersion();
+        nmstateVersion = new RpmVersion();
         status = VDSStatus.Unassigned;
         externalStatus = ExternalStatus.Ok;
         previousStatus = VDSStatus.Unassigned;
@@ -256,6 +271,7 @@ public class VdsDynamic implements BusinessEntityWithStatus<Guid, VDSStatus> {
 
         // By default we support these storage versions (for older vdsm that do not report it).
         supportedDomainVersions = StorageFormatType.getDefaultSupportedVersions();
+        cpuTopology = new ArrayList<>();
     }
 
     public Integer getCpuCores() {
@@ -439,7 +455,7 @@ public class VdsDynamic implements BusinessEntityWithStatus<Guid, VDSStatus> {
     }
 
     public String getSoftwareVersion() {
-       return softwareVersion;
+        return softwareVersion;
     }
 
     public void setSoftwareVersion(String value) {
@@ -687,6 +703,14 @@ public class VdsDynamic implements BusinessEntityWithStatus<Guid, VDSStatus> {
         this.ovsVersion = ovsVersion;
     }
 
+    public RpmVersion getNmstateVersion() {
+        return nmstateVersion;
+    }
+
+    public void setNmstateVersion(RpmVersion nmstateVersion) {
+        this.nmstateVersion = nmstateVersion;
+    }
+
     public String getBuildName() {
         return buildName;
     }
@@ -872,7 +896,7 @@ public class VdsDynamic implements BusinessEntityWithStatus<Guid, VDSStatus> {
         return inFenceFlow;
     }
 
-    public void setInFenceFlow( boolean isInFenceFlow) {
+    public void setInFenceFlow(boolean isInFenceFlow) {
         this.inFenceFlow = isInFenceFlow;
     }
 
@@ -916,6 +940,22 @@ public class VdsDynamic implements BusinessEntityWithStatus<Guid, VDSStatus> {
         backupEnabled = value;
     }
 
+    public boolean isColdBackupEnabled() {
+        return coldBackupEnabled;
+    }
+
+    public void setColdBackupEnabled(Boolean coldBackupEnabled) {
+        this.coldBackupEnabled = coldBackupEnabled;
+    }
+
+    public boolean isClearBitmapsEnabled() {
+        return clearBitmapsEnabled;
+    }
+
+    public void setClearBitmapsEnabled(boolean clearBitmapsEnabled) {
+        this.clearBitmapsEnabled = clearBitmapsEnabled;
+    }
+
     public Map<String, Object> getSupportedBlockSize() {
         return supportedBlockSize;
     }
@@ -955,6 +995,39 @@ public class VdsDynamic implements BusinessEntityWithStatus<Guid, VDSStatus> {
     public void setBootUuid(String bootUuid) {
         this.bootUuid = bootUuid;
     }
+
+    public boolean isCdChangePdiv() {
+        return cdChangePdiv;
+    }
+
+    public void setCdChangePdiv(boolean cdChangePdiv) {
+        this.cdChangePdiv = cdChangePdiv;
+    }
+
+    public boolean isOvnConfigured() {
+        return this.ovnConfigured;
+    }
+
+    public void setOvnConfigured(boolean ovnConfigured) {
+        this.ovnConfigured = ovnConfigured;
+    }
+
+    public void setCpuTopology(List<VdsCpuUnit> value) {
+        cpuTopology = value;
+    }
+
+    public List<VdsCpuUnit> getCpuTopology() {
+        return cpuTopology;
+    }
+
+    public void setVdsmCpusAffinity(String value) {
+        vdsmCpusAffinity = value;
+    }
+
+    public String getVdsmCpusAffinity() {
+        return vdsmCpusAffinity;
+    }
+
 
     @Override
     public int hashCode() {
@@ -1029,12 +1102,18 @@ public class VdsDynamic implements BusinessEntityWithStatus<Guid, VDSStatus> {
                 vncEncryptionEnabled,
                 connectorInfo,
                 backupEnabled,
+                coldBackupEnabled,
+                clearBitmapsEnabled,
                 supportedDomainVersions,
                 supportedBlockSize,
                 tscFrequency,
                 tscScalingEnabled,
                 fipsEnabled,
-                bootUuid
+                bootUuid,
+                cdChangePdiv,
+                ovnConfigured,
+                cpuTopology,
+                vdsmCpusAffinity
         );
     }
 
@@ -1119,11 +1198,17 @@ public class VdsDynamic implements BusinessEntityWithStatus<Guid, VDSStatus> {
                 && vncEncryptionEnabled == other.vncEncryptionEnabled
                 && Objects.equals(connectorInfo, other.connectorInfo)
                 && backupEnabled == other.backupEnabled
+                && coldBackupEnabled == other.coldBackupEnabled
+                && clearBitmapsEnabled == other.clearBitmapsEnabled
                 && Objects.equals(supportedDomainVersions, other.supportedDomainVersions)
                 && Objects.equals(supportedBlockSize, other.supportedBlockSize)
                 && Objects.equals(tscFrequency, other.tscFrequency)
                 && tscScalingEnabled == other.tscScalingEnabled
                 && fipsEnabled == other.fipsEnabled
-                && Objects.equals(bootUuid, other.bootUuid);
+                && Objects.equals(bootUuid, other.bootUuid)
+                && cdChangePdiv == other.cdChangePdiv
+                && ovnConfigured == other.ovnConfigured
+                && Objects.equals(cpuTopology, other.cpuTopology)
+                && Objects.equals(vdsmCpusAffinity, other.vdsmCpusAffinity);
     }
 }

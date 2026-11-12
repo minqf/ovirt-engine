@@ -22,7 +22,7 @@ import org.ovirt.engine.core.common.vdscommands.VdsIdVDSCommandParametersBase;
 import org.ovirt.engine.core.dao.gluster.GlusterDBUtils;
 
 /**
- * Query to get Added Gluster Servers with/without server ssh key fingerprint
+ * Query to get Added Gluster Servers with/without server ssh public key
  */
 public class GetAddedGlusterServersQuery<P extends AddedGlusterServersParameters> extends QueriesCommandBase<P> {
     @Inject
@@ -41,7 +41,7 @@ public class GetAddedGlusterServersQuery<P extends AddedGlusterServersParameters
         Map<String, String> glusterServers = new HashMap<>();
         VDS upServer = glusterUtil.getUpServer(getParameters().getClusterId());
 
-        if(upServer != null ) {
+        if (upServer != null) {
             VDSReturnValue returnValue = runVdsCommand(VDSCommandType.GlusterServersList,
                     new VdsIdVDSCommandParametersBase(upServer.getId()));
             glusterServers = getAddedGlusterServers((List<GlusterServerInfo>) returnValue.getReturnValue());
@@ -51,24 +51,24 @@ public class GetAddedGlusterServersQuery<P extends AddedGlusterServersParameters
     }
 
     private Map<String, String> getAddedGlusterServers(List<GlusterServerInfo> glusterServers) {
-        Map<String, String> serversAndFingerprint = new HashMap<>();
+        Map<String, String> serversAndPublicKeys = new HashMap<>();
 
         for (GlusterServerInfo server : glusterServers) {
             if (server.getStatus() == PeerStatus.CONNECTED && !serverExists(server)) {
-                String fingerprint = null;
+                String publicKey = null;
                 QueryReturnValue returnValue;
-                if (getParameters().isServerKeyFingerprintRequired()) {
-                    returnValue =
-                            runInternalQuery(QueryType.GetServerSSHKeyFingerprint,
-                                    new ServerParameters(server.getHostnameOrIp()));
+                if (getParameters().isServerPublicKeyRequired()) {
+                    returnValue = runInternalQuery(QueryType.GetServerSSHPublicKey,
+                            new ServerParameters(server.getHostnameOrIp()));
                     if (returnValue != null && returnValue.getSucceeded() && returnValue.getReturnValue() != null) {
-                        fingerprint = returnValue.getReturnValue().toString();
+                        publicKey = returnValue.getReturnValue().toString();
                     }
                 }
-                serversAndFingerprint.put(server.getHostnameOrIp(), fingerprint == null ? "" : fingerprint);
+
+                serversAndPublicKeys.put(server.getHostnameOrIp(), publicKey == null ? "" : publicKey);
             }
         }
-        return serversAndFingerprint;
+        return serversAndPublicKeys;
     }
 
     public boolean serverExists(GlusterServerInfo glusterServer) {

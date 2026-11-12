@@ -46,6 +46,7 @@ public abstract class BaseApplicationInit<T extends LoginModel> implements Boots
 
     private final ApplicationLogManager applicationLogManager;
     private final AlertManager alertManager;
+    private final ClientStorage clientStorage;
 
     public BaseApplicationInit(ITypeResolver typeResolver,
             FrontendEventsHandlerImpl frontendEventsHandler,
@@ -55,7 +56,8 @@ public abstract class BaseApplicationInit<T extends LoginModel> implements Boots
             LockInteractionManager lockInteractionManager,
             Frontend frontend, CurrentUserRole currentUserRole,
             ApplicationLogManager applicationLogManager,
-            AlertManager alertManager) {
+            AlertManager alertManager,
+            ClientStorage clientStorage) {
         this.typeResolver = typeResolver;
         this.frontendEventsHandler = frontendEventsHandler;
         this.frontendFailureEventListener = frontendFailureEventListener;
@@ -66,6 +68,7 @@ public abstract class BaseApplicationInit<T extends LoginModel> implements Boots
         this.currentUserRole = currentUserRole;
         this.applicationLogManager = applicationLogManager;
         this.alertManager = alertManager;
+        this.clientStorage = clientStorage;
     }
 
     @Override
@@ -118,7 +121,7 @@ public abstract class BaseApplicationInit<T extends LoginModel> implements Boots
         // Add model login event handler
         loginModel.getLoggedInEvent().addListener((ev, sender, args) -> onLogin(loginModel));
 
-        loginModel.getCreateInstanceOnly().getEntityChangedEvent().addListener((ev, sender, args) -> currentUserRole.setCreateInstanceOnly(loginModel.getCreateInstanceOnly().getEntity() ));
+        loginModel.getCreateInstanceOnly().getEntityChangedEvent().addListener((ev, sender, args) -> currentUserRole.setCreateInstanceOnly(loginModel.getCreateInstanceOnly().getEntity()));
     }
 
     /**
@@ -202,7 +205,16 @@ public abstract class BaseApplicationInit<T extends LoginModel> implements Boots
         // after all model providers have been properly initialized
         Scheduler.get().scheduleDeferred(() -> {
             lockInteractionManager.showLoadingIndicator();
-            getLoginModel().autoLogin(loggedUser);
+            getLoginModel().autoLogin(loggedUser, userInfo.getWebAdminUserOption());
+            clientStorage.storeAllUserSettingsInLocalStorage(Frontend.getInstance()
+                    .getWebAdminSettings());
+            Frontend.getInstance()
+                    .getUserProfileManager()
+                    // the injected version will be obsolete after first modification
+                    // after reload, pass the control over it to the profile manager
+                    .reload(profile -> Frontend.getInstance()
+                            .getUserProfileManager()
+                            .setInjectedWebAdminUserOption(null));
         });
 
         user.setUserInfo(userInfo);

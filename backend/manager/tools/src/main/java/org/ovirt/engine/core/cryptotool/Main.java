@@ -53,66 +53,57 @@ public class Main {
     }
 
     private enum Action {
-        PBE_ENCODE(
-            argMap -> System.out.println(
-                EnvelopePBE.encode(
-                    (String)argMap.get("algorithm"),
-                    (Integer)argMap.get("key-size"),
-                    (Integer)argMap.get("iterations"),
-                    null,
-                    getPassword("Password: ", (String)argMap.get("password"))
-                )
+        PBE_ENCODE(argMap -> System.out.println(
+                        EnvelopePBE.encode(
+                        (String) argMap.get("algorithm"),
+                        (Integer) argMap.get("key-size"),
+                        (Integer) argMap.get("iterations"),
+                        null,
+                        getPassword("Password: ", (String) argMap.get("password"))
+                    )
             )
         ),
-        PBE_CHECK(
-            argMap -> {
-                if (
-                    !EnvelopePBE.check(
-                        new String(readStream(System.in), StandardCharsets.UTF_8),
-                        getPassword("Password: ", (String)argMap.get("password"))
-                    )
-                ) {
-                    System.err.println("FAILED");
-                    throw new ExitException("Check failed", 1);
-                }
+        PBE_CHECK(argMap -> {
+            if (
+                !EnvelopePBE.check(
+                    new String(readStream(System.in), StandardCharsets.UTF_8),
+                getPassword("Password: ", (String) argMap.get("password"))
+            )) {
+                System.err.println("FAILED");
+                throw new ExitException("Check failed", 1);
             }
-        ),
-        ENC_ENCODE(
-            argMap -> {
-                try(InputStream in = new FileInputStream((String)argMap.get("certificate"))) {
-                    System.out.println(
-                        EnvelopeEncryptDecrypt.encrypt(
-                            (String)argMap.get("algorithm"),
-                            (Integer)argMap.get("key-size"),
-                            CertificateFactory.getInstance("X.509").generateCertificate(in),
-                            (Integer)argMap.get("block-size"),
-                            readStream(System.in)
-                        )
-                    );
-                }
+        }),
+        ENC_ENCODE(argMap -> {
+            try (InputStream in = new FileInputStream((String) argMap.get("certificate"))) {
+                System.out.println(
+                                    EnvelopeEncryptDecrypt.encrypt(
+                                    (String) argMap.get("algorithm"),
+                                    (Integer) argMap.get("key-size"),
+                                    CertificateFactory.getInstance("X.509").generateCertificate(in),
+                                    (Integer) argMap.get("block-size"),
+                                    readStream(System.in)
+                                ));
             }
-        ),
-        ENC_DECODE(
-            argMap -> {
-                String keystorePassword = getPassword("Key store password: ", (String)argMap.get("keystore-password"));
-                System.out.write(
-                    EnvelopeEncryptDecrypt.decrypt(
-                        getPrivateKeyEntry(
-                            getKeyStore(
-                                (String)argMap.get("keystore-type"),
-                                (String)argMap.get("keystore"),
-                                keystorePassword
+        }),
+        ENC_DECODE(argMap -> {
+            String keystorePassword = getPassword("Key store password: ", (String) argMap.get("keystore-password"));
+            System.out.write(
+                        EnvelopeEncryptDecrypt.decrypt(
+                            getPrivateKeyEntry(
+                                getKeyStore(
+                                    (String) argMap.get("keystore-type"),
+                                    (String) argMap.get("keystore"),
+                                    keystorePassword
+                                ),
+                                (String) argMap.get("keystore-alias"),
+                                    argMap.get("key-password") != null ?
+                                    getPassword("Key password: ", (String) argMap.get("key-password")) :
+                                    keystorePassword
                             ),
-                            (String)argMap.get("keystore-alias"),
-                                argMap.get("key-password") != null ?
-                                getPassword("Key password: ", (String)argMap.get("key-password")) :
-                                keystorePassword
-                        ),
                         new String(readStream(System.in), StandardCharsets.UTF_8)
                     )
-                );
-            }
-        );
+            );
+        });
 
         private Logic logic;
 
@@ -126,12 +117,12 @@ public class Main {
             parser.parse(cmdArgs);
             Map<String, Object> argMap = parser.getParsedArgs();
 
-            if((Boolean)argMap.get("help")) {
+            if ((Boolean) argMap.get("help")) {
                 System.out.format("Usage: %s", parser.getUsage());
                 throw new ExitException("Help", 0);
             }
-            if(!parser.getErrors().isEmpty()) {
-                for(Throwable t : parser.getErrors()) {
+            if (!parser.getErrors().isEmpty()) {
+                for (Throwable t : parser.getErrors()) {
                     System.err.format("FATAL: %s%n", t.getMessage());
                 }
                 throw new ExitException("Parsing error", 1);
@@ -154,7 +145,7 @@ public class Main {
     }
 
     private static KeyStore.PrivateKeyEntry getPrivateKeyEntry(KeyStore ks, String alias, String password) throws IOException, GeneralSecurityException {
-        KeyStore.PrivateKeyEntry entry = (KeyStore.PrivateKeyEntry)ks.getEntry(alias, new KeyStore.PasswordProtection(password.toCharArray()));
+        KeyStore.PrivateKeyEntry entry = (KeyStore.PrivateKeyEntry) ks.getEntry(alias, new KeyStore.PasswordProtection(password.toCharArray()));
         if (entry == null) {
             throw new IllegalArgumentException(String.format("Keystore alias '%s' is missing", alias));
         }
@@ -180,7 +171,7 @@ public class Main {
         if ("pass".equals(type)) {
             password = value;
         } else if ("file".equals(type)) {
-            try(
+            try (
                 InputStream is = new FileInputStream(value);
                 Reader reader = new InputStreamReader(is);
                 BufferedReader breader = new BufferedReader(reader);
@@ -228,15 +219,15 @@ public class Main {
             parser.parse(cmdArgs);
             Map<String, Object> argMap = parser.getParsedArgs();
 
-            if((Boolean)argMap.get("help")) {
+            if ((Boolean) argMap.get("help")) {
                 System.out.format("Usage: %s", parser.getUsage());
                 throw new ExitException("Help", 0);
-            } else if((Boolean)argMap.get("version")) {
+            } else if ((Boolean) argMap.get("version")) {
                 System.out.format("%s-%s (%s)%n", PACKAGE_NAME, PACKAGE_VERSION, PACKAGE_DISPLAY_NAME);
                 throw new ExitException("Version", 0);
             }
-            if(!parser.getErrors().isEmpty()) {
-                for(Throwable t : parser.getErrors()) {
+            if (!parser.getErrors().isEmpty()) {
+                for (Throwable t : parser.getErrors()) {
                     System.err.format("FATAL: %s%n", t.getMessage());
                 }
                 throw new ExitException("Parsing error", 1);
@@ -250,7 +241,7 @@ public class Main {
             Action action;
             try {
                 action = Action.valueOf(cmdArgs.get(0).toUpperCase().replace("-", "_"));
-            } catch(IllegalArgumentException e) {
+            } catch (IllegalArgumentException e) {
                 System.err.printf("Invalid action '%s'%n", cmdArgs.get(0));
                 throw new ExitException("Invalid action", 1);
             }

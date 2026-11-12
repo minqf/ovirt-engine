@@ -46,7 +46,7 @@ public class VdsStatic implements BusinessEntity<Guid>, Commented {
 
     @EditableVdsField(
             onStatuses = { VDSStatus.NonResponsive, VDSStatus.Maintenance, VDSStatus.Down,
-                    VDSStatus.Unassigned, VDSStatus.InstallFailed, VDSStatus.PendingApproval, VDSStatus.InstallingOS })
+                VDSStatus.Unassigned, VDSStatus.InstallFailed, VDSStatus.PendingApproval, VDSStatus.InstallingOS })
     @HostnameOrIp(message = "VALIDATION_VDS_HOSTNAME_HOSTNAME_OR_IP",
             groups = { CreateEntity.class, UpdateEntity.class })
     @NotNull(groups = { CreateEntity.class, UpdateEntity.class })
@@ -61,7 +61,7 @@ public class VdsStatic implements BusinessEntity<Guid>, Commented {
 
     @EditableVdsField(
             onStatuses = { VDSStatus.NonResponsive, VDSStatus.Maintenance, VDSStatus.Down,
-                    VDSStatus.Unassigned, VDSStatus.InstallFailed, VDSStatus.PendingApproval, VDSStatus.InstallingOS })
+                VDSStatus.Unassigned, VDSStatus.InstallFailed, VDSStatus.PendingApproval, VDSStatus.InstallingOS })
     @Range(min = BusinessEntitiesDefinitions.NETWORK_MIN_LEGAL_PORT,
             max = BusinessEntitiesDefinitions.NETWORK_MAX_LEGAL_PORT,
             message = "VALIDATION.VDS.SSH_PORT.RANGE")
@@ -70,7 +70,7 @@ public class VdsStatic implements BusinessEntity<Guid>, Commented {
     @EditableVdsField
     @Size(min = 1, max = BusinessEntitiesDefinitions.HOST_NAME_SIZE)
     @ValidNameWithDot(message = "VALIDATION_VDS_SSH_USERNAME_INVALID", groups = { CreateEntity.class,
-            UpdateEntity.class })
+        UpdateEntity.class })
     private String sshUsername;
 
     @EditableVdsField(onStatuses = { VDSStatus.Maintenance, VDSStatus.PendingApproval })
@@ -111,10 +111,11 @@ public class VdsStatic implements BusinessEntity<Guid>, Commented {
     private String sshKeyFingerprint;
 
     @EditableVdsField
-    private Guid hostProviderId;
+    @Size(max = BusinessEntitiesDefinitions.SSH_PUBLIC_KEY_SIZE)
+    private String sshPublicKey;
 
     @EditableVdsField
-    private Guid openstackNetworkProviderId;
+    private Guid hostProviderId;
 
     /**
      * Current kernel cmdline
@@ -357,6 +358,14 @@ public class VdsStatic implements BusinessEntity<Guid>, Commented {
         this.sshKeyFingerprint = sshKeyFingerprint;
     }
 
+    public String getSshPublicKey() {
+        return sshPublicKey;
+    }
+
+    public void setSshPublicKey(String sshPublicKey) {
+        this.sshPublicKey = sshPublicKey;
+    }
+
     public String getConsoleAddress() {
         return consoleAddress;
     }
@@ -371,14 +380,6 @@ public class VdsStatic implements BusinessEntity<Guid>, Commented {
 
     public Guid getHostProviderId () {
         return hostProviderId;
-    }
-
-    public Guid getOpenstackNetworkProviderId() {
-        return openstackNetworkProviderId;
-    }
-
-    public void setOpenstackNetworkProviderId(Guid openstackNetworkProviderId) {
-        this.openstackNetworkProviderId = openstackNetworkProviderId;
     }
 
     public String getCurrentKernelCmdline() {
@@ -498,9 +499,10 @@ public class VdsStatic implements BusinessEntity<Guid>, Commented {
                 uniqueId,
                 clusterId,
                 vdsType,
+                sshKeyFingerprint,
+                sshPublicKey,
                 disablePowerManagementPolicy,
                 hostProviderId,
-                openstackNetworkProviderId,
                 currentKernelCmdline,
                 kernelCmdlineParsable,
                 lastStoredKernelCmdline,
@@ -538,9 +540,9 @@ public class VdsStatic implements BusinessEntity<Guid>, Commented {
                 && Objects.equals(clusterId, other.clusterId)
                 && vdsType == other.vdsType
                 && Objects.equals(sshKeyFingerprint, other.sshKeyFingerprint)
+                && Objects.equals(sshPublicKey, other.sshPublicKey)
                 && disablePowerManagementPolicy == other.disablePowerManagementPolicy
                 && Objects.equals(hostProviderId, other.hostProviderId)
-                && Objects.equals(openstackNetworkProviderId, other.openstackNetworkProviderId)
                 && Objects.equals(currentKernelCmdline, other.currentKernelCmdline)
                 && Objects.equals(kernelCmdlineParsable, other.kernelCmdlineParsable)
                 && Objects.equals(lastStoredKernelCmdline, other.lastStoredKernelCmdline)

@@ -5,6 +5,7 @@ import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 import javax.ws.rs.WebApplicationException;
 import javax.ws.rs.core.Context;
@@ -231,9 +232,9 @@ public class BaseBackendResource {
      * @return the result of the operation
      */
     protected <T> T handleError(Class<T> clz, Exception e, boolean notFoundAs404) {
-        if ((e instanceof EntityNotFoundException) && notFoundAs404) {
+        if (e instanceof EntityNotFoundException && notFoundAs404) {
             throw new WebApplicationException(Response.status(Response.Status.NOT_FOUND).build());
-        } else if ((e instanceof BackendFailureException) && !StringUtils.isEmpty(e.getMessage())) {
+        } else if (e instanceof BackendFailureException && !StringUtils.isEmpty(e.getMessage())) {
             log.error(localize(Messages.BACKEND_FAILED_TEMPLATE, e.getMessage()));
             BackendFailureException e2 = (BackendFailureException) e;
             throw new WebFaultException(null, e.getMessage(), e2.getHttpStatus() != null ? e2.getHttpStatus()
@@ -254,7 +255,7 @@ public class BaseBackendResource {
     protected <T> List<T> asCollection(Class<T> clz, Object o) {
         List<T> collection = null;
         if (o instanceof List) {
-            collection = (List<T>)o;
+            collection = (List<T>) o;
         } else if (clz.isInstance(o)) {
             collection = new ArrayList<>();
             collection.add(clz.cast(o));
@@ -271,7 +272,7 @@ public class BaseBackendResource {
     protected Guid asGuid(String id) {
         try {
             return new Guid(id);
-        }catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException e) {
             throw new MalformedIdException(e);
         }
     }
@@ -287,7 +288,7 @@ public class BaseBackendResource {
     protected Long asLong(String id) {
         try {
             return Long.valueOf(id);
-        }catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException e) {
             throw new MalformedIdException(e);
         }
     }
@@ -330,6 +331,23 @@ public class BaseBackendResource {
         return locale != null
                ? backend.getErrorsTranslator().translateErrorText(errors, locale).toString()
                : backend.getErrorsTranslator().translateErrorText(errors).toString();
+    }
+
+    /**
+     * TODO: consider making it recursive
+     */
+    protected Optional<LinksTreeNode> findNode(LinksTreeNode linksTree, String link) {
+        link = normalizeLinkName(link);
+        return linksTree.getChild(link);
+    }
+
+    /**
+     * Links that differ only on case or underscore position are treated the same by the framework. Examples:
+     * graphics_console, graphicsconsoles, gra_phics_con_soles, GRapHIC_Consoles. Normalize the name by forcing lower
+     * case and removing all underscores.
+     */
+    private static String normalizeLinkName(String name) {
+        return name.toLowerCase().replaceAll("_", "");
     }
 
     public void validateParameters(Object model, String... required) {
@@ -403,7 +421,7 @@ public class BaseBackendResource {
      */
     public final void follow (ActionableResource entity) {
         String followValue = ParametersHelper.getParameter(getHttpHeaders(), getUriInfo(), FOLLOW);
-        if (followValue!=null && !followValue.equals("")) {
+        if (followValue != null && !followValue.equals("")) {
             ParametersHelper.removeParameter(FOLLOW);
             ParametersHelper.removeParameter(MAX);
             LinksTreeNode linksTree = linkFollower.createLinksTree(entity.getClass(), followValue);

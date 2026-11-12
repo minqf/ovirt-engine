@@ -19,6 +19,7 @@ import org.ovirt.engine.core.common.BackendService;
 import org.ovirt.engine.core.common.backendinterfaces.BaseHandler;
 import org.ovirt.engine.core.common.businessentities.EditableVmField;
 import org.ovirt.engine.core.common.businessentities.EditableVmTemplateField;
+import org.ovirt.engine.core.common.businessentities.TransientField;
 import org.ovirt.engine.core.common.businessentities.VMStatus;
 import org.ovirt.engine.core.common.businessentities.VmBase;
 import org.ovirt.engine.core.common.businessentities.VmDeviceId;
@@ -78,6 +79,10 @@ public class VmTemplateHandler implements BackendService {
         for (Pair<EditableVmTemplateField, Field> pair : BaseHandler.extractAnnotatedFields(EditableVmTemplateField.class, inspectedClassNames)) {
             String fieldName = pair.getSecond().getName();
             updateVmTemplate.addPermittedFields(fieldName);
+        }
+
+        for (Pair<TransientField, Field> pair : BaseHandler.extractAnnotatedFields(TransientField.class, inspectedClassNames)) {
+            updateVmTemplate.addTransientFields(pair.getSecond().getName());
         }
 
         for (Pair<EditableVmField, Field> pair : BaseHandler.extractAnnotatedFields(EditableVmField.class, inspectedClassNames)) {
@@ -200,7 +205,7 @@ public class VmTemplateHandler implements BackendService {
                 }
             }
         }
-        if (checkIllegal && (vmTemplate.getStatus() == VmTemplateStatus.Illegal)) {
+        if (checkIllegal && vmTemplate.getStatus() == VmTemplateStatus.Illegal) {
             return new ValidationResult(EngineMessage.VM_TEMPLATE_IMAGE_IS_ILLEGAL);
         }
         return ValidationResult.VALID;

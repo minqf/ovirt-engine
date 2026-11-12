@@ -1,6 +1,7 @@
 package org.ovirt.engine.api.restapi.resource;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -77,6 +78,10 @@ public abstract class AbstractStatisticalQuery<R extends BaseResource, E> {
         return StatisticResourceUtils.setDatum(statistic, datum);
     }
 
+    public Statistic setDatum(Statistic statistic, BigInteger datum) {
+        return StatisticResourceUtils.setDatum(statistic, datum);
+    }
+
     public abstract List<Statistic> getStatistics(E entity);
 
     public abstract Statistic adopt(Statistic statistic);
@@ -94,7 +99,7 @@ public abstract class AbstractStatisticalQuery<R extends BaseResource, E> {
     }
 
 
-    public List<Statistic> asList(Statistic...statistics) {
+    public List<Statistic> asList(Statistic ... statistics) {
         List<Statistic> list = new ArrayList<>();
         for (Statistic statistic : statistics) {
             list.add(adopt(statistic));

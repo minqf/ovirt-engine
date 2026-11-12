@@ -67,8 +67,10 @@ import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.osinfo.OsRepository;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.Version;
+import org.ovirt.engine.core.dao.DiskDao;
 import org.ovirt.engine.core.dao.DiskLunMapDao;
 import org.ovirt.engine.core.dao.DiskVmElementDao;
+import org.ovirt.engine.core.dao.ImageDao;
 import org.ovirt.engine.core.dao.StorageDomainDao;
 import org.ovirt.engine.core.dao.StoragePoolDao;
 import org.ovirt.engine.core.dao.StoragePoolIsoMapDao;
@@ -132,6 +134,12 @@ public class AddDiskCommandTest extends BaseCommandTest {
     @Mock
     private QuotaValidator quotaValidator;
 
+    @Mock
+    private ImageDao imageDao;
+
+    @Mock
+    private DiskDao diskDao;
+
     /**
      * The command under test.
      */
@@ -175,8 +183,8 @@ public class AddDiskCommandTest extends BaseCommandTest {
         mockMaxPciSlots();
 
         command.setStorageDomainId(Guid.Empty);
-        ValidateTestUtils.runAndAssertValidateFailure
-                (command, EngineMessage.ACTION_TYPE_FAILED_STORAGE_DOMAIN_NOT_SPECIFIED);
+        ValidateTestUtils.runAndAssertValidateFailure(command,
+            EngineMessage.ACTION_TYPE_FAILED_STORAGE_DOMAIN_NOT_SPECIFIED);
     }
 
     @Test
@@ -217,8 +225,8 @@ public class AddDiskCommandTest extends BaseCommandTest {
         command.getParameters().setStorageDomainId(storageId);
         command.getParameters().getDiskVmElement().setDiskInterface(null);
         assertFalse(command.validateInputs());
-        ValidateTestUtils.assertValidationMessages
-                ("Wrong validation method", command, EngineMessage.VALIDATION_DISK_INTERFACE_NOT_NULL);
+        ValidateTestUtils.assertValidationMessages("Wrong validation method",
+            command, EngineMessage.VALIDATION_DISK_INTERFACE_NOT_NULL);
     }
 
     @Test
@@ -233,8 +241,8 @@ public class AddDiskCommandTest extends BaseCommandTest {
         mockInterfaceList();
         mockMaxPciSlots();
         mockVm();
-        ValidateTestUtils.runAndAssertValidateFailure
-                (command, EngineMessage.ACTION_TYPE_FAILED_DISK_SIZE_ZERO);
+        ValidateTestUtils.runAndAssertValidateFailure(command,
+            EngineMessage.ACTION_TYPE_FAILED_DISK_SIZE_ZERO);
     }
 
     @Test
@@ -260,8 +268,7 @@ public class AddDiskCommandTest extends BaseCommandTest {
         mockVm();
         doReturn(mockStorageDomainValidatorWithoutSpace()).when(command).createStorageDomainValidator();
 
-        ValidateTestUtils.runAndAssertValidateFailure
-                (command, EngineMessage.ACTION_TYPE_FAILED_DISK_SPACE_LOW_ON_STORAGE_DOMAIN);
+        ValidateTestUtils.runAndAssertValidateFailure(command, EngineMessage.ACTION_TYPE_FAILED_DISK_SPACE_LOW_ON_STORAGE_DOMAIN);
     }
 
     /**
@@ -338,8 +345,8 @@ public class AddDiskCommandTest extends BaseCommandTest {
         mockMaxPciSlots();
         mockVm();
 
-        ValidateTestUtils.runAndAssertValidateFailure
-                (command, EngineMessage.SHAREABLE_DISK_IS_NOT_SUPPORTED_BY_VOLUME_FORMAT);
+        ValidateTestUtils.runAndAssertValidateFailure(command,
+            EngineMessage.SHAREABLE_DISK_IS_NOT_SUPPORTED_BY_VOLUME_FORMAT);
     }
 
     @Test
@@ -355,8 +362,8 @@ public class AddDiskCommandTest extends BaseCommandTest {
         mockStoragePoolIsoMap();
         mockMaxPciSlots();
 
-        ValidateTestUtils.runAndAssertValidateFailure
-                (command, EngineMessage.ACTION_TYPE_FAILED_SHAREABLE_DISKS_NOT_SUPPORTED_ON_GLUSTER_DOMAIN);
+        ValidateTestUtils.runAndAssertValidateFailure(command,
+            EngineMessage.ACTION_TYPE_FAILED_SHAREABLE_DISKS_NOT_SUPPORTED_ON_GLUSTER_DOMAIN);
     }
 
     /**
@@ -385,7 +392,6 @@ public class AddDiskCommandTest extends BaseCommandTest {
         doReturn(true).when(command).checkImageConfiguration();
         doReturn(false).when(command).isVirtioScsiControllerAttached(any());
         doReturn(false).when(command).hasWatchdog(any());
-        doReturn(false).when(command).isBalloonEnabled(any());
         doReturn(false).when(command).isSoundDeviceEnabled(any());
         doReturn(true).when(command).setAndValidateDiskProfiles();
         doReturn(true).when(command).validateQuota();
@@ -764,7 +770,7 @@ public class AddDiskCommandTest extends BaseCommandTest {
         mockMaxPciSlots();
 
         // use maximum slots for PCI. validate expected to succeed.
-        mockOtherVmDisks(vm, MAX_PCI_SLOTS - 2, DiskInterface.VirtIO);
+        mockOtherVmDisks(vm, MAX_PCI_SLOTS - 3, DiskInterface.VirtIO);
         ValidateTestUtils.runAndAssertValidateSuccess(command);
 
         LunDisk newDisk = createISCSILunDisk();
@@ -856,6 +862,32 @@ public class AddDiskCommandTest extends BaseCommandTest {
     }
 
     @Test
+    public void testValidateDiskImageNotExisting() {
+        Guid imageId = Guid.newGuid();
+        Guid diskId = Guid.newGuid();
+
+        DiskImage disk = new DiskImage();
+
+        disk.setSize(1);
+        disk.setShareable(true);
+        disk.setVolumeFormat(VolumeFormat.RAW);
+        disk.setImageId(imageId);
+        disk.setId(diskId);
+        disk.setStorageTypes(Collections.singletonList(StorageType.ISCSI));
+
+        Guid storageId = Guid.newGuid();
+        mockStorageDomain(storageId);
+
+        command.getParameters().setDiskInfo(disk);
+        command.getParameters().setVmId(Guid.Empty);
+        command.getParameters().setPlugDiskToVm(false);
+        command.getParameters().setStorageDomainId(storageId);
+
+        doReturn(disk.getImage()).when(imageDao).get(imageId);
+        ValidateTestUtils.runAndAssertValidateFailure(command, EngineMessage.ACTION_TYPE_FAILED_IMAGE_ALREADY_EXISTS);
+    }
+
+    @Test
     public void testValidateQuota() {
         Guid storageId = Guid.newGuid();
         command.getParameters().setStorageDomainId(storageId);
@@ -864,8 +896,8 @@ public class AddDiskCommandTest extends BaseCommandTest {
         mockEntities(storageId);
 
         Guid quotaId = Guid.newGuid();
-        ((DiskImage)command.getParameters().getDiskInfo()).setSize(1);
-        ((DiskImage)command.getParameters().getDiskInfo()).setQuotaId(quotaId);
+        ((DiskImage) command.getParameters().getDiskInfo()).setSize(1);
+        ((DiskImage) command.getParameters().getDiskInfo()).setQuotaId(quotaId);
 
         doReturn(ValidationResult.VALID).when(quotaValidator).isValid();
         doReturn(ValidationResult.VALID).when(quotaValidator).isDefinedForStoragePool(any(Guid.class));
@@ -894,10 +926,10 @@ public class AddDiskCommandTest extends BaseCommandTest {
                 command, EngineMessage.ACTION_TYPE_FAILED_PASS_DISCARD_NOT_SUPPORTED_BY_DISK_INTERFACE);
     }
 
-    private void clearValidationMessages(){
+    private void clearValidationMessages() {
         command.getReturnValue()
         .getValidationMessages()
-        .clear();
+            .clear();
     }
 
     private void mockEntities(Guid storageId) {

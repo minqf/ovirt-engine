@@ -62,6 +62,9 @@ class Const(object):
             DEK.DUMPER: ProvDBEnv.DUMPER,
             DEK.FILTER: ProvDBEnv.FILTER,
             DEK.RESTORE_JOBS: ProvDBEnv.RESTORE_JOBS,
+            # Not used.
+            # See also: https://bugzilla.redhat.com/show_bug.cgi?id=1636907
+            DEK.CREDS_Q_NAME_FUNC: None,
         }
 
     @classproperty
@@ -95,6 +98,7 @@ class ProvDBEnv(object):
 
     @osetupattrs(
         is_secret=True,
+        asked_on=(),
     )
     def PASSWORD(self):
         return 'OVESETUP_PROVISION_DB/password'
@@ -108,5 +112,14 @@ class ProvDBEnv(object):
     FILTER = 'OVESETUP_PROVISION_DB/filter'
     RESTORE_JOBS = 'OVESETUP_PROVISION_DB/restoreJobs'
 
+
+@util.export
+@util.codegen
+@osetupattrsclass
+class ConfigEnv(object):
+    PROVISION_DB = 'OVESETUP_PROVISIONDB_CONFIG/provisionDb'
+    PROVISION_USER = 'OVESETUP_PROVISIONDB_CONFIG/provisionUser'
+    ADD_TO_PG_HBA = 'OVESETUP_PROVISIONDB_CONFIG/addToPGHBA'
+    GRANT_READONLY = 'OVESETUP_PROVISIONDB_CONFIG/grantReadOnly'
 
 # vim: expandtab tabstop=4 shiftwidth=4

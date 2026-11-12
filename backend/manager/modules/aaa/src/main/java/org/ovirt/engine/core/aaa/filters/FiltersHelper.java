@@ -41,8 +41,8 @@ public class FiltersHelper {
         public static final String LOGOUT_INPROGRESS = "LOGOUT_INPROGRESS";
     }
 
-    public static final int PREFER_NEW_AUTH = 1<<0;
-    public static final int PREFER_PERSISTENCE_AUTH = 1<<1;
+    public static final int PREFER_NEW_AUTH = 1 << 0;
+    public static final int PREFER_PERSISTENCE_AUTH = 1 << 1;
 
     public static BackendLocal getBackend(Context context) {
 
@@ -54,8 +54,8 @@ public class FiltersHelper {
     }
 
     public static boolean isAuthenticated(HttpServletRequest request) {
-        return (request.getSession(false) != null && request.getSession(false)
-                .getAttribute(SessionConstants.HTTP_SESSION_ENGINE_SESSION_ID_KEY) != null)
+        return request.getSession(false) != null
+                && request.getSession(false).getAttribute(SessionConstants.HTTP_SESSION_ENGINE_SESSION_ID_KEY) != null
                 || request.getAttribute(SessionConstants.HTTP_SESSION_ENGINE_SESSION_ID_KEY) != null;
     }
 
@@ -108,14 +108,6 @@ public class FiltersHelper {
         return new Base64(0, new byte[0], true).encodeToString(s);
     }
 
-    public static String getEngineUrl(HttpServletRequest request) {
-        return String.format("%s://%s:%s%s",
-                request.getScheme(),
-                FiltersHelper.getRedirectUriServerName(request.getServerName()),
-                request.getServerPort(),
-                EngineLocalConfig.getInstance().getProperty("ENGINE_URI"));
-    }
-
     public static String getEngineSsoUrl(HttpServletRequest request) {
         if (EngineLocalConfig.getInstance().getBoolean("ENGINE_SSO_INSTALLED_ON_ENGINE_HOST")) {
             return String.format("%s://%s:%s%s",
@@ -131,16 +123,13 @@ public class FiltersHelper {
         return InetAddressUtils.isIPv6Address(name) ? String.format("[%s]", name) : name;
     }
 
-    public static Map<String, Object> getPayloadForAuthCode(
-            String authCode,
-            String scope,
-            String redirectUri) throws Exception {
+    public static Map<String, Object> getPayloadForAuthCode(String authCode, String scope, String redirectUri) {
         Map<String, Object> response = SsoOAuthServiceUtils.getToken("authorization_code", authCode, scope, redirectUri);
         FiltersHelper.isStatusOk(response);
         return getPayloadForToken((String) response.get("access_token"));
     }
 
-    public static Map<String, Object> getPayloadForToken(String token) throws Exception {
+    public static Map<String, Object> getPayloadForToken(String token) {
         Map<String, Object> response = SsoOAuthServiceUtils.getTokenInfo(token);
         FiltersHelper.isStatusOk(response);
         response.put(SessionConstants.SSO_TOKEN_KEY, token);
@@ -148,7 +137,7 @@ public class FiltersHelper {
     }
 
     public static long copy(final InputStream input, final OutputStream output) throws IOException {
-        final byte[] buffer = new byte[8*1024];
+        final byte[] buffer = new byte[8 * 1024];
         long count = 0;
         int n;
         while ((n = input.read(buffer)) != -1) {

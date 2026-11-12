@@ -3,10 +3,12 @@ package org.ovirt.engine.ui.uicommonweb.models.vms;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.ovirt.engine.core.common.businessentities.ArchitectureType;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.StoragePool;
 import org.ovirt.engine.core.common.businessentities.VmTemplate;
 import org.ovirt.engine.core.compat.Guid;
+import org.ovirt.engine.core.compat.Version;
 import org.ovirt.engine.ui.uicommonweb.dataprovider.AsyncDataProvider;
 import org.ovirt.engine.ui.uicommonweb.models.TabName;
 import org.ovirt.engine.ui.uicommonweb.models.vms.instancetypes.InstanceTypeManager;
@@ -44,6 +46,7 @@ public class NewPoolModelBehavior extends PoolModelBehaviorBase {
                 return !getModel().getPoolStateful().getEntity();
             }
         });
+        getModel().getPoolStateful().getEntityChangedEvent().addListener((ev, sender, args) -> updateSeal());
     }
 
     @Override
@@ -102,10 +105,12 @@ public class NewPoolModelBehavior extends PoolModelBehaviorBase {
             return;
         }
 
-        doChangeDefaultHost(template.getDedicatedVmForVdsList());
         setupWindowModelFrom(template);
+        updateDefaultHost(template.getDedicatedVmForVdsList());
         updateRngDevice(template.getId());
-        getModel().getCustomPropertySheet().deserialize(template.getCustomProperties());
+        selectBiosTypeFromTemplate();
+
+        getInstanceTypeManager().updateInstanceTypeFieldsFromSource();
     }
 
     @Override
@@ -140,13 +145,17 @@ public class NewPoolModelBehavior extends PoolModelBehaviorBase {
     }
 
     @Override
+    protected boolean isSealByDefault(VmTemplate template) {
+        return getModel().getPoolStateful().getEntity() && super.isSealByDefault(template);
+    }
+
+    @Override
     public InstanceTypeManager getInstanceTypeManager() {
         return instanceTypeManager;
     }
 
     @Override
-    public void enableSinglePCI(boolean enabled) {
-        super.enableSinglePCI(enabled);
-        getModel().setSingleQxlEnabled(enabled);
+    protected List<Integer> getOsValues(ArchitectureType architectureType, Version version) {
+        return AsyncDataProvider.getInstance().getSupportedOsIds(architectureType, version);
     }
 }

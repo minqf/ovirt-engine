@@ -1,5 +1,6 @@
 package org.ovirt.engine.core.bll;
 
+import java.io.File;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
@@ -70,14 +71,23 @@ public class CertificationValidityChecker implements BackendService {
                     AuditLogType.ENGINE_CA_CERTIFICATION_HAS_EXPIRED,
                     AuditLogType.ENGINE_CA_CERTIFICATION_IS_ABOUT_TO_EXPIRE_ALERT,
                     AuditLogType.ENGINE_CA_CERTIFICATION_IS_ABOUT_TO_EXPIRE,
-                    null)
-                    ^ !checkCertificate((X509Certificate) EngineEncryptionUtils.getCertificate(),
+                    null)) {
+                // if engine CA is going to expire, then it needs to be renewed first and only then it makes sense
+                // to renew other certificates
+                return;
+            }
+
+            checkCertificate((X509Certificate) EngineEncryptionUtils.getCertificate(),
                     AuditLogType.ENGINE_CERTIFICATION_HAS_EXPIRED,
                     AuditLogType.ENGINE_CERTIFICATION_IS_ABOUT_TO_EXPIRE_ALERT,
                     AuditLogType.ENGINE_CERTIFICATION_IS_ABOUT_TO_EXPIRE,
-                    null)) {
-                return;
-            }
+                    null);
+
+            // ovirt-provider-ovn certificate doesn't exist if OVN service is disabled during setup
+            checkOptionalCertificate(EngineLocalConfig.getInstance().getPKIOvirtProviderOVNCert(),
+                    AuditLogType.OVIRT_PROVIDER_OVN_CERTIFICATE_HAS_EXPIRED,
+                    AuditLogType.OVIRT_PROVIDER_OVN_CERTIFICATE_IS_ABOUT_TO_EXPIRE_ALERT,
+                    AuditLogType.OVIRT_PROVIDER_OVN_CERTIFICATE_IS_ABOUT_TO_EXPIRE);
 
             if (!Config.<Boolean>getValue(ConfigValues.EncryptHostCommunication)) {
                 return;
@@ -109,6 +119,23 @@ public class CertificationValidityChecker implements BackendService {
                     host);
             checkCertificateSan(hostCertificate, host.getHostName());
         }
+    }
+
+    private boolean checkOptionalCertificate(File certFile,
+            AuditLogType alertExpirationEventType,
+            AuditLogType alertAboutToExpireEventType,
+            AuditLogType warnAboutToExpireEventType) {
+        log.debug("Checking optional certificate '{}'.", certFile.getAbsolutePath());
+        if (certFile == null || !certFile.exists()) {
+            // certificate file doesn't exist, which may be OK, as the service using the certificate is optional
+            return true;
+        }
+        return checkCertificate(
+            EngineEncryptionUtils.getCertificate(certFile),
+            alertExpirationEventType,
+            alertAboutToExpireEventType,
+            warnAboutToExpireEventType,
+            null);
     }
 
     private boolean checkCertificate(X509Certificate cert,

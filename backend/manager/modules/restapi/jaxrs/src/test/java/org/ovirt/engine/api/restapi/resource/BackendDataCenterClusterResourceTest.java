@@ -51,13 +51,13 @@ public class BackendDataCenterClusterResourceTest
     @Override
     protected void setUriInfo(UriInfo uriInfo) {
         resource.setUriInfo(uriInfo);
-        ((BackendDataCenterClusterResource)resource).getParent().setUriInfo(uriInfo);
+        ((BackendDataCenterClusterResource) resource).getParent().setUriInfo(uriInfo);
     }
 
     @Override
     protected void init() {
         initResource(resource);
-        initResource(((BackendDataCenterClusterResource)resource).getParent());
+        initResource(((BackendDataCenterClusterResource) resource).getParent());
     }
 
     @Test
@@ -146,7 +146,7 @@ public class BackendDataCenterClusterResourceTest
 
     private void setUpPopulateExpectation() {
         if (!isPopulateSet) {
-            when(httpHeaders.getRequestHeader(BackendResource.POPULATE)).thenReturn(Collections.singletonList("true"));
+            when(httpHeaders.getRequestHeader(BackendResource.ALL_CONTENT_HEADER)).thenReturn(Collections.singletonList("true"));
             isPopulateSet = true;
         }
     }

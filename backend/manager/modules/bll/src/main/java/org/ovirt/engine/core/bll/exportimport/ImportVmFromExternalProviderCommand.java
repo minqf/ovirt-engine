@@ -16,6 +16,7 @@ import javax.inject.Inject;
 
 import org.ovirt.engine.core.bll.CommandActionState;
 import org.ovirt.engine.core.bll.DisableInPrepareMode;
+import org.ovirt.engine.core.bll.LockMessagesMatchUtil;
 import org.ovirt.engine.core.bll.NonTransactiveCommandAttribute;
 import org.ovirt.engine.core.bll.NonTransactiveCommandAttribute.CommandCompensationPhase;
 import org.ovirt.engine.core.bll.SerialChildCommandsExecutionCallback;
@@ -41,9 +42,12 @@ import org.ovirt.engine.core.common.action.ImportVmFromExternalProviderParameter
 import org.ovirt.engine.core.common.action.ImportVmFromExternalProviderParameters.Phase;
 import org.ovirt.engine.core.common.action.RemoveAllVmImagesParameters;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
+import org.ovirt.engine.core.common.businessentities.BiosType;
 import org.ovirt.engine.core.common.businessentities.OriginType;
 import org.ovirt.engine.core.common.businessentities.Snapshot.SnapshotStatus;
+import org.ovirt.engine.core.common.businessentities.StorageDomain;
 import org.ovirt.engine.core.common.businessentities.StorageDomainStatus;
+import org.ovirt.engine.core.common.businessentities.StorageDomainType;
 import org.ovirt.engine.core.common.businessentities.StoragePoolStatus;
 import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VDSStatus;
@@ -51,28 +55,37 @@ import org.ovirt.engine.core.common.businessentities.VMStatus;
 import org.ovirt.engine.core.common.businessentities.VmDynamic;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.DiskVmElement;
+import org.ovirt.engine.core.common.businessentities.storage.StorageType;
+import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeType;
 import org.ovirt.engine.core.common.errors.EngineException;
 import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.common.job.Step;
 import org.ovirt.engine.core.common.job.StepEnum;
+import org.ovirt.engine.core.common.locks.LockingGroup;
 import org.ovirt.engine.core.common.queries.IdQueryParameters;
 import org.ovirt.engine.core.common.queries.QueryType;
+import org.ovirt.engine.core.common.utils.Pair;
+import org.ovirt.engine.core.common.utils.ValidationUtils;
 import org.ovirt.engine.core.common.vdscommands.VDSCommandType;
 import org.ovirt.engine.core.common.vdscommands.VdsAndVmIDVDSParametersBase;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dal.job.ExecutionMessageDirector;
 import org.ovirt.engine.core.dao.ClusterDao;
 import org.ovirt.engine.core.dao.DiskDao;
+import org.ovirt.engine.core.dao.StorageDomainDao;
 import org.ovirt.engine.core.dao.VdsDao;
+import org.ovirt.engine.core.dao.VmDao;
 
 @DisableInPrepareMode
 @NonTransactiveCommandAttribute(forceCompensation = true, compensationPhase = CommandCompensationPhase.END_COMMAND)
 public class ImportVmFromExternalProviderCommand<T extends ImportVmFromExternalProviderParameters> extends ImportVmCommandBase<T>
-implements SerialChildExecutingCommand, QuotaStorageDependent {
+    implements SerialChildExecutingCommand, QuotaStorageDependent {
 
     private static final Pattern VMWARE_DISK_NAME_PATTERN = Pattern.compile("\\[.*?\\] .*/(.*).vmdk");
     private static final Pattern DISK_NAME_PATTERN = Pattern.compile(".*/([^.]+).*");
+    private static final Pattern DISK_ALIAS_ILLEGAL_CHARS_PATTERN =
+            Pattern.compile("[^" + ValidationUtils.NO_SPECIAL_CHARACTER_CLASS_I18N + "]");
 
     private static final String VDSM_COMPAT_VERSION_1_1 = "1.1";
 
@@ -87,10 +100,18 @@ implements SerialChildExecutingCommand, QuotaStorageDependent {
     @Inject
     private DiskDao diskDao;
     @Inject
+    private VmDao vmDao;
+    @Inject
+    private StorageDomainDao storageDomainDao;
+    @Inject
     private ImportUtils importUtils;
     @Inject
     @Typed(SerialChildCommandsExecutionCallback.class)
     private Instance<SerialChildCommandsExecutionCallback> callbackProvider;
+
+    private StorageDomainType virtioIsoStorageDomainType;
+
+    private StorageType virtioIsoStorageType;
 
     public ImportVmFromExternalProviderCommand(Guid cmdId) {
         super(cmdId);
@@ -108,6 +129,14 @@ implements SerialChildExecutingCommand, QuotaStorageDependent {
         setStorageDomainId(getParameters().getDestDomainId());
         setStoragePoolId(getCluster() != null ? getCluster().getStoragePoolId() : null);
         adjustKVMDataForBlockSD();
+    }
+
+    @Override
+    protected void initBiosType() {
+        if (getVm().getBiosType() == null) {
+            getVm().setBiosType(BiosType.I440FX_SEA_BIOS);
+        }
+        super.initBiosType();
     }
 
     @Override
@@ -139,10 +168,6 @@ implements SerialChildExecutingCommand, QuotaStorageDependent {
         }
 
         if (Guid.isNullOrEmpty(getVdsId()) && !validate(validateEligibleProxyHostExists())) {
-            return false;
-        }
-
-        if (!validateBallonDevice()) {
             return false;
         }
 
@@ -178,7 +203,10 @@ implements SerialChildExecutingCommand, QuotaStorageDependent {
             return false;
         }
 
-        if (getParameters().getVirtioIsoName() != null && getActiveIsoDomainId() == null) {
+        if (getVm().getOrigin() != OriginType.KVM &&
+                getParameters().getVirtioIsoName() != null &&
+                getVirtioIsoStorageDomainType() == StorageDomainType.ISO &&
+                getActiveIsoDomainId() == null) {
             return failValidation(EngineMessage.ERROR_CANNOT_FIND_ISO_IMAGE_PATH);
         }
 
@@ -232,7 +260,8 @@ implements SerialChildExecutingCommand, QuotaStorageDependent {
                 String.format("$storagePoolName %s", getStoragePoolName()));
     }
 
-    private boolean isHostInSupportedClusterForProxyHost(VDS host) {
+    protected boolean isHostInSupportedClusterForProxyHost(VDS host) {
+        // virt-v2v is not available on PPC
         return clusterDao.get(host.getClusterId()).getArchitecture() != ArchitectureType.ppc64;
     }
 
@@ -272,7 +301,7 @@ implements SerialChildExecutingCommand, QuotaStorageDependent {
                     diskImage.getQuotaId(),
                     QuotaConsumptionParameter.QuotaAction.CONSUME,
                     getStorageDomainId(),
-                    (double)diskImage.getSizeInGigabytes()));
+                    (double) diskImage.getSizeInGigabytes()));
         }
         return list;
     }
@@ -348,17 +377,19 @@ implements SerialChildExecutingCommand, QuotaStorageDependent {
                 && getStorageDomain() != null
                 && getStorageDomain().getStorageType().isBlockDomain()) {
             getVm().getImages().forEach(image -> {
-                image.setActualSizeInBytes(image.getSize());
-                image.setVolumeType(VolumeType.Preallocated);
+                if (image.getVolumeFormat() == VolumeFormat.RAW) {
+                    image.setActualSizeInBytes(image.getSize());
+                    image.setVolumeType(VolumeType.Preallocated);
+                }
             });
 
-            log.info("Block Storage Domains do not support Sparseness. The Importing of VM: '{}'({}) is defaulting to Preallocated.",
+            log.info("Block Storage Domains do not support Sparseness for RAW files. The Importing of VM: '{}'({}) may default to Preallocated.",
                     getVm().getName(), getVm().getId());
         }
     }
 
     private static String replaceInvalidDiskAliasChars(String alias) {
-        return alias.replace(' ', '_');
+        return DISK_ALIAS_ILLEGAL_CHARS_PATTERN.matcher(alias).replaceAll("_");
     }
 
     protected static String renameDiskAlias(OriginType originType, String alias) {
@@ -414,6 +445,7 @@ implements SerialChildExecutingCommand, QuotaStorageDependent {
         parameters.setStorageDomainId(getStorageDomainId());
         parameters.setProxyHostId(getParameters().getProxyHostId());
         parameters.setClusterId(getClusterId());
+        parameters.setVirtioIsoStorageDomainId(getParameters().getVirtioIsoStorageDomainId());
         parameters.setVirtioIsoName(getParameters().getVirtioIsoName());
         parameters.setNetworkInterfaces(getParameters().getVm().getInterfaces());
         parameters.setParentCommand(getActionType());
@@ -454,6 +486,31 @@ implements SerialChildExecutingCommand, QuotaStorageDependent {
         return permissionList;
     }
 
+    private void fillVirtioIsoStorageDomain() {
+        if (getParameters().getVirtioIsoStorageDomainId() != null) {
+            StorageDomain storageDomain = storageDomainDao.get(getParameters().getVirtioIsoStorageDomainId());
+            virtioIsoStorageDomainType = storageDomain.getStorageDomainType();
+            virtioIsoStorageType = storageDomain.getStorageType();
+        } else {
+            virtioIsoStorageDomainType = StorageDomainType.ISO;
+            virtioIsoStorageType = StorageType.NFS;
+        }
+    }
+
+    private StorageDomainType getVirtioIsoStorageDomainType() {
+        if (virtioIsoStorageDomainType == null) {
+            fillVirtioIsoStorageDomain();
+        }
+        return virtioIsoStorageDomainType;
+    }
+
+    private StorageType getVirtioIsoStorageType() {
+        if (virtioIsoStorageType == null) {
+            fillVirtioIsoStorageDomain();
+        }
+        return virtioIsoStorageType;
+    }
+
     protected Guid getActiveIsoDomainId() {
         return isoDomainListSynchronizer.findActiveISODomain(getStoragePoolId());
     }
@@ -465,26 +522,22 @@ implements SerialChildExecutingCommand, QuotaStorageDependent {
 
     @Override
     public boolean performNextOperation(int completedChildCount) {
-        switch(getParameters().getImportPhase()) {
-        case CREATE_DISKS:
-            getParameters().setImportPhase(Phase.CONVERT);
-            if (getParameters().getProxyHostId() == null) {
-                getParameters().setProxyHostId(selectProxyHost());
-            }
-            break;
-
-        case CONVERT:
-            if (getVm().getOrigin() == OriginType.OVIRT) {
+        switch (getParameters().getImportPhase()) {
+            case CREATE_DISKS:
+                getParameters().setImportPhase(Phase.CONVERT);
+                if (getParameters().getProxyHostId() == null) {
+                    getParameters().setProxyHostId(selectProxyHost());
+                }
+                break;
+            case CONVERT:
+                if (getVm().getOrigin() == OriginType.OVIRT) {
+                    return false;
+                }
+                getParameters().setImportPhase(Phase.POST_CONVERT);
+                break;
+            case POST_CONVERT:
                 return false;
-            }
-
-            getParameters().setImportPhase(Phase.POST_CONVERT);
-            break;
-
-        case POST_CONVERT:
-            return false;
-
-        default:
+            default:
         }
 
         persistCommandIfNeeded();
@@ -561,4 +614,22 @@ implements SerialChildExecutingCommand, QuotaStorageDependent {
         runVdsCommand(VDSCommandType.DeleteV2VJob,
                 new VdsAndVmIDVDSParametersBase(getVdsId(), getVmId()));
     }
+
+    @Override
+    protected Map<String, Pair<String, String>> getExclusiveLocks() {
+        var parentLocks = super.getExclusiveLocks();
+        if (getVirtioIsoStorageDomainType() == StorageDomainType.ISO || !getVirtioIsoStorageType().isBlockDomain()) {
+            return parentLocks;
+        }
+
+        Map<String, Pair<String, String>> locks = new HashMap<>();
+        if (parentLocks != null) {
+            locks.putAll(parentLocks);
+        }
+        locks.put(getParameters().getVirtioIsoName(),
+                LockMessagesMatchUtil.makeLockingPair(LockingGroup.DISK,
+                        EngineMessage.ACTION_TYPE_FAILED_VIRTIO_ISO_IMAGE_BEING_USED));
+        return locks;
+    }
+
 }

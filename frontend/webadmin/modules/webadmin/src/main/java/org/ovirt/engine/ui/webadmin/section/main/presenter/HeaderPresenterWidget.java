@@ -9,9 +9,9 @@ import org.ovirt.engine.core.common.job.JobExecutionStatus;
 import org.ovirt.engine.ui.common.auth.CurrentUser;
 import org.ovirt.engine.ui.common.uicommon.model.OptionsProvider;
 import org.ovirt.engine.ui.common.utils.WebUtils;
-import org.ovirt.engine.ui.uicommonweb.models.OptionsModel;
 import org.ovirt.engine.ui.uicommonweb.models.events.AlertListModel;
 import org.ovirt.engine.ui.uicommonweb.models.events.EventListModel;
+import org.ovirt.engine.ui.uicommonweb.models.options.OptionsModel;
 import org.ovirt.engine.ui.uicompat.Event;
 import org.ovirt.engine.ui.uicompat.EventArgs;
 import org.ovirt.engine.ui.uicompat.IEventListener;
@@ -142,7 +142,7 @@ public class HeaderPresenterWidget extends PresenterWidget<HeaderPresenterWidget
                     model.setSelectedItem(log);
                     model.executeCommand(command);
                 }
-        });
+            });
         getView().getAlertActionWidget().addClearAllAction(constants.clearAllDismissedAlerts(),
                 this.alertModelProvider.getModel().getClearAllCommand(), (command, log) ->
                     alertModelProvider.getModel().executeCommand(command)
@@ -159,7 +159,7 @@ public class HeaderPresenterWidget extends PresenterWidget<HeaderPresenterWidget
                     model.setSelectedItem(log);
                     model.executeCommand(command);
                 }
-        });
+            });
         getView().getEventActionWidget().addClearAllAction(constants.clearAllDismissedEvents(),
                 this.eventModelProvider.getModel().getClearAllCommand(), (command, log) ->
                     eventModelProvider.getModel().executeCommand(command)
@@ -176,7 +176,7 @@ public class HeaderPresenterWidget extends PresenterWidget<HeaderPresenterWidget
                 Collection<Job> jobs = taskModelProvider.getModel().getItems();
                 long count = jobs.stream().filter(job -> JobExecutionStatus.STARTED.equals(job.getStatus())).count();
                 // I know I will never have more than 100 items, so I can cast to int.
-                getView().setRunningTaskCount((int)count);
+                getView().setRunningTaskCount((int) count);
             }
 
         });

@@ -45,18 +45,12 @@ public class OsRepositoryQuery<P extends OsQueryParameters> extends QueriesComma
             case GetMaxOsRam:
                 setReturnValue(osRepository.getMaximumRam(getParameters().getOsId(), getParameters().getVersion()));
                 break;
-            case GetMinimumOsRam:
+            case GetMinOsRam:
                 setReturnValue(osRepository.getMinimumRam(getParameters().getOsId(), getParameters().getVersion()));
                 break;
             case GetDisplayTypes:
                 setReturnValue(osRepository.getGraphicsAndDisplays());
                 break;
-            case GetBalloonSupportMap:
-                setReturnValue(osRepository.getBalloonSupportMap());
-            break;
-            case IsBalloonEnabled:
-                setReturnValue(osRepository.isBalloonEnabled(getParameters().getOsId(), getParameters().getVersion()));
-            break;
             case HasNicHotplugSupport:
                 setReturnValue(osRepository.hasNicHotplugSupport(getParameters().getOsId(), getParameters().getVersion()));
                 break;
@@ -87,6 +81,15 @@ public class OsRepositoryQuery<P extends OsQueryParameters> extends QueriesComma
                 break;
             case GetVmInitMap:
                 setReturnValue(osRepository.getVmInitMap());
+                break;
+            case GetTpmSupportMap:
+                setReturnValue(osRepository.getTpmSupportMap());
+                break;
+            case GetUnsupportedOsIds:
+                setReturnValue(osRepository.getUnsupportedOsIds());
+                break;
+            case GetMinCpus:
+                setReturnValue(osRepository.getMinimumCpus(getParameters().getOsId()));
                 break;
         }
     }

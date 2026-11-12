@@ -1,5 +1,6 @@
 package org.ovirt.engine.ui.webadmin.gin.uicommon;
 
+import org.ovirt.engine.core.common.businessentities.AuditLog;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.Label;
 import org.ovirt.engine.core.common.businessentities.Permission;
@@ -21,6 +22,7 @@ import org.ovirt.engine.ui.common.uicommon.model.SearchableDetailTabModelProvide
 import org.ovirt.engine.ui.uicommonweb.UICommand;
 import org.ovirt.engine.ui.uicommonweb.models.ConfirmationModel;
 import org.ovirt.engine.ui.uicommonweb.models.Model;
+import org.ovirt.engine.ui.uicommonweb.models.clusters.ClusterEventListModel;
 import org.ovirt.engine.ui.uicommonweb.models.clusters.ClusterGeneralModel;
 import org.ovirt.engine.ui.uicommonweb.models.clusters.ClusterGlusterHookListModel;
 import org.ovirt.engine.ui.uicommonweb.models.clusters.ClusterHostListModel;
@@ -42,6 +44,7 @@ import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.cluster.Gluster
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.cluster.GlusterHookResolveConflictsPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.cluster.ManageGlusterSwiftPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.cluster.NewClusterNetworkPopupPresenterWidget;
+import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.event.EventPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.gluster.DetachGlusterHostsPopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.guide.GuidePopupPresenterWidget;
 import org.ovirt.engine.ui.webadmin.section.main.presenter.popup.host.MultipleHostsPopupPresenterWidget;
@@ -74,39 +77,39 @@ public class ClusterModule extends AbstractGinModule {
             final Provider<SharedMacPoolPopupPresenterWidget> macPoolPopupProvider,
             final Provider<ClusterListModel<Void>> clusterProvider,
             final Provider<ClusterWarningsPopupPresenterWidget> clusterWarningsPopupProvider) {
-        MainViewModelProvider<Cluster, ClusterListModel<Void>> result = new MainViewModelProvider<Cluster, ClusterListModel<Void>>
-                (eventBus, defaultConfirmPopupProvider) {
-            @Override
-            public AbstractModelBoundPopupPresenterWidget<? extends Model, ?> getModelPopup(ClusterListModel<Void> source,
-                    UICommand lastExecutedCommand, Model windowModel) {
-                if (lastExecutedCommand == getModel().getNewCommand()
-                        || lastExecutedCommand == getModel().getEditCommand()) {
-                    return popupProvider.get();
-                } else if (lastExecutedCommand == getModel().getGuideCommand()) {
-                    return guidePopupProvider.get();
-                } else if (lastExecutedCommand == getModel().getAddMacPoolCommand()) {
-                    return macPoolPopupProvider.get();
-                } else if (lastExecutedCommand == getModel().getAddMultipleHostsCommand()) {
-                    return addMultipleHostsPopupProvider.get();
-                } else {
-                    return super.getModelPopup(source, lastExecutedCommand, windowModel);
+        MainViewModelProvider<Cluster, ClusterListModel<Void>> result = new MainViewModelProvider<Cluster, ClusterListModel<Void>>(eventBus,
+            defaultConfirmPopupProvider) {
+                @Override
+                public AbstractModelBoundPopupPresenterWidget<? extends Model, ?> getModelPopup(ClusterListModel<Void> source,
+                        UICommand lastExecutedCommand, Model windowModel) {
+                    if (lastExecutedCommand == getModel().getNewCommand()
+                            || lastExecutedCommand == getModel().getEditCommand()) {
+                        return popupProvider.get();
+                    } else if (lastExecutedCommand == getModel().getGuideCommand()) {
+                        return guidePopupProvider.get();
+                    } else if (lastExecutedCommand == getModel().getAddMacPoolCommand()) {
+                        return macPoolPopupProvider.get();
+                    } else if (lastExecutedCommand == getModel().getAddMultipleHostsCommand()) {
+                        return addMultipleHostsPopupProvider.get();
+                    } else {
+                        return super.getModelPopup(source, lastExecutedCommand, windowModel);
+                    }
                 }
-            }
 
-            @Override
-            public AbstractModelBoundPopupPresenterWidget<? extends ConfirmationModel, ?> getConfirmModelPopup(ClusterListModel<Void> source,
-                    UICommand lastExecutedCommand) {
-                if (lastExecutedCommand == getModel().getRemoveCommand()) {
-                    return removeConfirmPopupProvider.get();
-                } else if (lastExecutedCommand == getModel().getResetEmulatedMachineCommand()) {
-                    return defaultConfirmPopupProvider.get();
-                } else if (source.getConfirmWindow() instanceof ClusterWarningsModel) {
-                    return clusterWarningsPopupProvider.get();
-                } else {
-                    return super.getConfirmModelPopup(source, lastExecutedCommand);
+                @Override
+                public AbstractModelBoundPopupPresenterWidget<? extends ConfirmationModel, ?> getConfirmModelPopup(ClusterListModel<Void> source,
+                        UICommand lastExecutedCommand) {
+                    if (lastExecutedCommand == getModel().getRemoveCommand()) {
+                        return removeConfirmPopupProvider.get();
+                    } else if (lastExecutedCommand == getModel().getResetEmulatedMachineCommand()) {
+                        return defaultConfirmPopupProvider.get();
+                    } else if (source.getConfirmWindow() instanceof ClusterWarningsModel) {
+                        return clusterWarningsPopupProvider.get();
+                    } else {
+                        return super.getConfirmModelPopup(source, lastExecutedCommand);
+                    }
                 }
-            }
-        };
+            };
         result.setModelProvider(clusterProvider);
         return result;
     }
@@ -318,7 +321,7 @@ public class ClusterModule extends AbstractGinModule {
                     @Override
                     public AbstractModelBoundPopupPresenterWidget<? extends ConfirmationModel, ?> getConfirmModelPopup(CpuProfileListModel source,
                             UICommand lastExecutedCommand) {
-                        if (lastExecutedCommand == getModel().getRemoveCommand()) { //$NON-NLS-1$
+                        if (lastExecutedCommand == getModel().getRemoveCommand()) {
                             return removeConfirmPopupProvider.get();
                         } else {
                             return super.getConfirmModelPopup(source, lastExecutedCommand);
@@ -331,9 +334,35 @@ public class ClusterModule extends AbstractGinModule {
         return result;
     }
 
+    @Provides
+    @Singleton
+    public SearchableDetailModelProvider<AuditLog, ClusterListModel<Void>, ClusterEventListModel> getClusterEventListProvider(EventBus eventBus,
+            Provider<DefaultConfirmationPopupPresenterWidget> defaultConfirmPopupProvider,
+            final Provider<EventPopupPresenterWidget> eventPopupProvider,
+            final Provider<ClusterListModel<Void>> mainModelProvider,
+            final Provider<ClusterEventListModel> modelProvider) {
+        SearchableDetailTabModelProvider<AuditLog, ClusterListModel<Void>, ClusterEventListModel> result =
+                new SearchableDetailTabModelProvider<AuditLog, ClusterListModel<Void>, ClusterEventListModel>(
+                        eventBus, defaultConfirmPopupProvider) {
+                    @Override
+                    public AbstractModelBoundPopupPresenterWidget<? extends Model, ?> getModelPopup(ClusterEventListModel source,
+                            UICommand lastExecutedCommand,
+                            Model windowModel) {
+                        if (lastExecutedCommand.equals(getModel().getDetailsCommand())) {
+                            return eventPopupProvider.get();
+                        } else {
+                            return super.getModelPopup(source, lastExecutedCommand, windowModel);
+                        }
+                    }
+                };
+        result.setMainModelProvider(mainModelProvider);
+        result.setModelProvider(modelProvider);
+        return result;
+    }
+
     @Override
     protected void configure() {
-        bind(new TypeLiteral<ClusterListModel<Void>> (){}).in(Singleton.class);
+        bind(new TypeLiteral<ClusterListModel<Void>> () { }).in(Singleton.class);
         bind(ClusterGeneralModel.class).in(Singleton.class);
         bind(ClusterHostListModel.class).in(Singleton.class);
         bind(ClusterNetworkListModel.class).in(Singleton.class);
@@ -342,27 +371,28 @@ public class ClusterModule extends AbstractGinModule {
         bind(ClusterGlusterHookListModel.class).in(Singleton.class);
         bind(ClusterAffinityGroupListModel.class).in(Singleton.class);
         bind(CpuProfileListModel.class).in(Singleton.class);
-        bind(new TypeLiteral<PermissionListModel<Cluster>>(){}).in(Singleton.class);
-        bind(new TypeLiteral<PermissionListModel<CpuProfile>>(){}).in(Singleton.class);
+        bind(new TypeLiteral<PermissionListModel<Cluster>>() { }).in(Singleton.class);
+        bind(new TypeLiteral<PermissionListModel<CpuProfile>>() { }).in(Singleton.class);
         bind(ClusterAffinityLabelListModel.class).in(Singleton.class);
+        bind(ClusterEventListModel.class).in(Singleton.class);
         bind(ClusterMainSelectedItems.class).asEagerSingleton();
 
         // Form Detail Models
-        bind(new TypeLiteral<DetailModelProvider<ClusterListModel<Void>, ClusterServiceModel>>(){})
-            .to(new TypeLiteral<DetailTabModelProvider<ClusterListModel<Void>, ClusterServiceModel>>(){}).in(Singleton.class);
+        bind(new TypeLiteral<DetailModelProvider<ClusterListModel<Void>, ClusterServiceModel>>() { })
+            .to(new TypeLiteral<DetailTabModelProvider<ClusterListModel<Void>, ClusterServiceModel>>() { }).in(Singleton.class);
         // Search-able Detail Models
-        bind(new TypeLiteral<SearchableDetailModelProvider<VDS, ClusterListModel<Void>, ClusterHostListModel>>(){})
-            .to(new TypeLiteral<SearchableDetailTabModelProvider<VDS, ClusterListModel<Void>, ClusterHostListModel>>(){})
+        bind(new TypeLiteral<SearchableDetailModelProvider<VDS, ClusterListModel<Void>, ClusterHostListModel>>() { })
+            .to(new TypeLiteral<SearchableDetailTabModelProvider<VDS, ClusterListModel<Void>, ClusterHostListModel>>() { })
             .in(Singleton.class);
-        bind(new TypeLiteral<SearchableDetailModelProvider<VM, ClusterListModel<Void>, ClusterVmListModel>>(){})
-            .to(new TypeLiteral<SearchableDetailTabModelProvider<VM, ClusterListModel<Void>, ClusterVmListModel>>(){})
+        bind(new TypeLiteral<SearchableDetailModelProvider<VM, ClusterListModel<Void>, ClusterVmListModel>>() { })
+            .to(new TypeLiteral<SearchableDetailTabModelProvider<VM, ClusterListModel<Void>, ClusterVmListModel>>() { })
             .in(Singleton.class);
         // Permission Detail Model
-        bind(new TypeLiteral<SearchableDetailModelProvider<Permission, ClusterListModel<Void>, PermissionListModel<Cluster>>>(){})
-            .to(new TypeLiteral<PermissionModelProvider<Cluster, ClusterListModel<Void>>>(){}).in(Singleton.class);
+        bind(new TypeLiteral<SearchableDetailModelProvider<Permission, ClusterListModel<Void>, PermissionListModel<Cluster>>>() { })
+            .to(new TypeLiteral<PermissionModelProvider<Cluster, ClusterListModel<Void>>>() { }).in(Singleton.class);
         // Cpu Profile permission list model
-        bind(new TypeLiteral<SearchableDetailModelProvider<Permission, CpuProfileListModel, PermissionListModel<CpuProfile>>>(){})
-            .to(new TypeLiteral<PermissionModelProvider<CpuProfile, CpuProfileListModel>>(){}).in(Singleton.class);
+        bind(new TypeLiteral<SearchableDetailModelProvider<Permission, CpuProfileListModel, PermissionListModel<CpuProfile>>>() { })
+            .to(new TypeLiteral<PermissionModelProvider<CpuProfile, CpuProfileListModel>>() { }).in(Singleton.class);
     }
 
 }

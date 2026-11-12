@@ -2,6 +2,7 @@ package org.ovirt.engine.ui.uicommonweb.models.vms.hostdev;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
 import org.ovirt.engine.core.common.action.ActionType;
@@ -26,7 +27,6 @@ public class VmHostDeviceListModel extends HostDeviceListModelBase<VM> {
 
     private UICommand addCommand;
     private UICommand removeCommand;
-    private UICommand repinHostCommand;
 
     private final UIConstants constants;
 
@@ -43,10 +43,6 @@ public class VmHostDeviceListModel extends HostDeviceListModelBase<VM> {
 
         setRemoveCommand(new UICommand("Remove", this)); //$NON-NLS-1$
 
-        setRepinHostCommand(new UICommand("RepinHost", this)); //$NON-NLS-1$
-        getRepinHostCommand().setIsExecutionAllowed(true);
-
-        getCommands().add(UICommand.createDefaultOkUiCommand("OnRepin", this)); //$NON-NLS-1$
         getCommands().add(UICommand.createCancelUiCommand("Cancel", this)); //$NON-NLS-1$
 
         updateActionAvailability();
@@ -69,14 +65,10 @@ public class VmHostDeviceListModel extends HostDeviceListModelBase<VM> {
             addDevices();
         } else if (command == getRemoveCommand()) {
             removeDevices();
-        } else if (command == getRepinHostCommand()) {
-            repinHost();
         } else if ("OnSave".equals(command.getName())) { //$NON-NLS-1$
             onSave();
         } else if ("OnRemove".equals(command.getName())) { //$NON-NLS-1$
             onRemove();
-        } else if ("OnRepin".equals(command.getName())) { //$NON-NLS-1$
-            onRepin();
         } else if ("Cancel".equals(command.getName())) { //$NON-NLS-1$
             cancel();
         }
@@ -126,20 +118,6 @@ public class VmHostDeviceListModel extends HostDeviceListModelBase<VM> {
         window.getCommands().add(UICommand.createCancelUiCommand("Cancel", this)); //$NON-NLS-1$
     }
 
-    private void repinHost() {
-        if (getWindow() != null) {
-            return;
-        }
-
-        RepinHostModel window = new RepinHostModel();
-        window.init(getEntity());
-
-        window.getCommands().add(UICommand.createDefaultOkUiCommand("OnRepin", this)); //$NON-NLS-1$
-        window.getCommands().add(UICommand.createCancelUiCommand("Cancel", this)); //$NON-NLS-1$
-
-        setWindow(window);
-    }
-
     private void onSave() {
         final AddVmHostDevicesModel model = (AddVmHostDevicesModel) getWindow();
         if (!model.validate()) {
@@ -172,7 +150,7 @@ public class VmHostDeviceListModel extends HostDeviceListModelBase<VM> {
     }
 
     private void pinVmToHost(Guid hostId, IFrontendActionAsyncCallback callback) {
-        getEntity().setDedicatedVmForVdsList(hostId);
+        getEntity().setDedicatedVmForVdsList(Collections.singletonList(hostId));
         Frontend.getInstance().runAction(ActionType.UpdateVm, new VmManagementParametersBase(getEntity().getStaticData()), callback);
     }
 
@@ -209,16 +187,6 @@ public class VmHostDeviceListModel extends HostDeviceListModelBase<VM> {
         return deviceNames;
     }
 
-    private void onRepin() {
-        final RepinHostModel model = (RepinHostModel) getWindow();
-
-        model.startProgress();
-        pinVmToHost(model.getPinnedHost().getSelectedItem().getId(), result -> {
-            model.stopProgress();
-            setWindow(null);
-        });
-    }
-
     private void cancel() {
         setWindow(null);
         setConfirmWindow(null);
@@ -238,13 +206,5 @@ public class VmHostDeviceListModel extends HostDeviceListModelBase<VM> {
 
     private void setRemoveCommand(UICommand removeCommand) {
         this.removeCommand = removeCommand;
-    }
-
-    public UICommand getRepinHostCommand() {
-        return repinHostCommand;
-    }
-
-    private void setRepinHostCommand(UICommand repinHostCommand) {
-        this.repinHostCommand = repinHostCommand;
     }
 }

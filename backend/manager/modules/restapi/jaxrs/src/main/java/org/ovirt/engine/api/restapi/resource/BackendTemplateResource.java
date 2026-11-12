@@ -16,6 +16,7 @@ import org.ovirt.engine.api.resource.TemplateCdromsResource;
 import org.ovirt.engine.api.resource.TemplateDiskAttachmentsResource;
 import org.ovirt.engine.api.resource.TemplateDisksResource;
 import org.ovirt.engine.api.resource.TemplateGraphicsConsolesResource;
+import org.ovirt.engine.api.resource.TemplateMediatedDevicesResource;
 import org.ovirt.engine.api.resource.TemplateNicsResource;
 import org.ovirt.engine.api.resource.TemplateResource;
 import org.ovirt.engine.api.resource.TemplateWatchdogsResource;
@@ -108,7 +109,7 @@ public class BackendTemplateResource
         params.setDirectory(action.getDirectory());
         params.setName(action.getFilename());
 
-        return doAction(ActionType.ExportVmTemplateToOva, params, action);
+        return doAction(ActionType.ExportVmTemplateToOva, params, action, PollingType.JOB);
     }
 
     @Override
@@ -164,7 +165,7 @@ public class BackendTemplateResource
                 params.setUpdateRngDevice(true);
                 params.setRngDevice(RngDeviceMapper.map(incoming.getRngDevice(), null));
             }
-            if(incoming.isSetSoundcardEnabled()) {
+            if (incoming.isSetSoundcardEnabled()) {
                 params.setSoundDeviceEnabled(incoming.isSoundcardEnabled());
             }
             if (incoming.isSetVirtioScsi()) {
@@ -172,13 +173,12 @@ public class BackendTemplateResource
                     params.setVirtioScsiEnabled(incoming.getVirtioScsi().isEnabled());
                 }
             }
+            if (incoming.isSetTpmEnabled()) {
+                params.setTpmEnabled(incoming.isTpmEnabled());
+            }
 
             IconHelper.setIconToParams(incoming, params);
             DisplayHelper.setGraphicsToParams(incoming.getDisplay(), params);
-
-            if (incoming.isSetMemoryPolicy() && incoming.getMemoryPolicy().isSetBallooning()) {
-                params.setBalloonEnabled(incoming.getMemoryPolicy().isBallooning());
-            }
 
             return getMapper(modelType, UpdateVmTemplateParameters.class).map(incoming, params);
         }
@@ -195,13 +195,13 @@ public class BackendTemplateResource
         }
         model.getVirtioScsi().setEnabled(!VmHelper.getVirtioScsiControllersForEntity(this, entity.getId()).isEmpty());
         model.setSoundcardEnabled(VmHelper.getSoundDevicesForEntity(this, entity.getId()).isEmpty());
+        model.setTpmEnabled(!VmHelper.getTpmDevicesForEntity(this, entity.getId()).isEmpty());
         setRngDevice(model);
         return model;
     }
 
     @Override
     protected Template deprecatedPopulate(Template model, VmTemplate entity) {
-        MemoryPolicyHelper.setupMemoryBalloon(model, this);
         return model;
     }
 
@@ -233,5 +233,9 @@ public class BackendTemplateResource
                 "GetConsoleDevices", true);
     }
 
+    @Override
+    public TemplateMediatedDevicesResource getMediatedDevicesResource() {
+        return inject(new BackendTemplateMediatedDevicesResource(guid));
+    }
 }
 

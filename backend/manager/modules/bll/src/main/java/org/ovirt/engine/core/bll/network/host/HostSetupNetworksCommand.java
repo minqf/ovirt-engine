@@ -1,5 +1,6 @@
 package org.ovirt.engine.core.bll.network.host;
 
+import static org.ovirt.engine.core.common.AuditLogType.NETWORK_IPV4_GATEWAY_OUT_OF_RANGE;
 import static org.ovirt.engine.core.common.vdscommands.TimeBoundPollVDSCommandParameters.PollTechnique.CONFIRM_CONNECTIVITY;
 import static org.ovirt.engine.core.utils.NetworkUtils.areDifferentId;
 import static org.ovirt.engine.core.utils.NetworkUtils.hasIpv6StaticBootProto;
@@ -52,6 +53,8 @@ import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.network.Bond;
 import org.ovirt.engine.core.common.businessentities.network.DnsResolverConfiguration;
 import org.ovirt.engine.core.common.businessentities.network.HostNetworkQos;
+import org.ovirt.engine.core.common.businessentities.network.IPv4Address;
+import org.ovirt.engine.core.common.businessentities.network.Ipv4BootProtocol;
 import org.ovirt.engine.core.common.businessentities.network.Network;
 import org.ovirt.engine.core.common.businessentities.network.NetworkAttachment;
 import org.ovirt.engine.core.common.businessentities.network.NetworkCluster;
@@ -73,6 +76,7 @@ import org.ovirt.engine.core.common.utils.MapNetworkAttachments;
 import org.ovirt.engine.core.common.utils.NetworkCommonUtils;
 import org.ovirt.engine.core.common.utils.Pair;
 import org.ovirt.engine.core.common.utils.ValidationUtils;
+import org.ovirt.engine.core.common.validation.CidrValidator;
 import org.ovirt.engine.core.common.validation.group.CreateEntity;
 import org.ovirt.engine.core.common.validation.group.UpdateEntity;
 import org.ovirt.engine.core.common.vdscommands.FutureVDSCommandType;
@@ -336,28 +340,37 @@ public class HostSetupNetworksCommand<T extends HostSetupNetworksParameters> ext
 
         try (EngineLock monitoringLock = acquireMonitorLock("Host setup networks")) {
             int timeout = getSetupNetworksTimeout();
-            FutureVDSCall<VDSReturnValue> setupNetworksTask = invokeSetupNetworksCommand(timeout);
 
             try {
-                VDSReturnValue retVal = setupNetworksTask.get(timeout, TimeUnit.SECONDS);
-                if (retVal != null) {
-                    if (!retVal.getSucceeded() && retVal.getVdsError() == null && getParameters().rollbackOnFailure()) {
-                        throw new EngineException(EngineError.SETUP_NETWORKS_ROLLBACK, retVal.getExceptionString());
+                boolean succeeded = true;
+
+                if (hasNetworkChanges()) {
+                    succeeded = false;
+                    // Update networks configuration on the host
+                    FutureVDSCall<VDSReturnValue> setupNetworksTask = invokeSetupNetworksCommand(timeout);
+                    VDSReturnValue retVal = setupNetworksTask.get(timeout, TimeUnit.SECONDS);
+                    if (retVal != null) {
+                        if (!retVal.getSucceeded() && retVal.getVdsError() == null && getParameters().rollbackOnFailure()) {
+                            throw new EngineException(EngineError.SETUP_NETWORKS_ROLLBACK, retVal.getExceptionString());
+                        }
+
+                        VdsHandler.handleVdsResult(retVal);
+
+                        succeeded = retVal.getSucceeded();
                     }
-
-                    VdsHandler.handleVdsResult(retVal);
-
-                    if (retVal.getSucceeded()) {
-
-                        VDSReturnValue returnValue =
-                                runVdsCommand(VDSCommandType.GetCapabilities,
-                                        new VdsIdAndVdsVDSCommandParametersBase(getVds()));
-                        VDS updatedHost = (VDS) returnValue.getReturnValue();
-                        persistNetworkChanges(updatedHost);
-                    }
-
-                    setSucceeded(true);
                 }
+
+                if (succeeded) {
+                    // If host networks were updated successfully (or there were no host network changes, just changes
+                    // in labels) then update networks configuration in the engine DB.
+                    VDSReturnValue returnValue =
+                            runVdsCommand(VDSCommandType.GetCapabilities,
+                                    new VdsIdAndVdsVDSCommandParametersBase(getVds()));
+                    VDS updatedHost = (VDS) returnValue.getReturnValue();
+                    persistNetworkChanges(updatedHost);
+                }
+
+                setSucceeded(succeeded);
             } catch (TimeoutException e) {
                 log.debug("Host Setup networks command timed out for {} seconds", timeout);
             }
@@ -369,7 +382,7 @@ public class HostSetupNetworksCommand<T extends HostSetupNetworksParameters> ext
 
         List<CreateOrUpdateBond> createOrUpdateBonds = getParameters().getCreateOrUpdateBonds();
         for (Iterator<CreateOrUpdateBond> iterator = createOrUpdateBonds.iterator(); iterator.hasNext();) {
-            CreateOrUpdateBond bondFromRequest =  iterator.next();
+            CreateOrUpdateBond bondFromRequest = iterator.next();
             Guid idOfBondFromRequest = bondFromRequest.getId();
 
             boolean bondFromRequestIsNewBond = idOfBondFromRequest == null;
@@ -404,7 +417,7 @@ public class HostSetupNetworksCommand<T extends HostSetupNetworksParameters> ext
         Map<Guid, NetworkAttachment> existingAttachmentsById = Entities.businessEntitiesById(getExistingAttachments());
 
         for (Iterator<NetworkAttachment> iterator = getParameters().getNetworkAttachments().iterator(); iterator.hasNext();) {
-            NetworkAttachment attachmentFromRequest =  iterator.next();
+            NetworkAttachment attachmentFromRequest = iterator.next();
             Guid idOfAttachmentFromRequest = attachmentFromRequest.getId();
 
             boolean attachmentFromRequestIsNewAttachment = idOfAttachmentFromRequest == null;
@@ -533,6 +546,10 @@ public class HostSetupNetworksCommand<T extends HostSetupNetworksParameters> ext
         return getParameters().isEmptyRequest();
     }
 
+    private boolean hasNetworkChanges() {
+        return getParameters().hasNetworkChanges();
+    }
+
     private List<VdsNetworkInterface> getRemovedBonds() {
         if (removedBonds == null) {
             Set<Guid> removedBondIds = getParameters().getRemovedBonds();
@@ -642,7 +659,7 @@ public class HostSetupNetworksCommand<T extends HostSetupNetworksParameters> ext
                 HostNetworkQos hostNetworkQos = effectiveHostNetworkQos.getQos(attachment, network);
                 networkToConfigure.setQos(hostNetworkQos);
             }
-
+            auditIpConfiguration(attachment);
             networksToConfigure.add(networkToConfigure);
         }
 
@@ -971,12 +988,12 @@ public class HostSetupNetworksCommand<T extends HostSetupNetworksParameters> ext
         return clusterNetworks;
     }
 
-    private boolean isManagementNetworkChanged(List<HostNetwork> networksToConfigure){
+    private boolean isManagementNetworkChanged(List<HostNetwork> networksToConfigure) {
         Network managementNetwork = managementNetworkUtil.getManagementNetwork(getClusterNetworks(), getClusterId());
 
         String managementNetworkName = managementNetwork.getName();
         for (HostNetwork network : networksToConfigure) {
-            if (managementNetworkName.equals(network.getNetworkName())){
+            if (managementNetworkName.equals(network.getNetworkName())) {
                 return true;
             }
         }
@@ -999,5 +1016,27 @@ public class HostSetupNetworksCommand<T extends HostSetupNetworksParameters> ext
         event.setClusterName(getCluster().getName());
         event.addCustomValue("NetworkName", attachment.getNetworkName());
         return event;
+    }
+
+    private void auditIpConfiguration(NetworkAttachment attachment) {
+        List<IPv4Address> iPv4Addresses = attachment.getIpConfiguration().getIPv4Addresses();
+        iPv4Addresses.stream()
+                .filter(a -> a.getBootProtocol() == Ipv4BootProtocol.STATIC_IP)
+                .forEach(a -> {
+                    if (!CidrValidator.getInstance().isIpv4InSubnet(a.getAddress(), a.getNetmask(), a.getGateway())) {
+                        auditLog(auditEventIpv4GatewayOutOfRange(attachment, a), NETWORK_IPV4_GATEWAY_OUT_OF_RANGE);
+                    }
+                });
+    }
+
+    private AuditLogable auditEventIpv4GatewayOutOfRange(NetworkAttachment attachment, IPv4Address address) {
+        AuditLogable event = new AuditLogableImpl();
+        event.setVdsId(getVdsId());
+        event.setClusterName(getCluster().getName());
+        event.setVdsName(getVdsName());
+        event.addCustomValue("Interface", attachment.getNicName());
+        event.addCustomValue("Gateway", address.getGateway());
+        return event;
+
     }
 }

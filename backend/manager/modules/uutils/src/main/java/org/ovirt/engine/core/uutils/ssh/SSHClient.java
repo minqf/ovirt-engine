@@ -1,56 +1,48 @@
 package org.ovirt.engine.core.uutils.ssh;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.PipedInputStream;
-import java.io.PipedOutputStream;
-import java.nio.charset.StandardCharsets;
-import java.security.DigestInputStream;
-import java.security.DigestOutputStream;
 import java.security.KeyPair;
-import java.security.MessageDigest;
-import java.security.PublicKey;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.EnumSet;
+import java.util.List;
+import java.util.Objects;
 import java.util.Set;
-import java.util.zip.GZIPInputStream;
-import java.util.zip.GZIPOutputStream;
 
 import javax.naming.AuthenticationException;
 import javax.naming.TimeLimitExceededException;
 
-import org.apache.commons.codec.DecoderException;
-import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.lang.exception.ExceptionUtils;
 import org.apache.sshd.client.SshClient;
+import org.apache.sshd.client.auth.pubkey.UserAuthPublicKeyFactory;
 import org.apache.sshd.client.channel.ClientChannel;
 import org.apache.sshd.client.channel.ClientChannelEvent;
 import org.apache.sshd.client.future.AuthFuture;
 import org.apache.sshd.client.future.ConnectFuture;
+import org.apache.sshd.client.keyverifier.AcceptAllServerKeyVerifier;
+import org.apache.sshd.client.keyverifier.ServerKeyVerifier;
 import org.apache.sshd.client.session.ClientSession;
 import org.apache.sshd.client.session.ClientSession.ClientSessionEvent;
 import org.apache.sshd.common.NamedFactory;
+import org.apache.sshd.common.kex.extension.DefaultClientKexExtensionHandler;
 import org.apache.sshd.common.signature.BuiltinSignatures;
 import org.apache.sshd.common.signature.Signature;
+import org.apache.sshd.core.CoreModuleProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class SSHClient implements Closeable {
-    private static final String COMMAND_FILE_RECEIVE =
-            "test -r '%2$s' && md5sum -b '%2$s' | cut -d ' ' -f 1 >&2 && %1$s < '%2$s'";
-    private static final String COMMAND_FILE_SEND = "%1$s > '%2$s' && md5sum -b '%2$s' | cut -d ' ' -f 1 >&2";
-    private static final int STREAM_BUFFER_SIZE = 8192;
     private static final int CONSTRAINT_BUFFER_SIZE = 1024;
-    private static final int THREAD_JOIN_WAIT_TIME = 2000;
     private static final int DEFAULT_SSH_PORT = 22;
 
     private static final Logger log = LoggerFactory.getLogger(SSHClient.class);
+    private static final Duration HEARTBEAT = Duration.ofSeconds(2L);
 
     private SshClient client;
     private ClientSession session;
@@ -61,7 +53,8 @@ public class SSHClient implements Closeable {
     private KeyPair keyPair;
     private String host;
     private int port = DEFAULT_SSH_PORT;
-    private PublicKey hostKey;
+    private ServerKeyVerifier serverKeyVerifier = AcceptAllServerKeyVerifier.INSTANCE;
+    private final List<NamedFactory<Signature>> expectedSignatures = new ArrayList<>();
 
     /**
      * Create the client for testing using org.mockito.Mockito.
@@ -71,60 +64,25 @@ public class SSHClient implements Closeable {
     SshClient createSshClient() {
         SshClient sshClient = SshClient.setUpDefaultClient();
 
-        /*
-         * FIXME: We need to enforce only RSA signatures, because all our code around fingerprints assumes only RSA
-         * public keys. This limitation can be removed when we will save all available host public keys into database
-         * and perform host key verification by comparing received key with keys in our database.
-         */
-        sshClient.setSignatureFactories(Arrays.<NamedFactory<Signature>> asList(
-                BuiltinSignatures.rsa));
+        if (isAtLeastOneExpectedSignatureSet()) {
+            sshClient.setSignatureFactories(expectedSignatures);
+        }
+
+        // Engine uses RSA based SSH keys, so we always need to allow ssh-rsa2 public keys for authentication
+        // against FIPS enabled host
+        if (isKeyPairSet()) {
+            UserAuthPublicKeyFactory clientPubKeyFactory = new UserAuthPublicKeyFactory();
+            clientPubKeyFactory.setSignatureFactories(
+                    Arrays.asList(
+                            BuiltinSignatures.rsaSHA512,
+                            BuiltinSignatures.rsaSHA256,
+                            BuiltinSignatures.rsa));
+            sshClient.setUserAuthFactories(Collections.singletonList(clientPubKeyFactory));
+        }
+
+        sshClient.setKexExtensionHandler(new DefaultClientKexExtensionHandler());
+        CoreModuleProperties.HEARTBEAT_INTERVAL.set(sshClient, HEARTBEAT);
         return sshClient;
-    }
-
-    /**
-     * Check if file is valid.
-     *
-     * This is required as we use shell to pipe into file, so no special charachters are allowed.
-     */
-    private void remoteFileName(String file) {
-        if (file.indexOf('\'') != -1 ||
-                file.indexOf('\n') != -1 ||
-                file.indexOf('\r') != -1) {
-            throw new IllegalArgumentException("File name should not contain \"'\"");
-        }
-    }
-
-    /**
-     * Compare string disgest to digest.
-     *
-     * @param digest
-     *            MessageDigest.
-     * @param actual
-     *            String digest.
-     */
-    private void validateDigest(MessageDigest digest, String actual) throws IOException {
-        try {
-            if (!Arrays.equals(
-                    digest.digest(),
-                    Hex.decodeHex(actual.toCharArray()))) {
-                throw new IOException("SSH copy failed, invalid localDigest");
-            }
-        } catch (DecoderException e) {
-            throw new IOException("SSH copy failed, invalid localDigest");
-        }
-    }
-
-    /**
-     * Destructor.
-     */
-    @Override
-    protected void finalize() {
-        try {
-            close();
-        } catch (IOException e) {
-            log.error("Finalize exception {}", ExceptionUtils.getRootCauseMessage(e));
-            log.debug("Exception", e);
-        }
     }
 
     /**
@@ -194,7 +152,6 @@ public class SSHClient implements Closeable {
     public void setHost(String host, int port) {
         this.host = host;
         this.port = port;
-        hostKey = null;
     }
 
     /**
@@ -283,15 +240,6 @@ public class SSHClient implements Closeable {
     }
 
     /**
-     * Get host key
-     *
-     * @return host key.
-     */
-    public PublicKey getHostKey() {
-        return hostKey;
-    }
-
-    /**
      * Connect to host.
      */
     public void connect() throws Exception {
@@ -300,13 +248,7 @@ public class SSHClient implements Closeable {
 
         try {
             client = createSshClient();
-
-            client.setServerKeyVerifier(
-                (sshClientSession, remoteAddress, serverKey) -> {
-                    hostKey = serverKey;
-                    return true;
-                });
-
+            client.setServerKeyVerifier(serverKeyVerifier);
             client.start();
 
             ConnectFuture cfuture = client.connect(user, host, port);
@@ -357,7 +299,7 @@ public class SSHClient implements Closeable {
 
         try {
             AuthFuture afuture;
-            if (keyPair != null) {
+            if (isKeyPairSet()) {
                 session.addPublicKeyIdentity(keyPair);
             } else if (password != null) {
                 session.addPasswordIdentity(password);
@@ -388,6 +330,10 @@ public class SSHClient implements Closeable {
         }
 
         log.debug("Authenticated: '{}'", this.getDisplayHost());
+    }
+
+    protected boolean isKeyPairSet() {
+        return keyPair != null;
     }
 
     /**
@@ -557,145 +503,15 @@ public class SSHClient implements Closeable {
         log.debug("Executed: '{}'", command);
     }
 
-    /**
-     * Send file using compression and digest check.
-     *
-     * We read the file content into gzip and then pipe it into the ssh. Calculating the remoteDigest on the fly.
-     *
-     * The digest is printed into stderr for us to collect.
-     *
-     * @param file1
-     *            source.
-     * @param file2
-     *            destination.
-     *
-     *
-     */
-    public void sendFile(String file1, String file2) throws Exception {
-        log.debug("Sending: '{}' '{}'", file1, file2);
-
-        remoteFileName(file2);
-
-        MessageDigest localDigest = MessageDigest.getInstance("MD5");
-
-        // file1->{}->digest->in->out->pout->pin->stdin
-        Thread t = null;
-        try (
-                final InputStream in = new DigestInputStream(
-                        new FileInputStream(file1),
-                        localDigest);
-                final PipedInputStream pin = new PipedInputStream(STREAM_BUFFER_SIZE);
-                final OutputStream pout = new PipedOutputStream(pin);
-                final OutputStream dummy = new ConstraintByteArrayOutputStream(CONSTRAINT_BUFFER_SIZE);
-                final ByteArrayOutputStream remoteDigest =
-                        new ConstraintByteArrayOutputStream(CONSTRAINT_BUFFER_SIZE)) {
-            t = new Thread(
-                    () -> {
-                        try (OutputStream out = new GZIPOutputStream(pout)) {
-                            byte[] b = new byte[STREAM_BUFFER_SIZE];
-                            int n;
-                            while ((n = in.read(b)) != -1) {
-                                out.write(b, 0, n);
-                            }
-                        } catch (IOException e) {
-                            log.debug("Execution during stream processing", e);
-                        }
-                    } ,
-                    "SSHClient.compress " + file1);
-            t.start();
-
-            executeCommand(
-                    String.format(COMMAND_FILE_SEND, "gunzip -q", file2),
-                    pin,
-                    dummy,
-                    remoteDigest);
-
-            t.join(THREAD_JOIN_WAIT_TIME);
-            if (t.getState() != Thread.State.TERMINATED) {
-                throw new IllegalStateException("Cannot stop SSH stream thread");
-            }
-
-            validateDigest(localDigest, new String(remoteDigest.toByteArray(), StandardCharsets.UTF_8).trim());
-        } catch (Exception e) {
-            log.debug("Send failed", e);
-            throw e;
-        } finally {
-            if (t != null) {
-                t.interrupt();
-            }
-        }
-
-        log.debug("Sent: '{}' '{}'", file1, file2);
+    protected void setServerKeyVerifier(ServerKeyVerifier serverKeyVerifier) {
+        this.serverKeyVerifier = serverKeyVerifier;
     }
 
-    /**
-     * Receive file using compression and localDigest check.
-     *
-     * We read the stream and pipe into gunzip, and write into the file. Calculating the remoteDigest on the fly.
-     *
-     * The localDigest is printed into stderr for us to collect.
-     *
-     * @param file1
-     *            source.
-     * @param file2
-     *            destination.
-     *
-     */
-    public void receiveFile(String file1, String file2) throws Exception {
-        log.debug("Receiving: '{}' '{}'", file1, file2);
+    protected final void addExpectedSignatures(NamedFactory<Signature>... expectedSignatures) {
+        this.expectedSignatures.addAll(Arrays.asList(Objects.requireNonNull(expectedSignatures)));
+    }
 
-        remoteFileName(file1);
-
-        MessageDigest localDigest = MessageDigest.getInstance("MD5");
-
-        // stdout->pout->pin->in->out->digest->{}->file2
-        Thread t = null;
-        try (
-                final PipedOutputStream pout = new PipedOutputStream();
-                final InputStream pin = new PipedInputStream(pout, STREAM_BUFFER_SIZE);
-                final OutputStream out = new DigestOutputStream(
-                        new FileOutputStream(file2),
-                        localDigest);
-                final InputStream empty = new ByteArrayInputStream(new byte[0]);
-                final ByteArrayOutputStream remoteDigest =
-                        new ConstraintByteArrayOutputStream(CONSTRAINT_BUFFER_SIZE)) {
-            t = new Thread(
-                    () -> {
-                        try (final InputStream in = new GZIPInputStream(pin)) {
-
-                            byte[] b = new byte[STREAM_BUFFER_SIZE];
-                            int n;
-                            while ((n = in.read(b)) != -1) {
-                                out.write(b, 0, n);
-                            }
-                        } catch (IOException e) {
-                            log.debug("Execution during stream processing", e);
-                        }
-                    } ,
-                    "SSHClient.decompress " + file2);
-            t.start();
-
-            executeCommand(
-                    String.format(COMMAND_FILE_RECEIVE, "gzip -q", file1),
-                    empty,
-                    pout,
-                    remoteDigest);
-
-            t.join(THREAD_JOIN_WAIT_TIME);
-            if (t.getState() != Thread.State.TERMINATED) {
-                throw new IllegalStateException("Cannot stop SSH stream thread");
-            }
-
-            validateDigest(localDigest, new String(remoteDigest.toByteArray(), StandardCharsets.UTF_8).trim());
-        } catch (Exception e) {
-            log.debug("Receive failed", e);
-            throw e;
-        } finally {
-            if (t != null) {
-                t.interrupt();
-            }
-        }
-
-        log.debug("Received: '{}' '{}'", file1, file2);
+    protected boolean isAtLeastOneExpectedSignatureSet() {
+        return !expectedSignatures.isEmpty();
     }
 }

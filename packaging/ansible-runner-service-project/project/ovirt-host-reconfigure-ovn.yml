@@ -1,0 +1,40 @@
+- name: Fetch installed packages
+  package_facts:
+    manager: rpm
+
+- name: Check version of ovirt-openvswitch after upgrade
+  set_fact:
+    ovirt_openvswitch_post: "{{ ansible_facts.packages['ovirt-openvswitch'] | first }}"
+  when:
+    - ansible_facts.packages['ovirt-openvswitch'] is defined
+
+- name: Check version of rhv-openvswitch after upgrade
+  set_fact:
+    ovirt_openvswitch_post: "{{ ansible_facts.packages['rhv-openvswitch'] | first }}"
+  when:
+    - ansible_facts.packages['rhv-openvswitch'] is defined
+
+- block:
+  - name: Get OVS chassis id
+    command: ovs-vsctl --no-wait get open . external_ids:system-id
+    register: chassis_id
+
+  - name: Reconfigure OVN for oVirt
+    command: vdsm-tool ovn-config {{ ovn_central }} {{ ovn_tunneling_interface }} {{ ovn_host_fqdn }}
+
+  - name: Sync chassis in OVN SB DB
+    command: >
+        ovn-sbctl
+        --if-exists
+        --db=ssl:{{ ovn_central }}:6642
+        --ca-cert={{ ovirt_vdsm_trust_store }}/{{ ovirt_ovn_ca_file }}
+        --certificate={{ ovirt_vdsm_trust_store }}/{{ ovirt_ovn_cert_file }}
+        --private-key={{ ovirt_vdsm_trust_store }}/{{ ovirt_ovn_key_file }}
+        chassis-del
+        {{ chassis_id.stdout }}
+
+  when:
+    - el_ver|int == 8
+    - ovirt_openvswitch_pre.version is version('2.11', '==')
+    - ovirt_openvswitch_post.version is version('2.15', '>=')
+    - ovn_central is defined and ovn_central != None and ovn_central | length != 0

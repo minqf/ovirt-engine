@@ -106,7 +106,7 @@ public class NewClusterPolicyModel extends Model {
             }
         }
         Map<String, String> defaultMap = new HashMap<>(getCustomProperties());
-        if(!reset) {
+        if (!reset) {
             defaultMap.putAll(KeyValueModel.convertProperties(getCustomPropertySheet().serialize()));
         }
         getCustomPropertySheet().setKeyValueMap(policyProperties);
@@ -524,7 +524,7 @@ public class NewClusterPolicyModel extends Model {
 
     private boolean validate() {
         getName().validateEntity(new IValidation[] { new NotEmptyValidation(), new LengthValidation(50),
-                new AsciiNameValidation() });
+            new AsciiNameValidation() });
         getDescription().validateEntity(new IValidation[] { new LengthValidation(400), new AsciiOrNoneValidation() });
         return getName().getIsValid() && getDescription().getIsValid()
                 && getCustomPropertySheet().validate();

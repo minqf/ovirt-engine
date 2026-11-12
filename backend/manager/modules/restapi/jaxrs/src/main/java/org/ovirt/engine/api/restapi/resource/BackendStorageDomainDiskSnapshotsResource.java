@@ -7,14 +7,18 @@ import org.ovirt.engine.api.model.DiskSnapshots;
 import org.ovirt.engine.api.model.StorageDomain;
 import org.ovirt.engine.api.resource.DiskSnapshotResource;
 import org.ovirt.engine.api.resource.DiskSnapshotsResource;
+import org.ovirt.engine.api.restapi.util.ParametersHelper;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
-import org.ovirt.engine.core.common.queries.IdQueryParameters;
+import org.ovirt.engine.core.common.queries.DiskSnapshotsQueryParameters;
 import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.core.compat.Guid;
 
 public class BackendStorageDomainDiskSnapshotsResource
         extends AbstractBackendCollectionResource<DiskSnapshot, Disk>
         implements DiskSnapshotsResource {
+
+    protected static final String INCLUDE_ACTIVE = "include_active";
+    protected static final String INCLUDE_TEMPLATE = "include_template";
 
     Guid storageDomainId;
 
@@ -25,8 +29,8 @@ public class BackendStorageDomainDiskSnapshotsResource
 
     @Override
     public DiskSnapshots list() {
-            return mapCollection(getBackendCollection(QueryType.GetAllDiskSnapshotsByStorageDomainId,
-                    new IdQueryParameters(this.storageDomainId)));
+        return mapCollection(getBackendCollection(QueryType.GetAllDiskSnapshotsByStorageDomainId,
+                new DiskSnapshotsQueryParameters(this.storageDomainId, includeActive(), includeTemplate())));
     }
 
     protected DiskSnapshots mapCollection(List<Disk> entities) {
@@ -39,7 +43,7 @@ public class BackendStorageDomainDiskSnapshotsResource
             diskSnapshot.setStorageDomain(new StorageDomain());
             diskSnapshot.getStorageDomain().setId(this.storageDomainId.toString());
 
-            collection.getDiskSnapshots().add(addLinks(populate(diskSnapshot, disk)));
+            collection.getDiskSnapshots().add(addLinks(populate(diskSnapshot, disk), StorageDomain.class));
         }
         return collection;
     }
@@ -52,4 +56,13 @@ public class BackendStorageDomainDiskSnapshotsResource
     protected Guid getStorageDomainId() {
         return storageDomainId;
     }
+
+    private boolean includeActive() {
+        return ParametersHelper.getBooleanParameter(httpHeaders, uriInfo, INCLUDE_ACTIVE, true, false);
+    }
+
+    private boolean includeTemplate() {
+        return ParametersHelper.getBooleanParameter(httpHeaders, uriInfo, INCLUDE_TEMPLATE, true, false);
+    }
+
 }

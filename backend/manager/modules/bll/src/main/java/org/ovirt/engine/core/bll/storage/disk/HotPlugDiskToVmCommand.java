@@ -3,6 +3,7 @@ package org.ovirt.engine.core.bll.storage.disk;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.locks.Lock;
 
 import javax.inject.Inject;
 
@@ -17,6 +18,7 @@ import org.ovirt.engine.core.common.action.LockProperties;
 import org.ovirt.engine.core.common.action.LockProperties.Scope;
 import org.ovirt.engine.core.common.action.VmDiskOperationParameterBase;
 import org.ovirt.engine.core.common.businessentities.StorageDomain;
+import org.ovirt.engine.core.common.businessentities.VMStatus;
 import org.ovirt.engine.core.common.businessentities.VmDevice;
 import org.ovirt.engine.core.common.businessentities.VmDeviceId;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
@@ -73,10 +75,9 @@ public class HotPlugDiskToVmCommand<T extends VmDiskOperationParameterBase> exte
     @Override
     protected boolean validate() {
         performDbLoads();
-
-        return
-                validate(new VmValidator(getVm()).isVmExists()) &&
-                isVmInUpPausedDownStatus() &&
+        VmValidator vmValidator = new VmValidator(getVm());
+        return validate(vmValidator.isVmExists()) &&
+                validate(vmValidator.isVmStatusIn(VMStatus.Up, VMStatus.Paused, VMStatus.Down)) &&
                 canRunActionOnNonManagedVm() &&
                 isDiskExistAndAttachedToVm(getDisk()) &&
                 interfaceDiskValidation() &&
@@ -143,11 +144,9 @@ public class HotPlugDiskToVmCommand<T extends VmDiskOperationParameterBase> exte
     }
 
     private boolean checkCanPerformPlugUnPlugDisk() {
-        if (getVm().getStatus().isUpOrPaused()) {
-            setVdsId(getVm().getRunOnVds());
-            if (!isDiskSupportedForPlugUnPlug(getDiskVmElement(), disk.getDiskAlias())) {
-                return false;
-            }
+        if (getVm().getStatus().isUpOrPaused()
+                && !isDiskSupportedForPlugUnPlug(getDiskVmElement(), disk.getDiskAlias())) {
+            return false;
         }
 
         if (getPlugAction() == VDSCommandType.HotPlugDisk && oldVmDevice.isPlugged()) {
@@ -167,24 +166,32 @@ public class HotPlugDiskToVmCommand<T extends VmDiskOperationParameterBase> exte
 
     @Override
     protected void executeVmCommand() {
-        if (getVm().getStatus().isUpOrPaused()) {
-            updateDisksFromDb();
-            performPlugCommand(getPlugAction(), getDisk(), oldVmDevice);
+        boolean hotPlug = getVm().getStatus().isUpOrPaused();
+        Lock vmDevicesLock = getVmDevicesLock(hotPlug);
+        vmDevicesLock.lock();
+        try {
+            if (hotPlug) {
+                updateDisksFromDb();
+                performPlugCommand(getPlugAction(), getDisk(), oldVmDevice);
+            }
+
+            // At this point the disk is already plugged to or unplugged from VM
+            // (depends on the command), so we can update the needed device properties
+            updateDeviceProperties();
+
+            vmStaticDao.incrementDbGeneration(getVm().getId());
+            setSucceeded(true);
+        } finally {
+            vmDevicesLock.unlock();
         }
-
-        // At this point disk is already plugged to or unplugged from VM (depends on the command),
-        // so we can update the needed device properties
-        updateDeviceProperties();
-
-        vmStaticDao.incrementDbGeneration(getVm().getId());
-        setSucceeded(true);
     }
 
     protected void updateDeviceProperties() {
         VmDevice device = vmDeviceDao.get(oldVmDevice.getId());
         device.setPlugged(true);
         device.setAlias(getDeviceAliasForDisk(disk));
-        vmDeviceDao.updateHotPlugDisk(device);
+        device.setAddress(oldVmDevice.getAddress());
+        vmDeviceDao.update(device);
     }
 
     @Override

@@ -2,7 +2,6 @@ package org.ovirt.engine.core.bll.storage.domain;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
@@ -34,8 +33,8 @@ import org.ovirt.engine.core.dao.StorageDomainDao;
 
 public class StorageDomainCommandBaseTest extends BaseCommandTest {
     private static final Guid[] GUIDS = new Guid[] {
-            new Guid("11111111-1111-1111-1111-111111111111"),
-            new Guid("22222222-2222-2222-2222-222222222222")
+        new Guid("11111111-1111-1111-1111-111111111111"),
+        new Guid("22222222-2222-2222-2222-222222222222")
     };
     private final Guid HE_SD_ID = new Guid("33333333-3333-3333-3333-333333333333");
     private final Guid SHARED_SD_ID = new Guid("44444444-4444-4444-4444-444444444444");
@@ -162,27 +161,24 @@ public class StorageDomainCommandBaseTest extends BaseCommandTest {
     }
 
     @Test
-    public void shouldNotElectActiveHostedEngineDomain() {
-        prepareStorageDomainForElection(StorageDomainStatus.Active, HE_STORAGE_DOMAIN_NAME, true);
-        assertNull(cmd.electNewMaster());
+    public void shouldElectActiveHostedEngineDomain() {
+        final StorageDomain domain =
+                prepareStorageDomainForElection(StorageDomainStatus.Active, HE_STORAGE_DOMAIN_NAME, true);
+        assertEquals(domain, cmd.electNewMaster());
     }
 
     @Test
-    public void shouldNotElectUnknownHostedEngineDomain() {
-        prepareStorageDomainForElection(StorageDomainStatus.Unknown, HE_STORAGE_DOMAIN_NAME, true);
-        assertNull(cmd.electNewMaster());
+    public void shouldElectUnknownHostedEngineDomain() {
+        final StorageDomain domain =
+                prepareStorageDomainForElection(StorageDomainStatus.Unknown, HE_STORAGE_DOMAIN_NAME, true);
+        assertEquals(domain, cmd.electNewMaster());
     }
 
     @Test
-    public void shouldNotElectInactiveHostedEngineDomain() {
-        prepareStorageDomainForElection(StorageDomainStatus.Inactive, HE_STORAGE_DOMAIN_NAME, true);
-        assertNull(cmd.electNewMaster(false, true, false));
-    }
-
-    @Test
-    public void shouldNotElectBackupStorageDomain() {
-        prepareStorageDomainForElection(StorageDomainStatus.Active, HE_STORAGE_DOMAIN_NAME, true);
-        assertNull(cmd.electNewMaster());
+    public void shouldElectInactiveHostedEngineDomain() {
+        final StorageDomain domain =
+                prepareStorageDomainForElection(StorageDomainStatus.Inactive, HE_STORAGE_DOMAIN_NAME, true);
+        assertEquals(domain, cmd.electNewMaster(false, true, false));
     }
 
     @Test

@@ -176,8 +176,8 @@ public abstract class SearchableListModel<E, T> extends SortedListModel<T> imple
             //Nothing added, we can append the tags.
             return getSearchString() + tags.toString();
         } else {
-            //Have a search string with something already, append with OR.
-            return getSearchString() + " OR " + tags.toString(); // $NON-NLS-1$
+            // Apply the already present search string on the tags only
+            return getSearchString() + " AND " + tags.toString(); // $NON-NLS-1$
         }
     }
 
@@ -218,18 +218,8 @@ public abstract class SearchableListModel<E, T> extends SortedListModel<T> imple
         return this.currentPageNumber;
     }
 
-    public String getItemsCountString() {
-        if (getItems() == null) {
-            return ""; //$NON-NLS-1$
-        }
-        int fromItemCount = getSearchPageSize() * (getSearchPageNumber() - 1) + 1;
-        int toItemCount = (fromItemCount - 1) + getItems().size();
-
-        if (toItemCount == 0 || fromItemCount > toItemCount) {
-            return ""; //$NON-NLS-1$
-        }
-
-        return fromItemCount + "-" + toItemCount; //$NON-NLS-1$
+    public int getTotalItemsCount() {
+        return -1;
     }
 
     public int getNextSearchPageNumber() {
@@ -503,7 +493,7 @@ public abstract class SearchableListModel<E, T> extends SortedListModel<T> imple
         // of type 'valueObjectEnumerableList', which is not IList).
         if (getItems() != null) {
             Iterator<T> enumerator = getItems().iterator();
-            setIsEmpty(enumerator.hasNext() ? false : true);
+            setIsEmpty(!enumerator.hasNext());
         } else {
             setIsEmpty(true);
         }
@@ -545,8 +535,8 @@ public abstract class SearchableListModel<E, T> extends SortedListModel<T> imple
     }
 
     private void setSearchStringPage(int newSearchPageNumber) {
-       this.pagingSearchString = " page " + newSearchPageNumber; //$NON-NLS-1$
-       this.currentPageNumber = newSearchPageNumber;
+        this.pagingSearchString = " page " + newSearchPageNumber; //$NON-NLS-1$
+        this.currentPageNumber = newSearchPageNumber;
     }
 
     protected void searchFirstPage() {
@@ -673,7 +663,7 @@ public abstract class SearchableListModel<E, T> extends SortedListModel<T> imple
 
     @Override
     public final boolean hasItemsSorted() {
-        return (sortBy != null) || super.hasItemsSorted();
+        return sortBy != null || super.hasItemsSorted();
     }
 
     /**
@@ -732,8 +722,8 @@ public abstract class SearchableListModel<E, T> extends SortedListModel<T> imple
                 }
             }
 
-            if (comparator == null || ((value instanceof SortedSet)
-                    && Objects.equals(((SortedSet<?>) value).comparator(), comparator))) {
+            if (comparator == null || value instanceof SortedSet
+                    && Objects.equals(((SortedSet<?>) value).comparator(), comparator)) {
                 itemsChanging(value, items);
                 items = value;
             } else {
@@ -993,4 +983,13 @@ public abstract class SearchableListModel<E, T> extends SortedListModel<T> imple
                 }));
     }
 
+    @Override
+    public boolean isEntityPresent() {
+        return true;
+    }
+
+    @Override
+    public void setEntityPresent(boolean flag) {
+        // not used
+    }
 }

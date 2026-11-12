@@ -1,6 +1,5 @@
 package org.ovirt.engine.core.aaa.filters;
 
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -8,7 +7,6 @@ import javax.naming.InitialContext;
 import javax.servlet.Filter;
 import javax.servlet.FilterChain;
 import javax.servlet.FilterConfig;
-import javax.servlet.ServletException;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
@@ -35,7 +33,7 @@ public class SsoPostLoginFilter implements Filter {
     private static final boolean FILTER_QUERIES = true;
 
     @Override
-    public void init(FilterConfig filterConfig) throws ServletException {
+    public void init(FilterConfig filterConfig) {
     }
 
     protected Object runQuery(QueryType queryType, String sessionId, InitialContext ctx) {
@@ -46,19 +44,21 @@ public class SsoPostLoginFilter implements Filter {
         return result != null && result.getSucceeded() ? result.getReturnValue() : null;
     }
 
-    private Map getUserInfoObject(DbUser loggedInUser, String ssoToken) {
+    private Map getUserInfoObject(DbUser loggedInUser, String ssoToken, long sessionCreationTimeInMillis) {
         Map<String, String> obj = new HashMap<>();
         obj.put("userName", loggedInUser.getLoginName()); //$NON-NLS-1$
         obj.put("domain", loggedInUser.getDomain()); //$NON-NLS-1$
         obj.put("isAdmin", Boolean.toString(loggedInUser.isAdmin())); //$NON-NLS-1$
         obj.put("ssoToken", ssoToken); //$NON-NLS-1$
         obj.put("userId", loggedInUser.getId().toString()); //$NON-NLS-1$
+        // Auxiliary helper attribute used to determine if reload is triggered due to new login or simple browser
+        // refresh. Never use it for session validation!
+        obj.put("sessionAgeInSec", Long.toString((System.currentTimeMillis() - sessionCreationTimeInMillis) / 1000)); //$NON-NLS-1$
         return obj;
     }
 
     @Override
-    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
-            throws IOException, ServletException {
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) {
         log.debug("Entered SsoPostLoginFilter");
         HttpServletRequest req = (HttpServletRequest) request;
 
@@ -77,7 +77,7 @@ public class SsoPostLoginFilter implements Filter {
                     if (loggedInUser != null) {
                         log.debug("Adding userInfo to session");
                         req.getSession(true).setAttribute(ATTR_USER_INFO,
-                                getUserInfoObject((DbUser) loggedInUser, ssoToken));
+                                getUserInfoObject((DbUser) loggedInUser, ssoToken, req.getSession().getCreationTime()));
                     } else {
                         log.info("Failed to find logged user by sessionId");
                     }

@@ -26,11 +26,14 @@ import org.ovirt.engine.core.vdsbroker.monitoring.kubevirt.SharedInformerFactory
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import io.kubernetes.client.ApiClient;
 import io.kubernetes.client.ApiException;
 import io.kubernetes.client.informer.SharedInformerFactory;
 import kubevirt.io.KubevirtApi;
 import kubevirt.io.V1DeleteOptions;
+import kubevirt.io.V1Status;
 import kubevirt.io.V1VirtualMachine;
 import openshift.io.OpenshiftApi;
 import openshift.io.V1Route;
@@ -87,7 +90,29 @@ public class ClusterMonitoring {
         try {
             api.checkHealth();
         } catch (ApiException e) {
-            log.error("failed to check health of kubevirt provider (url = {}): {}", provider.getUrl(), ExceptionUtils.getRootCauseMessage(e));
+            log.error("failed to check health of kubevirt provider (url = {}): {}",
+                    provider.getUrl(),
+                    ExceptionUtils.getRootCauseMessage(e));
+            log.debug("Exception", e);
+            throw new IOException(e);
+        }
+        OpenshiftApi ocpApi = KubevirtUtils.getOpenshiftApi(provider);
+        try {
+            // just a sample call
+            // don't care about the results - there only must not be any exceptions thrown
+            ocpApi.listNamespacedRoute("openshift-console",
+                    null,
+                    "metadata.name=console",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    Boolean.FALSE);
+        } catch (ApiException e) {
+            log.error("failed to check OpenShift health of kubevirt provider (url = {}): {}",
+                    provider.getUrl(),
+                    ExceptionUtils.getRootCauseMessage(e));
             log.debug("Exception", e);
             throw new IOException(e);
         }
@@ -223,8 +248,19 @@ public class ClusterMonitoring {
     public void migrateVm(VM vm) {
         try {
             getKubevirtApi().migrate(vm.getNamespace(), vm.getName());
-        } catch (ApiException e) {
-            handleException(e, "failed to interact with kubevirt migrate endpoint");
+        } catch (ApiException ae) {
+            ObjectMapper objectMapper = new ObjectMapper();
+
+            String msg = "";
+            try {
+                V1Status status = objectMapper.readValue(ae.getResponseBody(), V1Status.class);
+                msg = status.getMessage();
+            } catch (IOException e) {
+                // Not useful but in case of parsing failure
+                msg = ae.getMessage();
+            }
+
+            throw new EngineException(EngineError.migrateErr, msg);
         }
     }
 

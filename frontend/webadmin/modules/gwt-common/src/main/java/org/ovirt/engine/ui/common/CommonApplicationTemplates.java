@@ -94,6 +94,13 @@ public interface CommonApplicationTemplates extends SafeHtmlTemplates {
             "</div>")
     SafeHtml typeAheadNameDescription(String name, String description);
 
+    @Template("<div style='min-width: 445px; max-width: 500px; width: 100%; border-bottom: 1px solid #acacac; float: left;'>" +
+            "<div style='{2}'>{0}</div>" +
+            "<div style='width: 2%; float: left;'>:</div>" +
+            "<div style='white-space: normal; color: #acacac; float: left;'>{1}</div>" +
+            "</div>")
+    SafeHtml typeAheadNameDescriptionWithColor(String name, String description, SafeStyles style);
+
     @Template("<table style='min-width: 445px; width: 100%; border-bottom: 1px solid #acacac;'><tr>" +
             "<td>{0}</td>" +
             "</tr></table>")
@@ -116,8 +123,8 @@ public interface CommonApplicationTemplates extends SafeHtmlTemplates {
     @Template("<div class=\"{0}\" id=\"{1}\">{2}</div>")
     SafeHtml divWithStyle(String style, String id, SafeHtml text);
 
-    @Template("<div style=\"{0}\" id=\"{1}\">{2}</div>")
-    SafeHtml divWithStringStyle(String style, String id, SafeHtml text);
+    @Template("<div style='{0}' id=\"{1}\">{2}</div>")
+    SafeHtml divWithStringStyle(SafeStyles style, String id, SafeHtml text);
 
     @Template("<strong style='{1}'>{0}</strong>")
     SafeHtml strongTextWithColor(String text, SafeStyles color);

@@ -129,7 +129,7 @@ public class SpiceConsoleModel extends ConsoleModel {
     public void invokeClient() {
         final GraphicsInfo spiceInfo = getEntity().getGraphicsInfos().get(GraphicsType.SPICE);
         if (spiceInfo == null) {
-            throw new IllegalStateException("Trying to invoke SPICE console but VM GraphicsInfo is null.");//$NON-NLS-1$
+            throw new IllegalStateException("Trying to invoke SPICE console but VM GraphicsInfo is null."); //$NON-NLS-1$
         }
 
         final ConsoleOptions options = getSpiceImpl().getOptions();
@@ -180,16 +180,15 @@ public class SpiceConsoleModel extends ConsoleModel {
                             if (logonCommandReturnValue != null && logonCommandReturnValue.getFault().getError() == EngineError.nonresp) {
                                 UICommand okCommand =
                                         new UICommand("SpiceWithoutAgentOK", new BaseCommandTarget() { //$NON-NLS-1$
-                                                    @Override
-                                                    public void executeCommand(UICommand uiCommand) {
-                                                        logSsoOnDesktopFailedAgentNonResp(getLogger(),
-                                                                logonCommandReturnValue != null ?
-                                                                        logonCommandReturnValue.getDescription()
-                                                                        : ""); //$NON-NLS-1$
-                                                        invokeClient();
-                                                        getParentModel().setWindow(null);
-                                                    }
-                                                });
+                                            @Override
+                                            public void executeCommand(UICommand uiCommand) {
+                                                logSsoOnDesktopFailedAgentNonResp(getLogger(),
+                                                    logonCommandReturnValue != null ?
+                                                    logonCommandReturnValue.getDescription() : ""); //$NON-NLS-1$
+                                                invokeClient();
+                                                getParentModel().setWindow(null);
+                                            }
+                                        });
 
                                 UICommand cancelCommand = new UICommand("SpiceWithoutAgentCancel", new BaseCommandTarget() { //$NON-NLS-1$
                                     @Override
@@ -212,7 +211,7 @@ public class SpiceConsoleModel extends ConsoleModel {
         }
     }
 
-    private void createConnectWithoutAgentConfirmationPopup(UICommand okCommand, UICommand cancelCommand){
+    private void createConnectWithoutAgentConfirmationPopup(UICommand okCommand, UICommand cancelCommand) {
         SpiceToGuestWithNonRespAgentModel spiceWithoutAgentModel = new SpiceToGuestWithNonRespAgentModel();
         spiceWithoutAgentModel.setTitle(ConstantsManager.getInstance()
                 .getConstants()

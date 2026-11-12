@@ -8,6 +8,8 @@ enroll() {
 	local ovirt_eku="$5"
 	local ovirt_san="$6"
 	local keep_key="$7"
+	local ca_file="$8"
+	local days="$9"
 
 	local req="${PKIDIR}/requests/${name}.req"
 	local cert="${PKIDIR}/certs/${name}.cer"
@@ -16,11 +18,12 @@ enroll() {
 
 	if [ -z "${keep_key}" ]; then
 		openssl \
-			genrsa \
+			genpkey \
+			-algorithm RSA \
+			-pkeyopt rsa_keygen_bits:2048 \
 			-out "${TMPKEY}" \
-			-passout "pass:${pass}" \
-			-des3 \
-			2048 \
+			-aes256 \
+			-pass "pass:${pass}" \
 			|| die "Cannot create certificate request"
 	else
 		openssl \
@@ -51,6 +54,8 @@ enroll() {
 		--ku="${ovirt_ku}" \
 		--eku="${ovirt_eku}" \
 		--san="${ovirt_san}" \
+		--ca-file="${ca_file}" \
+		--days="${days}" \
 		|| die "Cannot sign request"
 
 	touch "${pkcs12}"
@@ -63,7 +68,6 @@ enroll() {
 		-out "${pkcs12}" \
 		-passin "pass:${pass}" \
 		-passout "pass:${pass}" \
-		-descert \
 		|| die "Cannot create PKCS#12"
 
 	return 0
@@ -82,6 +86,8 @@ Result will be at ${PKIDIR}/keys/PREFIX.p12
     --eku=ekus            optional custom extended key usage.
     --san=san             optional X.509 subject alternative name.
     --keep-key            reissue certificate based on previous request.
+    --ca-file=file-name   CA base file name without extension.
+    --days=n              issue days.
 __EOF__
 }
 
@@ -95,6 +101,8 @@ trap cleanup 0
 
 OVIRT_KU=""
 OVIRT_EKU=""
+CA_FILE=ca
+DAYS=1827
 while [ -n "$1" ]; do
 	x="$1"
 	v="${x#*=}"
@@ -121,6 +129,12 @@ while [ -n "$1" ]; do
 		--keep-key)
 			KEEP_KEY="1"
 		;;
+		--ca-file=*)
+			CA_FILE="${v}"
+		;;
+		--days=*)
+			DAYS="${v}"
+		;;
 		--help)
 			usage
 			exit 0
@@ -136,4 +150,4 @@ done
 [ -n "${PASSWORD}" ] || die "Please specify password"
 [ -n "${SUBJECT}" ] || die "Please specify subject"
 
-enroll "${NAME}" "${PASSWORD}" "${SUBJECT}" "${OVIRT_KU}" "${OVIRT_EKU}" "${OVIRT_SAN}" "${KEEP_KEY}"
+enroll "${NAME}" "${PASSWORD}" "${SUBJECT}" "${OVIRT_KU}" "${OVIRT_EKU}" "${OVIRT_SAN}" "${KEEP_KEY}" "${CA_FILE}" "${DAYS}"

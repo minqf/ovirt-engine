@@ -24,9 +24,9 @@ public class NetworkOutOfSyncPanel extends FlowPanel {
     private static final ColumnSize MAIN_COLUMN_SIZE = ColumnSize.SM_12;
     private static final ColumnSize PROPERTY_COLUMN_SIZE = ColumnSize.SM_6;
     private static final ColumnSize COLUMN_SIZE = ColumnSize.SM_3;
-    private static final String BACKGROUND_COLOR = "rgb(67, 67, 67)";//$NON-NLS-1$
-    private static final String WHITE_TEXT_COLOR = "white";//$NON-NLS-1$
-    private static final String TEXT_COLOR = "#c4c4c4";//$NON-NLS-1$
+    private static final String BACKGROUND_COLOR = "rgb(67, 67, 67)"; //$NON-NLS-1$
+    private static final String WHITE_TEXT_COLOR = "white"; //$NON-NLS-1$
+    private static final String TEXT_COLOR = "#c4c4c4"; //$NON-NLS-1$
     private FlowPanel flowPanel;
     private final List<ReportedConfiguration> reportedConfigurationList;
     private static final ApplicationConstants constants = AssetProvider.getConstants();
@@ -37,7 +37,7 @@ public class NetworkOutOfSyncPanel extends FlowPanel {
         sortReportedConfigurationList();
     }
 
-    private void sortReportedConfigurationList(){
+    private void sortReportedConfigurationList() {
         Collections.sort(reportedConfigurationList, Comparator.comparing(r -> r.getType().getName()));
     }
 
@@ -51,7 +51,7 @@ public class NetworkOutOfSyncPanel extends FlowPanel {
         return flowPanel.asWidget();
     }
 
-    private void addOutOfSyncRow(List<Label> values, TextAlign textAlign){
+    private void addOutOfSyncRow(List<Label> values, TextAlign textAlign) {
         addOutOfSyncRow(values, textAlign, false);
     }
 
@@ -73,13 +73,13 @@ public class NetworkOutOfSyncPanel extends FlowPanel {
         }
         row.add(mainColumn);
 
-        if (bottomBorderSolid){
+        if (bottomBorderSolid) {
             Row container = new Row();
             container.setPaddingBottom(4);
             container.add(row);
-            container.getElement().getStyle().setProperty("margin", "0 0 4px");//$NON-NLS-1$ //$NON-NLS-2$
-            container.getElement().getStyle().setProperty("borderBottomStyle", "solid");//$NON-NLS-1$ //$NON-NLS-2$
-            container.getElement().getStyle().setProperty("borderWidth", "1px");//$NON-NLS-1$ //$NON-NLS-2$
+            container.getElement().getStyle().setProperty("margin", "0 0 4px"); //$NON-NLS-1$ //$NON-NLS-2$
+            container.getElement().getStyle().setProperty("borderBottomStyle", "solid"); //$NON-NLS-1$ //$NON-NLS-2$
+            container.getElement().getStyle().setProperty("borderWidth", "1px"); //$NON-NLS-1$ //$NON-NLS-2$
             flowPanel.add(container);
         } else {
             flowPanel.add(row);
@@ -112,42 +112,42 @@ public class NetworkOutOfSyncPanel extends FlowPanel {
 
     private String reportedConfigurationTypeToString(ReportedConfigurationType reportedConfigurationType) {
         switch (reportedConfigurationType) {
-        case MTU:
-            return constants.mtuOutOfSyncPopUp();
-        case BRIDGED:
-            return constants.bridgedOutOfSyncPopUp();
-        case VLAN:
-            return constants.vlanOutOfSyncPopUp();
-        case IPV4_BOOT_PROTOCOL:
-            return constants.ipv4BootProtocolOutOfSyncPopUp();
-        case IPV4_ADDRESS:
-            return constants.ipv4AddressOutOfSyncPopUp();
-        case IPV4_NETMASK:
-            return constants.ipv4NetmaskOutOfSyncPopUp();
-        case IPV4_GATEWAY:
-            return constants.ipv4GatewayOutOfSyncPopUp();
-        case IPV6_BOOT_PROTOCOL:
-            return constants.ipv6BootProtocolOutOfSyncPopUp();
-        case IPV6_ADDRESS:
-            return constants.ipv6AddressOutOfSyncPopUp();
-        case IPV6_PREFIX:
-            return constants.ipv6PrefixOutOfSyncPopUp();
-        case IPV6_GATEWAY:
-            return constants.ipv6GatewayOutOfSyncPopUp();
-        case OUT_AVERAGE_LINK_SHARE:
-            return constants.outAverageLinkShareOutOfSyncPopUp();
-        case OUT_AVERAGE_UPPER_LIMIT:
-            return constants.outAverageUpperLimitOutOfSyncPopUp();
-        case OUT_AVERAGE_REAL_TIME:
-            return constants.outAverageRealTimeOutOfSyncPopUp();
-        case SWITCH_TYPE:
-            return constants.switchTypeOutOfSyncPopUp();
-        case DNS_CONFIGURATION:
-            return constants.dnsConfigurationOutOfSyncPopUp();
-        case DEFAULT_ROUTE:
-            return constants.defaultRouteOutOfSyncPopUp();
-        default:
-            return constants.unknownPropertyOutOfSyncPopUp();
+            case MTU:
+                return constants.mtuOutOfSyncPopUp();
+            case BRIDGED:
+                return constants.bridgedOutOfSyncPopUp();
+            case VLAN:
+                return constants.vlanOutOfSyncPopUp();
+            case IPV4_BOOT_PROTOCOL:
+                return constants.ipv4BootProtocolOutOfSyncPopUp();
+            case IPV4_ADDRESS:
+                return constants.ipv4AddressOutOfSyncPopUp();
+            case IPV4_NETMASK:
+                return constants.ipv4NetmaskOutOfSyncPopUp();
+            case IPV4_GATEWAY:
+                return constants.ipv4GatewayOutOfSyncPopUp();
+            case IPV6_BOOT_PROTOCOL:
+                return constants.ipv6BootProtocolOutOfSyncPopUp();
+            case IPV6_ADDRESS:
+                return constants.ipv6AddressOutOfSyncPopUp();
+            case IPV6_PREFIX:
+                return constants.ipv6PrefixOutOfSyncPopUp();
+            case IPV6_GATEWAY:
+                return constants.ipv6GatewayOutOfSyncPopUp();
+            case OUT_AVERAGE_LINK_SHARE:
+                return constants.outAverageLinkShareOutOfSyncPopUp();
+            case OUT_AVERAGE_UPPER_LIMIT:
+                return constants.outAverageUpperLimitOutOfSyncPopUp();
+            case OUT_AVERAGE_REAL_TIME:
+                return constants.outAverageRealTimeOutOfSyncPopUp();
+            case SWITCH_TYPE:
+                return constants.switchTypeOutOfSyncPopUp();
+            case DNS_CONFIGURATION:
+                return constants.dnsConfigurationOutOfSyncPopUp();
+            case DEFAULT_ROUTE:
+                return constants.defaultRouteOutOfSyncPopUp();
+            default:
+                return constants.unknownPropertyOutOfSyncPopUp();
         }
     }
 

@@ -1,7 +1,6 @@
 package org.ovirt.engine.core.bll.memory;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -22,6 +21,7 @@ import org.ovirt.engine.core.common.businessentities.storage.VolumeType;
 import org.ovirt.engine.core.common.scheduling.VmOverheadCalculator;
 import org.ovirt.engine.core.common.utils.VmDeviceCommonUtils;
 import org.ovirt.engine.core.compat.Guid;
+import org.ovirt.engine.core.vdsbroker.VmManager;
 
 public class MemoryUtils {
 
@@ -71,7 +71,7 @@ public class MemoryUtils {
         return memoryDiskIds;
     }
 
-    public static List<DiskImage> createDiskDummies(long memorySize, long metadataSize) {
+    public static MemoryDisks createDiskDummies(long memorySize, long metadataSize) {
         DiskImage memoryVolume = new DiskImage();
         memoryVolume.setDiskAlias("memory");
         memoryVolume.setVolumeFormat(VolumeFormat.RAW);
@@ -87,7 +87,7 @@ public class MemoryUtils {
         dataVolume.setActualSizeInBytes(metadataSize);
         dataVolume.getSnapshots().add(dataVolume);
 
-        return Arrays.asList(memoryVolume, dataVolume);
+        return new MemoryDisks(memoryVolume, dataVolume);
     }
 
     public static DiskImage createSnapshotMetadataDisk(String vmName, String diskDescription) {
@@ -178,10 +178,12 @@ public class MemoryUtils {
     public static List<VmDevice> computeMemoryDevicesToHotUnplug(
             List<VmDevice> vmMemoryDevices,
             int currentMemoryMb,
-            int desiredMemoryMb) {
+            int desiredMemoryMb,
+            VmManager vmManager) {
         final int memoryToHotUnplugMb = currentMemoryMb - desiredMemoryMb;
         return vmMemoryDevices.stream()
                 .filter(VmDeviceCommonUtils::isMemoryDeviceHotUnpluggable)
+                .filter(memoryDevice -> !vmManager.isDeviceBeingHotUnlugged(memoryDevice.getDeviceId()))
                 .filter(memoryDevice ->
                         memoryToHotUnplugMb >= VmDeviceCommonUtils.getSizeOfMemoryDeviceMb(memoryDevice).get())
                 .sorted(Comparator.comparing(

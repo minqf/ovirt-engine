@@ -55,26 +55,33 @@ public final class EntityObject extends JsMutableObjectWithProperties {
             obj.setValueAsString("name", ((StoragePool) businessEntity).getName()); //$NON-NLS-1$
         } else if (businessEntity instanceof Cluster) {
             obj.setValueAsString("name", ((Cluster) businessEntity).getName()); //$NON-NLS-1$
+            obj.setValueAsBoolean("managed", ((Cluster) businessEntity).isManaged()); //$NON-NLS-1$
         } else if (businessEntity instanceof VDS) {
             obj.setValueAsString("name", ((VDS) businessEntity).getName()); //$NON-NLS-1$
             obj.setValueAsString("hostname", ((VDS) businessEntity).getHostName()); //$NON-NLS-1$
+            obj.setValueAsBoolean("managed", ((VDS) businessEntity).isManaged()); //$NON-NLS-1$
         } else if (businessEntity instanceof Network) {
             obj.setValueAsString("name", ((Network) businessEntity).getName()); //$NON-NLS-1$
         } else if (businessEntity instanceof StorageDomain) {
             obj.setValueAsString("name", ((StorageDomain) businessEntity).getStorageName()); //$NON-NLS-1$
+            obj.setValueAsString("type", ((StorageDomain) businessEntity).getStorageType().toString().toLowerCase()); //$NON-NLS-1$
+            if (((StorageDomain) businessEntity).getStoragePoolId() != null) {
+                obj.setValueAsString("dataCenterId", ((StorageDomain) businessEntity).getStoragePoolId().toString()); //$NON-NLS-1$
+            }
         } else if (businessEntity instanceof Disk) {
             // No custom properties for now
         } else if (businessEntity instanceof VM) {
             obj.setValueAsString("name", ((VM) businessEntity).getName()); //$NON-NLS-1$
             obj.setValueAsString("ipaddress", ((VM) businessEntity).getIp()); //$NON-NLS-1$
             obj.setValueAsString("status", ((VM) businessEntity).getStatus().name()); //$NON-NLS-1$
+            obj.setValueAsBoolean("managed", ((VM) businessEntity).isManaged()); //$NON-NLS-1$
         } else if (businessEntity instanceof VmPool) {
             obj.setValueAsString("name", ((VmPool) businessEntity).getName()); //$NON-NLS-1$
         } else if (businessEntity instanceof VmTemplate) {
             obj.setValueAsString("name", ((VmTemplate) businessEntity).getName()); //$NON-NLS-1$
         } else if (businessEntity instanceof GlusterVolumeEntity) {
             obj.setValueAsString("name", ((GlusterVolumeEntity) businessEntity).getName()); //$NON-NLS-1$
-            obj.setValueAsString("clusterId", ((GlusterVolumeEntity) businessEntity).getClusterId().toString());//$NON-NLS-1$
+            obj.setValueAsString("clusterId", ((GlusterVolumeEntity) businessEntity).getClusterId().toString()); //$NON-NLS-1$
         } else if (businessEntity instanceof Provider) {
             obj.setValueAsString("name", ((Provider) businessEntity).getName()); //$NON-NLS-1$
         } else if (businessEntity instanceof DbUser) {

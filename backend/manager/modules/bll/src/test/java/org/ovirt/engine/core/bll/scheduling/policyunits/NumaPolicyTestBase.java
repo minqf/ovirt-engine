@@ -6,6 +6,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import org.ovirt.engine.core.common.businessentities.NumaNodeStatistics;
+import org.ovirt.engine.core.common.businessentities.NumaTuneMode;
 import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.VdsNumaNode;
 import org.ovirt.engine.core.common.businessentities.VmNumaNode;
@@ -24,6 +25,7 @@ public class NumaPolicyTestBase {
         node.setMemTotal(size);
         node.setVdsNumaNodeList(pinnedList);
         node.setCpuIds(cpuIds);
+        node.setNumaTuneMode(NumaTuneMode.STRICT);
         return node;
     }
 
@@ -50,7 +52,7 @@ public class NumaPolicyTestBase {
             node.setNumaNodeStatistics(new NumaNodeStatistics());
             node.getNumaNodeStatistics().setMemFree(nodeSize);
 
-            node.setCpuIds(IntStream.range(i * coresPerNode, (i+1) * coresPerNode)
+            node.setCpuIds(IntStream.range(i * coresPerNode, (i + 1) * coresPerNode)
                     .boxed()
                     .collect(Collectors.toList())
             );

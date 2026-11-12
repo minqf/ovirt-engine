@@ -5,8 +5,10 @@ import java.util.List;
 
 import javax.inject.Inject;
 
+import org.apache.commons.lang3.ObjectUtils;
 import org.ovirt.engine.core.bll.CommandBase;
 import org.ovirt.engine.core.bll.MultiLevelAdministrationHandler;
+import org.ovirt.engine.core.bll.NonTransactiveCommandAttribute;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
 import org.ovirt.engine.core.common.AuditLogType;
@@ -20,6 +22,7 @@ import org.ovirt.engine.core.common.errors.EngineMessage;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dao.ImageTransferDao;
 
+@NonTransactiveCommandAttribute
 public class TransferImageStatusCommand<T extends TransferImageStatusParameters> extends CommandBase<T> {
 
     @Inject
@@ -48,14 +51,24 @@ public class TransferImageStatusCommand<T extends TransferImageStatusParameters>
         }
 
         ImageTransfer updates = getParameters().getUpdates();
-        if (updates != null) {
-            if (updates.getPhase() == ImageTransferPhase.RESUMING && !entity.getPhase().isPaused()) {
-                return failValidation(EngineMessage.ACTION_TYPE_FAILED_CANNOT_RESUME_IMAGE_TRANSFER);
-            }
+        if (updates != null && entity != null && updates.getPhase() != null) {
+            ImageTransferPhase imageTransferPhaseUpdate = updates.getPhase();
 
-            if (entity != null && entity.getType() == TransferType.Download &&
-                    updates.getPhase() != null && getParameters().getUpdates().getPhase().isPaused()) {
-                return failValidation(EngineMessage.ACTION_TYPE_FAILED_CANNOT_PAUSE_IMAGE_DOWNLOAD);
+            switch (imageTransferPhaseUpdate) {
+                case RESUMING:
+                    // Can resume only a paused transfer.
+                    if (!entity.getPhase().isPaused()) {
+                        return failValidation(EngineMessage.ACTION_TYPE_FAILED_CANNOT_RESUME_IMAGE_TRANSFER);
+                    }
+                    break;
+                case PAUSED_SYSTEM:
+                case PAUSED_USER:
+                    // Can pause only an upload.
+                    // Note: should be kept correlated with any 'PAUSED_*' enum key (ImageTransferPhase:isPaused)
+                    if (entity.getType() == TransferType.Download) {
+                        return failValidation(EngineMessage.ACTION_TYPE_FAILED_CANNOT_PAUSE_IMAGE_DOWNLOAD);
+                    }
+                    break;
             }
         }
 
@@ -92,20 +105,23 @@ public class TransferImageStatusCommand<T extends TransferImageStatusParameters>
 
     @Override
     public List<PermissionSubject> getPermissionCheckSubjects() {
-        Guid objectId = getStorageDomainId();
-        if (objectId == null) {
-            objectId = getParameters().getStorageDomainId();
-            if (objectId != null) {
-                setStorageDomainId(objectId);
-            } else {
-                objectId = MultiLevelAdministrationHandler.SYSTEM_OBJECT_ID;
-            }
+        // Set storage domain id for audit logs.
+        if (getStorageDomainId() == null && getParameters().getStorageDomainId() != null) {
+            setStorageDomainId(getParameters().getStorageDomainId());
         }
 
+        Guid objectId = ObjectUtils.firstNonNull(
+                getParameters().getDiskId(),
+                getParameters().getStorageDomainId(),
+                MultiLevelAdministrationHandler.SYSTEM_OBJECT_ID
+        );
+
         // Only check generic permissions because the command and/or ImageUpload entity may be missing
+        // If a storage domain id is available, check permissions on the storage domain; otherwise, check system-level permissions
+        VdcObjectType objectType = getStorageDomainId() != null ? VdcObjectType.Storage : VdcObjectType.System;
         return Collections.singletonList(new PermissionSubject(
                 objectId,
-                VdcObjectType.System,
+                objectType,
                 ActionGroup.CREATE_DISK));
     }
 

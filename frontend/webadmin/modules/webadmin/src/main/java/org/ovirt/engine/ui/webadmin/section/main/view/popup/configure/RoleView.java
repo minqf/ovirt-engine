@@ -80,7 +80,7 @@ public class RoleView extends Composite {
             RoleActionPanelPresenterWidget roleActionPanel,
             RolePermissionModelProvider permissionModelProvider,
             RolePermissionActionPanelPresenterWidget permissionActionPanel) {
-         this.roleModelProvider = roleModelProvider;
+        this.roleModelProvider = roleModelProvider;
         this.permissionModelProvider = permissionModelProvider;
 
         // We need to instantiate the tables first, then set the element id, and then set the columns so the
@@ -99,12 +99,19 @@ public class RoleView extends Composite {
 
         roleTablePanel.addResizeHandler(e -> {
             // Set the height of the role table to its container height - the table control height.
-            roleTable.table.setHeight(e.getHeight() - roleTable.getTableControlsHeight() + Unit.PX.getType());
+            roleTable.table.setHeight(
+                    Math.max(
+                            0,
+                            e.getHeight() - roleTable.getTableControlsHeight()) + Unit.PX.getType());
             // Set the height of the permissions table to its container height - the action panel height and - the
             // table controls height.
-            permissionTable.table.setHeight(permissionTablePanel.getOffsetHeight() - permissionTable.getTableControlsHeight()
-                    - permissionActionPanel.asWidget().getOffsetHeight()
-                    + Unit.PX.getType());
+            permissionTable.table.setHeight(
+                    Math.max(
+                            0,
+                            permissionTablePanel.getOffsetHeight()
+                                    - permissionTable.getTableControlsHeight()
+                                    - permissionActionPanel.asWidget().getOffsetHeight())
+                            + Unit.PX.getType());
         });
         setSubTabVisibility(false);
     }
@@ -112,7 +119,7 @@ public class RoleView extends Composite {
     public void setSubTabVisibility(boolean visible) {
         splitLayoutPanel.clear();
         if (visible) {
-            splitLayoutPanel.addSouth(permissionTablePanel, 150);
+            splitLayoutPanel.addSouth(permissionTablePanel, 160);
         }
         splitLayoutPanel.add(roleTablePanel);
     }

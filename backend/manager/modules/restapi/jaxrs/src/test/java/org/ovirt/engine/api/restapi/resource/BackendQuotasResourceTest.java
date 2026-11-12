@@ -41,7 +41,7 @@ public class BackendQuotasResourceTest
 
     protected List<org.ovirt.engine.core.common.businessentities.Quota> getQuotas() {
         List<org.ovirt.engine.core.common.businessentities.Quota> quotas = new LinkedList<>();
-        for (int index=0; index<NAMES.length; index++) {
+        for (int index = 0; index < NAMES.length; index++) {
             quotas.add(getEntity(index));
         }
         return quotas;
@@ -62,10 +62,10 @@ public class BackendQuotasResourceTest
         setUpCreationExpectations(ActionType.AddQuota,
                 QuotaCRUDParameters.class,
                 new String[] { "Quota.StoragePoolId", "Quota.ThresholdClusterPercentage",
-                        "Quota.GraceClusterPercentage", "Quota.ThresholdStoragePercentage",
-                        "Quota.GraceStoragePercentage" },
+                    "Quota.GraceClusterPercentage", "Quota.ThresholdStoragePercentage",
+                    "Quota.GraceStoragePercentage" },
                 new Object[] { DATACENTER_ID, CLUSTER_SOFT_LIMIT_PCT, CLUSTER_HARD_LIMIT_PCT, STORAGE_SOFT_LIMIT_PCT,
-                        STORAGE_HARD_LIMIT_PCT },
+                    STORAGE_HARD_LIMIT_PCT },
                 true,
                 true,
                 GUIDS[0],
@@ -113,20 +113,20 @@ public class BackendQuotasResourceTest
     @Test
     @Disabled
     @Override
-    public void testListFailure() {}
+    public void testListFailure() { }
 
     @Test
     @Disabled
     @Override
-    public void testListCrash() {}
+    public void testListCrash() { }
 
     @Test
     @Disabled
     @Override
-    public void testListCrashClientLocale() {}
+    public void testListCrashClientLocale() { }
 
     @Test
     @Disabled
     @Override
-    public void testQuery() {} //queries on quotas not supported by API yet.
+    public void testQuery() { } //queries on quotas not supported by API yet.
 }

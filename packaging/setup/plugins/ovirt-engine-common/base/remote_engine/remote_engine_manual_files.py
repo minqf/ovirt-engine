@@ -70,7 +70,9 @@ class Plugin(plugin.PluginBase):
                 )
             )
 
-        def copy_from_engine(self, file_name, dialog_name):
+        def copy_from_engine(self, file_name, dialog_name=None):
+            if dialog_name is None:
+                dialog_name = 'REMOTE_ENGINE_MANUAL_COPY_FILES_FROM_ENGINE'
             resfilename = self.dialog.queryString(
                 name=dialog_name,
                 note=_(
@@ -81,7 +83,7 @@ class Plugin(plugin.PluginBase):
                 ),
                 prompt=True,
             )
-            with open(resfilename) as f:
+            with open(resfilename, 'rb') as f:
                 res = f.read()
             return res
 

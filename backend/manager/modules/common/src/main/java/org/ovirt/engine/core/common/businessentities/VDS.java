@@ -199,7 +199,6 @@ public class VDS implements Queryable, BusinessEntityWithStatus<Guid, VDSStatus>
         vds.setBootTime(getBootTime());
         vds.setGuestOverhead(getGuestOverhead());
         vds.setPreviousStatus(getPreviousStatus());
-        vds.setMemAvailable(getMemAvailable());
         vds.setMemShared(getMemShared());
         vds.setSoftwareVersion(getSoftwareVersion());
         vds.setVersionName(getVersionName());
@@ -264,6 +263,8 @@ public class VDS implements Queryable, BusinessEntityWithStatus<Guid, VDSStatus>
         vds.setCpuFlagsMissing(getCpuFlagsMissing());
         vds.setSupportedCpus(getSupportedCpus());
         vds.setBootUuid(getBootUuid());
+        vds.setCdChangePdiv(isCdChangePdiv());
+        vds.setOvnConfigured(isOvnConfigured());
         return vds;
     }
 
@@ -442,14 +443,6 @@ public class VDS implements Queryable, BusinessEntityWithStatus<Guid, VDSStatus>
         vdsStatic.setVdsType(value);
     }
 
-    public Guid getOpenstackNetworkProviderId() {
-        return vdsStatic.getOpenstackNetworkProviderId();
-    }
-
-    public void setOpenstackNetworkProviderId(Guid value) {
-        vdsStatic.setOpenstackNetworkProviderId(value);
-    }
-
     @Override
     public VDSStatus getStatus() {
         return vdsDynamic.getStatus();
@@ -464,7 +457,7 @@ public class VDS implements Queryable, BusinessEntityWithStatus<Guid, VDSStatus>
         return vdsDynamic.getExternalStatus();
     }
 
-    public  void setExternalStatus(ExternalStatus externalStatus) {
+    public void setExternalStatus(ExternalStatus externalStatus) {
         vdsDynamic.setExternalStatus(externalStatus);
     }
 
@@ -798,14 +791,6 @@ public class VDS implements Queryable, BusinessEntityWithStatus<Guid, VDSStatus>
         vdsDynamic.setPreviousStatus(value);
     }
 
-    public Long getMemAvailable() {
-        return vdsStatistics.getMemAvailable();
-    }
-
-    public void setMemAvailable(Long value) {
-        vdsStatistics.setMemAvailable(value);
-    }
-
     public Long getMemFree() {
         return vdsStatistics.getMemFree();
     }
@@ -1104,6 +1089,14 @@ public class VDS implements Queryable, BusinessEntityWithStatus<Guid, VDSStatus>
         vdsDynamic.setOvsVersion(ovsVersion);
     }
 
+    public RpmVersion getNmstateVersion() {
+        return vdsDynamic.getNmstateVersion();
+    }
+
+    public void setNmstateVersion(RpmVersion nmstateVersion) {
+        vdsDynamic.setNmstateVersion(nmstateVersion);
+    }
+
     public String getKernelVersion() {
         return vdsDynamic.getKernelVersion();
     }
@@ -1295,6 +1288,14 @@ public class VDS implements Queryable, BusinessEntityWithStatus<Guid, VDSStatus>
 
     public void setSshKeyFingerprint(String sshKeyFingerprint) {
         vdsStatic.setSshKeyFingerprint(sshKeyFingerprint);
+    }
+
+    public String getSshPublicKey() {
+        return vdsStatic.getSshPublicKey();
+    }
+
+    public void setSshPublicKey(String sshPublicKey) {
+        vdsStatic.setSshPublicKey(sshPublicKey);
     }
 
     public Guid getHostProviderId() {
@@ -1606,17 +1607,17 @@ public class VDS implements Queryable, BusinessEntityWithStatus<Guid, VDSStatus>
         boolean result = false;
 
         switch (this.getStatus()) {
-        case Down:
-        case InstallFailed:
-        case Maintenance:
-        case NonOperational:
-        case NonResponsive:
-        case Kdumping:  // it should happen only after restart when host is stuck in status Kdumping
-            result = true;
-            break;
+            case Down:
+            case InstallFailed:
+            case Maintenance:
+            case NonOperational:
+            case NonResponsive:
+            case Kdumping:  // it should happen only after restart when host is stuck in status Kdumping
+                result = true;
+                break;
 
-        default:
-            break;
+            default:
+                break;
         }
 
         return result;
@@ -1649,7 +1650,7 @@ public class VDS implements Queryable, BusinessEntityWithStatus<Guid, VDSStatus>
     public boolean isHostedEngineDeployed() {
         // TODO Add running status of ovirt-ha-agent and ovirt-ha-broker once available from VDSM
         if (isHostedEngineConfigured()
-                || (getHighlyAvailableScore() > 0 && getHighlyAvailableIsActive())) {
+                || getHighlyAvailableScore() > 0 && getHighlyAvailableIsActive()) {
             return true;
         }
 
@@ -1738,6 +1739,22 @@ public class VDS implements Queryable, BusinessEntityWithStatus<Guid, VDSStatus>
 
     public void setBackupEnabled(Boolean value) {
         vdsDynamic.setBackupEnabled(value);
+    }
+
+    public Boolean isColdBackupEnabled() {
+        return vdsDynamic.isColdBackupEnabled();
+    }
+
+    public void setColdBackupEnabled(Boolean value) {
+        vdsDynamic.setColdBackupEnabled(value);
+    }
+
+    public Boolean isClearBitmapsEnabled() {
+        return vdsDynamic.isClearBitmapsEnabled();
+    }
+
+    public void setClearBitmapsEnabled(Boolean value) {
+        vdsDynamic.setClearBitmapsEnabled(value);
     }
 
     public Set<StorageFormatType> getSupportedDomainVersions() {
@@ -1846,6 +1863,14 @@ public class VDS implements Queryable, BusinessEntityWithStatus<Guid, VDSStatus>
         vdsDynamic.setFipsEnabled(fipsEnabled);
     }
 
+    public boolean isOvnConfigured() {
+        return vdsDynamic.isOvnConfigured();
+    }
+
+    public void setOvnConfigured(boolean ovnConfigured) {
+        vdsDynamic.setOvnConfigured(ovnConfigured);
+    }
+
     public boolean isManaged() {
         return vdsStatic.isManaged();
     }
@@ -1856,5 +1881,29 @@ public class VDS implements Queryable, BusinessEntityWithStatus<Guid, VDSStatus>
 
     public void setBootUuid(String bootUuid) {
         vdsDynamic.setBootUuid(bootUuid);
+    }
+
+    public boolean isCdChangePdiv() {
+        return vdsDynamic.isCdChangePdiv();
+    }
+
+    public void setCdChangePdiv(boolean cdChangePdiv) {
+        vdsDynamic.setCdChangePdiv(cdChangePdiv);
+    }
+
+    public List<VdsCpuUnit> getCpuTopology() {
+        return vdsDynamic.getCpuTopology();
+    }
+
+    public void setCpuTopology(List<VdsCpuUnit> value) {
+        vdsDynamic.setCpuTopology(value);
+    }
+
+    public String getVdsmCpusAffinity() {
+        return vdsDynamic.getVdsmCpusAffinity();
+    }
+
+    public void setVdsmCpusAffinity(String value) {
+        vdsDynamic.setVdsmCpusAffinity(value);
     }
 }

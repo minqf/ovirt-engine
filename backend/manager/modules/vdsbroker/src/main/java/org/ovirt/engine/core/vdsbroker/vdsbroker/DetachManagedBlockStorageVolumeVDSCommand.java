@@ -2,7 +2,7 @@ package org.ovirt.engine.core.vdsbroker.vdsbroker;
 
 import org.ovirt.engine.core.common.vdscommands.AttachManagedBlockStorageVolumeVDSCommandParameters;
 
-public class DetachManagedBlockStorageVolumeVDSCommand<P extends AttachManagedBlockStorageVolumeVDSCommandParameters> extends VdsBrokerCommand<P>{
+public class DetachManagedBlockStorageVolumeVDSCommand<P extends AttachManagedBlockStorageVolumeVDSCommandParameters> extends VdsBrokerCommand<P> {
 
     public DetachManagedBlockStorageVolumeVDSCommand(P parameters) {
         super(parameters);
@@ -10,7 +10,8 @@ public class DetachManagedBlockStorageVolumeVDSCommand<P extends AttachManagedBl
 
     @Override
     protected void executeVdsBrokerCommand() {
-        status = getBroker().detachManagedBlockStorageVolume(getParameters().getVolumeId());
+        status = getBroker().detachManagedBlockStorageVolume(getParameters().getVolumeId(),
+                getParameters().getStorageDomainId());
         proceedProxyReturnValue();
         setReturnValue(status);
     }

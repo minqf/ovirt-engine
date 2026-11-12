@@ -29,7 +29,7 @@ public class RestApiSessionMgmtFilter implements Filter {
     private static final String BEARER = "Bearer";
 
     @Override
-    public void init(FilterConfig filterConfig) throws ServletException {
+    public void init(FilterConfig filterConfig) {
     }
 
     @Override
@@ -86,7 +86,7 @@ public class RestApiSessionMgmtFilter implements Filter {
                         FiltersHelper.getBackend(ctx).runAction(
                                 ActionType.LogoutSession,
                                 new ActionParametersBase(engineSessionId)
-                                );
+                        );
                         HttpSession session = req.getSession(false);
                         if (session != null) {
                             try {

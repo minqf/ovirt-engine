@@ -1,7 +1,6 @@
 package org.ovirt.engine.core.searchbackend;
 
 import java.math.BigDecimal;
-import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
@@ -151,21 +150,21 @@ public class BaseConditionFieldAutoCompleter extends BaseAutoCompleter implement
             boolean caseSensitive) {
         String val;
         if (!StringHelper.isNullOrEmpty(value) && !"''".equals(value)) {
-            val= StringFormat.format(getI18NPrefix() + "'%%%1$s%%'", StringHelper.trim(value, '\''));
+            val = StringFormat.format(getI18NPrefix() + "'%%%1$s%%'", StringHelper.trim(value, '\''));
         } else {
             val = value;
         }
 
         String rel;
         switch (relations) {
-        case "d":
-            rel = getLikeSyntax(caseSensitive);
-            break;
-        case "!=":
-            rel = "NOT " + getLikeSyntax(caseSensitive);
-            break;
-        default:
-            rel = relations;
+            case "d":
+                rel = getLikeSyntax(caseSensitive);
+                break;
+            case "!=":
+                rel = "NOT " + getLikeSyntax(caseSensitive);
+                break;
+            default:
+                rel = relations;
         }
 
         return columnNameDict.entrySet().stream().sorted(Map.Entry.comparingByValue())
@@ -208,7 +207,7 @@ public class BaseConditionFieldAutoCompleter extends BaseAutoCompleter implement
             new BigDecimal(value); // No assignment, we just want to create a new instance and to see if there's an
                                    // Exception
             return true;
-        } catch(NumberFormatException e) {
+        } catch (NumberFormatException e) {
             return false;
         }
     };
@@ -272,12 +271,12 @@ public class BaseConditionFieldAutoCompleter extends BaseAutoCompleter implement
                 pair.setFirst("between");
                 DateTime nextDay = result.addDays(1);
                 pair.setSecond(StringFormat.format("'%1$s' and '%2$s'",
-                        result.toString(DateUtils.getFormat(DateFormat.DEFAULT, DateFormat.SHORT)),
-                        nextDay.toString(DateUtils.getFormat(DateFormat.DEFAULT, DateFormat.SHORT))));
+                        DateUtils.toIsoFormat(result),
+                        DateUtils.toIsoFormat(nextDay)));
             } else { // ">" or "<"
                      // value.argvalue = String.format("'%1$s'", result);
                 pair.setSecond(StringFormat.format("'%1$s'",
-                        result.toString(DateUtils.getFormat(DateFormat.DEFAULT, DateFormat.SHORT))));
+                        DateUtils.toIsoFormat(result)));
             }
 
         } else if ("TAG".equals(fieldName)) {
@@ -313,15 +312,15 @@ public class BaseConditionFieldAutoCompleter extends BaseAutoCompleter implement
         if (result != null) {
             DateEnumForSearch dateEnumVal = DateEnumForSearch.forValue(result);
             switch (dateEnumVal) {
-            case Today:
-                formatedValue = DateTime.getNow();
-                break;
-            case Yesterday:
-                formatedValue = DateTime.getNow().addDays(-1);
-                break;
+                case Today:
+                    formatedValue = DateTime.getNow();
+                    break;
+                case Yesterday:
+                    formatedValue = DateTime.getNow().addDays(-1);
+                    break;
 
-            default:
-                break;
+                default:
+                    break;
             }
         } else {
             for (int i = -2; i > -8; i--) {
@@ -375,13 +374,13 @@ public class BaseConditionFieldAutoCompleter extends BaseAutoCompleter implement
 
     private static boolean isOperatorNegative(String operator) {
         switch (operator.trim().toUpperCase()) {
-        case "NOT LIKE":
-        case "NOT ILIKE":
-        case "!=":
-        case "<>":
-            return true;
-        default:
-            return false;
+            case "NOT LIKE":
+            case "NOT ILIKE":
+            case "!=":
+            case "<>":
+                return true;
+            default:
+                return false;
         }
     }
 

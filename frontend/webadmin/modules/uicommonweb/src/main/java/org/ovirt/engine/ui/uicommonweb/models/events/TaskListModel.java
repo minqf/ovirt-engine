@@ -19,13 +19,19 @@ import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.ui.frontend.Frontend;
 import org.ovirt.engine.ui.uicommonweb.models.SearchableListModel;
 
-public class TaskListModel extends SearchableListModel {
+public class TaskListModel extends SearchableListModel<Void, Job> {
 
     public static final String WEBADMIN = "_WEBADMIN_"; //$NON-NLS-1$
     private final Map<String, Job> detailedTaskMap = new HashMap<>();
+    // null means that syncSearch was not run yet
+    private List<Job> itemsFromFirstLoad = null;
 
     public TaskListModel() {
         getSearchCommand().execute();
+    }
+
+    public List<Job> getItemsFromFirstLoad() {
+        return itemsFromFirstLoad;
     }
 
     @Override
@@ -91,8 +97,8 @@ public class TaskListModel extends SearchableListModel {
                     }
 
                     if (entry.getKey().getLastUpdateTime() == null
-                            || (entry.getKey().getLastUpdateTime().before(task.getLastUpdateTime())
-                            && !entry.getKey().getLastUpdateTime().equals(task.getLastUpdateTime()))) {
+                            || entry.getKey().getLastUpdateTime().before(task.getLastUpdateTime())
+                            && !entry.getKey().getLastUpdateTime().equals(task.getLastUpdateTime())) {
                         entry.getKey().setLastUpdateTime(task.getLastUpdateTime());
                     }
                     Date tempDate = task.getLastUpdateTime();
@@ -142,6 +148,9 @@ public class TaskListModel extends SearchableListModel {
                 newTaskList.add(task);
             }
 
+            if (itemsFromFirstLoad == null) {
+                itemsFromFirstLoad = newTaskList;
+            }
             setItems(newTaskList);
         });
         GetJobsByOffsetQueryParameters tempVar = new GetJobsByOffsetQueryParameters();
@@ -187,8 +196,8 @@ public class TaskListModel extends SearchableListModel {
                                             task.setStatus(job.getStatus());
                                         }
                                         if (task.getLastUpdateTime() == null
-                                                || (task.getLastUpdateTime().before(job.getLastUpdateTime()) && !task.getLastUpdateTime()
-                                                .equals(job.getLastUpdateTime()))) {
+                                                || task.getLastUpdateTime().before(job.getLastUpdateTime()) && !task.getLastUpdateTime()
+                                                .equals(job.getLastUpdateTime())) {
                                             task.setLastUpdateTime(job.getEndTime());
                                         }
                                         Date tempDate = task.getLastUpdateTime();

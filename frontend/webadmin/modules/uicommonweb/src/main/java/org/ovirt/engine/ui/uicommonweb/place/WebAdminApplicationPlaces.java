@@ -74,6 +74,7 @@ public final class WebAdminApplicationPlaces {
     public static final String clusterAffinityLabelsSubTabPlace = clusterMainPlace + SUB_TAB_PREFIX + "affinity_labels"; //$NON-NLS-1$
     public static final String clusterCpuProfileSubTabPlace = clusterMainPlace + SUB_TAB_PREFIX + "cpu_profiles"; //$NON-NLS-1$
     public static final String clusterPermissionSubTabPlace = clusterMainPlace + SUB_TAB_PREFIX + "permissions"; //$NON-NLS-1$
+    public static final String clusterEventSubTabPlace = clusterMainPlace + SUB_TAB_PREFIX + "events"; //$NON-NLS-1$
 
     // VirtualMachine
 
@@ -126,6 +127,7 @@ public final class WebAdminApplicationPlaces {
     // User
 
     public static final String userGeneralSubTabPlace = userMainPlace + SUB_TAB_PREFIX + "general"; //$NON-NLS-1$
+    public static final String userSettingsSubTabPlace = userMainPlace + SUB_TAB_PREFIX + "settings"; //$NON-NLS-1$
     public static final String userQuotaSubTabPlace = userMainPlace + SUB_TAB_PREFIX + "quota"; //$NON-NLS-1$
     public static final String userGroupSubTabPlace = userMainPlace + SUB_TAB_PREFIX + "directory_groups"; //$NON-NLS-1$
     public static final String userEventNotifierSubTabPlace = userMainPlace + SUB_TAB_PREFIX + "event_notifier"; //$NON-NLS-1$

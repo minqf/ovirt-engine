@@ -60,6 +60,8 @@ public class RemoveSnapshotSingleDiskLiveCommand<T extends RemoveSnapshotSingleD
         // Let doPolling() drive the execution; we don't have any guarantee that
         // executeCommand() will finish before doPolling() is called, and we don't
         // want to possibly run the first command twice.
+        getParameters().setCommandStep(getInitialMergeStepForImage(getParameters().getImageId()));
+        getParameters().setChildCommands(new HashMap<>());
         setSucceeded(true); // Allow runAction to succeed
     }
 
@@ -83,17 +85,12 @@ public class RemoveSnapshotSingleDiskLiveCommand<T extends RemoveSnapshotSingleD
 
     @Override
     public boolean performNextOperation(int completedChildCount) {
-
         // Steps are executed such that:
         //  a) all logic before the command runs is idempotent
         //  b) the command is the last action in the step
         // This allows for recovery after a crash at any point during command execution.
 
         log.debug("Proceeding with execution of RemoveSnapshotSingleDiskLiveCommand");
-        if (getParameters().getCommandStep() == null) {
-            getParameters().setCommandStep(getInitialMergeStepForImage(getParameters().getImageId()));
-            getParameters().setChildCommands(new HashMap<>());
-        }
 
         // Upon recovery or after invoking a new child command, our map may be missing an entry
         syncChildCommandList(getParameters());
@@ -109,56 +106,56 @@ public class RemoveSnapshotSingleDiskLiveCommand<T extends RemoveSnapshotSingleD
 
         Pair<ActionType, ? extends ActionParametersBase> nextCommand = null;
         switch (getParameters().getCommandStep()) {
-        case EXTEND:
-            nextCommand = new Pair<>(ActionType.MergeExtend, buildMergeParameters());
-            getParameters().setNextCommandStep(RemoveSnapshotSingleDiskStep.MERGE);
-            break;
-        case MERGE:
-            nextCommand = new Pair<>(ActionType.Merge, buildMergeParameters());
-            getParameters().setNextCommandStep(RemoveSnapshotSingleDiskStep.MERGE_STATUS);
-            break;
-        case MERGE_STATUS:
-            nextCommand = new Pair<>(ActionType.MergeStatus, buildMergeParameters());
-            getParameters().setNextCommandStep(RemoveSnapshotSingleDiskStep.DESTROY_IMAGE);
-            break;
-        case DESTROY_IMAGE:
-            if (actionReturnValue != null) {
-                getParameters().setMergeStatusReturnValue(actionReturnValue.getActionReturnValue());
-            } else if (getParameters().getMergeStatusReturnValue() == null) {
-                // If the images were already merged, just add the orphaned image
-                getParameters().setMergeStatusReturnValue(synthesizeMergeStatusReturnValue());
-            }
-            nextCommand = buildDestroyCommand(ActionType.DestroyImage, getActionType(),
-                    new ArrayList<>(getParameters().getMergeStatusReturnValue().getImagesToRemove()));
-            getParameters().setNextCommandStep(RemoveSnapshotSingleDiskStep.REDUCE_IMAGE);
-            break;
-        case REDUCE_IMAGE:
-            if (shouldSkipReduceImage()) {
-                log.info("No need to execute reduce image command, skipping its execution. " +
-                                "Storage Type: '{}', Disk: '{}' Snapshot: '{}'",
-                        getStorageDomain().getStorageType(),
-                        getImage().getName(),
-                        getImage().getDescription());
-                setCommandStatus(CommandStatus.SUCCEEDED);
-            } else {
-                Pair<ActionType, ? extends ActionParametersBase> reduceImageCommand =
-                        buildReduceImageCommand();
-                ActionReturnValue returnValue = CommandHelper.validate(reduceImageCommand.getFirst(),
-                        reduceImageCommand.getSecond(), getContext().clone());
-                if (returnValue.isValid()) {
-                    nextCommand = reduceImageCommand;
-                    getParameters().setNextCommandStep(RemoveSnapshotSingleDiskStep.COMPLETE);
-                } else {
-                    // Couldn't validate reduce image command for execution, however, we don't
-                    // want to fail the remove snapshot command as this step isn't mandatory.
-                    log.warn("Couldn't validate reduce image command, skipping its execution.");
-                    setCommandStatus(CommandStatus.SUCCEEDED);
+            case EXTEND:
+                nextCommand = new Pair<>(ActionType.MergeExtend, buildMergeParameters());
+                getParameters().setNextCommandStep(RemoveSnapshotSingleDiskStep.MERGE);
+                break;
+            case MERGE:
+                nextCommand = new Pair<>(ActionType.Merge, buildMergeParameters());
+                getParameters().setNextCommandStep(RemoveSnapshotSingleDiskStep.MERGE_STATUS);
+                break;
+            case MERGE_STATUS:
+                nextCommand = new Pair<>(ActionType.MergeStatus, buildMergeParameters());
+                getParameters().setNextCommandStep(RemoveSnapshotSingleDiskStep.DESTROY_IMAGE);
+                break;
+            case DESTROY_IMAGE:
+                if (actionReturnValue != null) {
+                    getParameters().setMergeStatusReturnValue(actionReturnValue.getActionReturnValue());
+                } else if (getParameters().getMergeStatusReturnValue() == null) {
+                    // If the images were already merged, just add the orphaned image
+                    getParameters().setMergeStatusReturnValue(synthesizeMergeStatusReturnValue());
                 }
-            }
-            break;
-        case COMPLETE:
-            setCommandStatus(CommandStatus.SUCCEEDED);
-            break;
+                nextCommand = buildDestroyCommand(ActionType.DestroyImage, getActionType(),
+                        new ArrayList<>(getParameters().getMergeStatusReturnValue().getImagesToRemove()));
+                getParameters().setNextCommandStep(RemoveSnapshotSingleDiskStep.REDUCE_IMAGE);
+                break;
+            case REDUCE_IMAGE:
+                if (shouldSkipReduceImage()) {
+                    log.info("No need to execute reduce image command, skipping its execution. " +
+                                    "Storage Type: '{}', Disk: '{}' Snapshot: '{}'",
+                            getStorageDomain().getStorageType(),
+                            getImage().getName(),
+                            getImage().getDescription());
+                    setCommandStatus(CommandStatus.SUCCEEDED);
+                } else {
+                    Pair<ActionType, ? extends ActionParametersBase> reduceImageCommand =
+                            buildReduceImageCommand();
+                    ActionReturnValue returnValue = CommandHelper.validate(reduceImageCommand.getFirst(),
+                            reduceImageCommand.getSecond(), getContext().clone());
+                    if (returnValue.isValid()) {
+                        nextCommand = reduceImageCommand;
+                        getParameters().setNextCommandStep(RemoveSnapshotSingleDiskStep.COMPLETE);
+                    } else {
+                        // Couldn't validate reduce image command for execution, however, we don't
+                        // want to fail the remove snapshot command as this step isn't mandatory.
+                        log.warn("Couldn't validate reduce image command, skipping its execution.");
+                        setCommandStatus(CommandStatus.SUCCEEDED);
+                    }
+                }
+                break;
+            case COMPLETE:
+                setCommandStatus(CommandStatus.SUCCEEDED);
+                break;
         }
 
         persistCommand(getParameters().getParentCommand(), true);
@@ -182,13 +179,20 @@ public class RemoveSnapshotSingleDiskLiveCommand<T extends RemoveSnapshotSingleD
                 return RemoveSnapshotSingleDiskStep.DESTROY_IMAGE;
             }
         }
+        if (getImageInfoFromVdsm(getDestinationDiskImage()) == null) {
+            log.info("Image does not exist, attempting to synchronize the database");
+            Set<Guid> imagesToRemove = new HashSet<>();
+            imagesToRemove.add(getDestinationDiskImage().getImageId());
+            getParameters().setMergeStatusReturnValue(new MergeStatusReturnValue(imagesToRemove));
+            return RemoveSnapshotSingleDiskStep.COMPLETE;
+        }
         return RemoveSnapshotSingleDiskStep.EXTEND;
     }
 
     private boolean shouldSkipReduceImage() {
         // Skipping file domains and live merge scenarios.
         return getStorageDomain().getStorageType().isFileDomain() ||
-                (getActiveDiskImage() == null || getActiveDiskImage().getParentId().equals(getImageId()));
+                getActiveDiskImage() == null || getActiveDiskImage().getParentId().equals(getImageId());
     }
 
     private boolean completedMerge() {

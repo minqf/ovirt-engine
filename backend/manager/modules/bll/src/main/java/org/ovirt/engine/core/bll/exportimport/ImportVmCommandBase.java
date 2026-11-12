@@ -33,7 +33,9 @@ import org.ovirt.engine.core.bll.profiles.CpuProfileHelper;
 import org.ovirt.engine.core.bll.storage.utils.BlockStorageDiscardFunctionalityHelper;
 import org.ovirt.engine.core.bll.utils.CompatibilityVersionUpdater;
 import org.ovirt.engine.core.bll.utils.PermissionSubject;
+import org.ovirt.engine.core.bll.utils.VmUpdateType;
 import org.ovirt.engine.core.bll.validator.ImportValidator;
+import org.ovirt.engine.core.bll.validator.VmValidator;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.ImportVmParameters;
@@ -42,10 +44,11 @@ import org.ovirt.engine.core.common.action.LockProperties.Scope;
 import org.ovirt.engine.core.common.businessentities.ActionGroup;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
 import org.ovirt.engine.core.common.businessentities.Cluster;
-import org.ovirt.engine.core.common.businessentities.DisplayType;
+import org.ovirt.engine.core.common.businessentities.CpuPinningPolicy;
 import org.ovirt.engine.core.common.businessentities.GraphicsType;
 import org.ovirt.engine.core.common.businessentities.Permission;
 import org.ovirt.engine.core.common.businessentities.StorageDomain;
+import org.ovirt.engine.core.common.businessentities.StorageDomainStatic;
 import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VMStatus;
 import org.ovirt.engine.core.common.businessentities.VmDevice;
@@ -72,6 +75,7 @@ import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogable;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogableImpl;
 import org.ovirt.engine.core.dao.ClusterDao;
 import org.ovirt.engine.core.dao.StorageDomainDao;
+import org.ovirt.engine.core.dao.StorageDomainStaticDao;
 import org.ovirt.engine.core.dao.VmDynamicDao;
 import org.ovirt.engine.core.dao.VmStaticDao;
 import org.ovirt.engine.core.dao.VmStatisticsDao;
@@ -118,12 +122,14 @@ public abstract class ImportVmCommandBase<T extends ImportVmParameters> extends 
     private CloudInitHandler cloudInitHandler;
     @Inject
     private VmInfoBuildUtils vmInfoBuildUtils;
+    @Inject
+    private StorageDomainStaticDao storageDomainStaticDao;
 
     private final List<String> macsAdded = new ArrayList<>();
     private static VmStatic vmStaticForDefaultValues = new VmStatic();
     private MacPool macPool;
 
-    private Runnable logOnExecuteEndMethod = () -> {};
+    private Runnable logOnExecuteEndMethod = () -> { };
 
     ImportVmCommandBase(T parameters, CommandContext commandContext) {
         super(parameters, commandContext);
@@ -148,7 +154,15 @@ public abstract class ImportVmCommandBase<T extends ImportVmParameters> extends 
             return failValidation(EngineMessage.ACTION_TYPE_FAILED_CLUSTER_CAN_NOT_BE_EMPTY);
         }
 
+        if (getCluster().getBiosType() == null) {
+            return failValidation(EngineMessage.CLUSTER_BIOS_TYPE_NOT_SET);
+        }
+
         updateVmVersion();
+
+        if (!validate(VmValidator.isBiosTypeSupported(getVm().getStaticData(), getCluster(), osRepository))) {
+            return false;
+        }
 
         if (getParameters().getStoragePoolId() != null
                 && !getParameters().getStoragePoolId().equals(getCluster().getStoragePoolId())) {
@@ -253,6 +267,7 @@ public abstract class ImportVmCommandBase<T extends ImportVmParameters> extends 
         return validate(vmHandler.isGraphicsAndDisplaySupported(getParameters().getVm().getOs(),
                 getGraphicsTypesForVm(),
                 getVm().getDefaultDisplayType(),
+                getVm().getBiosType(),
                 getEffectiveCompatibilityVersion()));
     }
 
@@ -281,20 +296,6 @@ public abstract class ImportVmCommandBase<T extends ImportVmParameters> extends 
         return validate(cpuProfileHelper.setAndValidateCpuProfile(
                 getVm().getStaticData(),
                 getUserIdIfExternal().orElse(null)));
-    }
-
-    protected boolean validateBallonDevice() {
-        if (!VmDeviceCommonUtils.isBalloonDeviceExists(getVm().getManagedVmDeviceMap().values())) {
-            return true;
-        }
-
-        if (!osRepository.isBalloonEnabled(getVm().getStaticData().getOsId(),
-                getEffectiveCompatibilityVersion())) {
-            addValidationMessageVariable("clusterArch", getCluster().getArchitecture());
-            return failValidation(EngineMessage.BALLOON_REQUESTED_ON_NOT_SUPPORTED_ARCH);
-        }
-
-        return true;
     }
 
     protected boolean validateSoundDevice() {
@@ -355,7 +356,12 @@ public abstract class ImportVmCommandBase<T extends ImportVmParameters> extends 
         setVm(parameters.getVm());
         if (parameters.getVm() != null) {
             setVmId(parameters.getVm().getId());
+            initBiosType();
         }
+    }
+
+    protected void initBiosType() {
+        // override in subclasses if needed
     }
 
     protected void updateVmVersion() {
@@ -377,13 +383,12 @@ public abstract class ImportVmCommandBase<T extends ImportVmParameters> extends 
             }
         }
 
-        var updates = new CompatibilityVersionUpdater()
-                .updateVmCompatibilityVersion(getVm(), newVersion, getCluster());
+        var updates = new CompatibilityVersionUpdater().updateVmCompatibilityVersion(getVm(), newVersion, getCluster());
 
         if (!updates.isEmpty()) {
             logOnExecuteEnd(() -> {
                 String updatesString = updates.stream()
-                        .map(update -> update.getDisplayName())
+                        .map(VmUpdateType::getDisplayName)
                         .collect(Collectors.joining(", "));
 
                 addCustomValue("Updates", updatesString);
@@ -413,7 +418,7 @@ public abstract class ImportVmCommandBase<T extends ImportVmParameters> extends 
      */
     protected void generateNewDiskId(List<DiskImage> diskImagesList, DiskImage disk) {
         Guid generatedGuid = generateNewDiskId(disk);
-        diskImagesList.forEach(diskImage ->  diskImage.setId(generatedGuid));
+        diskImagesList.forEach(diskImage -> diskImage.setId(generatedGuid));
     }
 
     /**
@@ -507,6 +512,7 @@ public abstract class ImportVmCommandBase<T extends ImportVmParameters> extends 
 
     @Override
     protected void executeVmCommand() {
+        handleVmLease();
         try {
             addVmToDb();
             addVmToAffinityGroups();
@@ -515,6 +521,7 @@ public abstract class ImportVmCommandBase<T extends ImportVmParameters> extends 
             processImages();
             vmHandler.addVmInitToDB(getVm().getStaticData().getVmInit());
             discardHelper.logIfDisksWithIllegalPassDiscardExist(getVmId());
+            addVmLeaseIfNeeded();
         } catch (RuntimeException e) {
             macPool.freeMacs(macsAdded);
             throw e;
@@ -562,6 +569,7 @@ public abstract class ImportVmCommandBase<T extends ImportVmParameters> extends 
             addVmStatistics();
             addVmInterfaces();
             addVmPermission();
+            addVmNuma();
             getCompensationContext().stateChanged();
             return null;
         });
@@ -592,6 +600,10 @@ public abstract class ImportVmCommandBase<T extends ImportVmParameters> extends 
                 VdcObjectType.VM);
     }
 
+    private void addVmNuma() {
+        vmHandler.addVmNumaNodes(getVm());
+    }
+
     protected void addVmStatic() {
         logImportEvents();
         getVm().setId(getVmId());
@@ -600,15 +612,13 @@ public abstract class ImportVmCommandBase<T extends ImportVmParameters> extends 
         getVm().setMinAllocatedMem(computeMinAllocatedMem());
         getVm().setQuotaId(getParameters().getQuotaId());
 
-        if (!osRepository.isSingleQxlDeviceEnabled(getVm().getVmOsId())
-                || getVm().getDefaultDisplayType() != DisplayType.qxl) {
-            getVm().setSingleQxlPci(false);
-        }
-
         // if "run on host" field points to a non existent vds (in the current cluster) -> remove field and continue
         if (!vmHandler.validateDedicatedVdsExistOnSameCluster(getVm().getStaticData()).isValid()) {
             getVm().setDedicatedVmForVdsList(Collections.emptyList());
-            getVm().setCpuPinning(null);
+            if (!StringUtils.isBlank(getVm().getCpuPinning())) {
+                getVm().setCpuPinning(null);
+                getVm().setCpuPinningPolicy(CpuPinningPolicy.NONE);
+            }
         }
 
         if (getVm().getOriginalTemplateGuid() != null && !VmTemplateHandler.BLANK_VM_TEMPLATE_ID.equals(getVm().getOriginalTemplateGuid())) {
@@ -628,7 +638,7 @@ public abstract class ImportVmCommandBase<T extends ImportVmParameters> extends 
             getVm().setVmtGuid(VmTemplateHandler.BLANK_VM_TEMPLATE_ID);
         }
 
-        vmHandler.autoSelectResumeBehavior(getVm().getStaticData(), getCluster());
+        vmHandler.autoSelectResumeBehavior(getVm().getStaticData());
 
         vmStaticDao.save(getVm().getStaticData());
         getCompensationContext().snapshotNewEntity(getVm().getStaticData());
@@ -693,7 +703,7 @@ public abstract class ImportVmCommandBase<T extends ImportVmParameters> extends 
 
     private boolean shouldReassignMac(VmNetworkInterface iface) {
         return StringUtils.isEmpty(iface.getMacAddress())
-                || (getParameters().isReassignBadMacs() && vNicHasBadMac(iface))
+                || getParameters().isReassignBadMacs() && vNicHasBadMac(iface)
                 || getParameters().isImportAsNewEntity();
     }
 
@@ -752,6 +762,43 @@ public abstract class ImportVmCommandBase<T extends ImportVmParameters> extends 
         return getVm().getMemSizeMb();
     }
 
+    private Guid findDefaultStorageDomainForVmLease() {
+        return storageDomainStaticDao.getAllForStoragePool(getStoragePoolId()).stream()
+                .map(StorageDomainStatic::getId)
+                .filter(this::validateLeaseStorageDomain)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void handleVmLease() {
+        Guid importedLeaseStorageDomainId = getVm().getLeaseStorageDomainId();
+        if (importedLeaseStorageDomainId == null) {
+            return;
+        }
+        if (!getVm().isAutoStartup() || !shouldAddLease(getVm().getStaticData())) {
+            getVm().setLeaseStorageDomainId(null);
+            return;
+        }
+        if (validateLeaseStorageDomain(importedLeaseStorageDomainId)) {
+            return;
+        }
+        getVm().setLeaseStorageDomainId(findDefaultStorageDomainForVmLease());
+        if (getVm().getLeaseStorageDomainId() == null) {
+            auditLogDirector.log(this, AuditLogType.CANNOT_IMPORT_VM_WITH_LEASE_STORAGE_DOMAIN);
+        } else {
+            log.warn("Creating the lease for the VM '{}' on storage domain '{}', because storage domain '{}' is unavailable",
+                    getVm().getId(),
+                    getVm().getLeaseStorageDomainId(),
+                    importedLeaseStorageDomainId);
+        }
+    }
+
+    private void addVmLeaseIfNeeded() {
+        if (getVm().getLeaseStorageDomainId() != null) {
+            addVmLease(getVm().getLeaseStorageDomainId(), getVm().getId(), false);
+        }
+    }
+
     @Override
     protected List<Class<?>> getValidationGroups() {
         if (getParameters().isImportAsNewEntity()) {
@@ -784,16 +831,16 @@ public abstract class ImportVmCommandBase<T extends ImportVmParameters> extends 
     @Override
     public AuditLogType getAuditLogTypeValue() {
         switch (getActionState()) {
-        case EXECUTE:
-            return getSucceeded() ?
-                    AuditLogType.IMPORTEXPORT_STARTING_IMPORT_VM
-                    : AuditLogType.IMPORTEXPORT_IMPORT_VM_FAILED;
-        case END_SUCCESS:
-            return getSucceeded() ?
-                    AuditLogType.IMPORTEXPORT_IMPORT_VM
-                    : AuditLogType.IMPORTEXPORT_IMPORT_VM_FAILED;
-        case END_FAILURE:
-            return AuditLogType.IMPORTEXPORT_IMPORT_VM_FAILED;
+            case EXECUTE:
+                return getSucceeded() ?
+                        AuditLogType.IMPORTEXPORT_STARTING_IMPORT_VM
+                        : AuditLogType.IMPORTEXPORT_IMPORT_VM_FAILED;
+            case END_SUCCESS:
+                return getSucceeded() ?
+                        AuditLogType.IMPORTEXPORT_IMPORT_VM
+                        : AuditLogType.IMPORTEXPORT_IMPORT_VM_FAILED;
+            case END_FAILURE:
+                return AuditLogType.IMPORTEXPORT_IMPORT_VM_FAILED;
         }
         return super.getAuditLogTypeValue();
     }

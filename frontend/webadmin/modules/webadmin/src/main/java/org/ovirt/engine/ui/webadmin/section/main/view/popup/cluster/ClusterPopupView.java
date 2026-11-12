@@ -6,6 +6,7 @@ import org.gwtbootstrap3.client.ui.Row;
 import org.ovirt.engine.core.common.businessentities.AdditionalFeature;
 import org.ovirt.engine.core.common.businessentities.ArchitectureType;
 import org.ovirt.engine.core.common.businessentities.BiosType;
+import org.ovirt.engine.core.common.businessentities.FipsMode;
 import org.ovirt.engine.core.common.businessentities.LogMaxMemoryUsedThresholdType;
 import org.ovirt.engine.core.common.businessentities.MacPool;
 import org.ovirt.engine.core.common.businessentities.MigrationBandwidthLimitType;
@@ -15,6 +16,7 @@ import org.ovirt.engine.core.common.businessentities.ServerCpu;
 import org.ovirt.engine.core.common.businessentities.StoragePool;
 import org.ovirt.engine.core.common.businessentities.network.Network;
 import org.ovirt.engine.core.common.migration.MigrationPolicy;
+import org.ovirt.engine.core.common.migration.ParallelMigrationsType;
 import org.ovirt.engine.core.common.mode.ApplicationMode;
 import org.ovirt.engine.core.common.network.FirewallType;
 import org.ovirt.engine.core.common.network.SwitchType;
@@ -34,6 +36,7 @@ import org.ovirt.engine.ui.common.widget.dialog.tab.DialogTab;
 import org.ovirt.engine.ui.common.widget.dialog.tab.DialogTabPanel;
 import org.ovirt.engine.ui.common.widget.editor.ListModelCheckBoxGroup;
 import org.ovirt.engine.ui.common.widget.editor.ListModelListBoxEditor;
+import org.ovirt.engine.ui.common.widget.editor.ListModelListBoxOnlyEditor;
 import org.ovirt.engine.ui.common.widget.editor.ListModelRadioGroupEditor;
 import org.ovirt.engine.ui.common.widget.editor.generic.EntityModelCheckBoxEditor;
 import org.ovirt.engine.ui.common.widget.editor.generic.EntityModelRadioButtonEditor;
@@ -42,8 +45,10 @@ import org.ovirt.engine.ui.common.widget.editor.generic.StringEntityModelPasswor
 import org.ovirt.engine.ui.common.widget.editor.generic.StringEntityModelTextAreaLabelEditor;
 import org.ovirt.engine.ui.common.widget.editor.generic.StringEntityModelTextBoxEditor;
 import org.ovirt.engine.ui.common.widget.form.key_value.KeyValueWidget;
+import org.ovirt.engine.ui.common.widget.renderer.BiosTypeRenderer;
 import org.ovirt.engine.ui.common.widget.renderer.BooleanRenderer;
 import org.ovirt.engine.ui.common.widget.renderer.EnumRenderer;
+import org.ovirt.engine.ui.common.widget.renderer.MigrationPolicyNameRenderer;
 import org.ovirt.engine.ui.common.widget.renderer.NameRenderer;
 import org.ovirt.engine.ui.common.widget.renderer.NullSafeRenderer;
 import org.ovirt.engine.ui.common.widget.renderer.SystemDefaultRenderer;
@@ -53,6 +58,7 @@ import org.ovirt.engine.ui.uicommonweb.models.TabName;
 import org.ovirt.engine.ui.uicommonweb.models.clusters.ClusterModel;
 import org.ovirt.engine.ui.uicommonweb.models.macpool.MacPoolModel;
 import org.ovirt.engine.ui.uicommonweb.models.vms.key_value.KeyValueModel;
+import org.ovirt.engine.ui.uicompat.MigrationPoliciesTranslator;
 import org.ovirt.engine.ui.webadmin.ApplicationConstants;
 import org.ovirt.engine.ui.webadmin.ApplicationMessages;
 import org.ovirt.engine.ui.webadmin.ApplicationTemplates;
@@ -131,9 +137,19 @@ public class ClusterPopupView extends AbstractTabbedModelBoundPopupView<ClusterM
     ListModelListBoxEditor<ServerCpu> cpuEditor;
 
     @UiField(provided = true)
+    InfoIcon biosTypeEditorInfoIcon;
+
+    BiosTypeRenderer biosTypeRenderer;
+
+    @UiField(provided = true)
     @Path(value = "biosType.selectedItem")
     @WithElementId
-    ListModelListBoxEditor<BiosType> biosTypeEditor;
+    ListModelListBoxOnlyEditor<BiosType> biosTypeEditor;
+
+    @UiField(provided = true)
+    @Path(value = "changeToQ35.entity")
+    @WithElementId
+    EntityModelCheckBoxEditor changeToQ35Editor;
 
     @UiField(provided = true)
     @Path(value = "version.selectedItem")
@@ -213,9 +229,9 @@ public class ClusterPopupView extends AbstractTabbedModelBoundPopupView<ClusterM
     StringEntityModelTextBoxEditor glusterHostAddressEditor;
 
     @UiField
-    @Path(value = "glusterHostFingerprint.entity")
+    @Path(value = "glusterHostSshPublicKey.entity")
     @WithElementId
-    StringEntityModelTextAreaLabelEditor glusterHostFingerprintEditor;
+    StringEntityModelTextAreaLabelEditor glusterHostSshPublicKeyEditor;
 
     @UiField
     @Path(value = "glusterHostPassword.entity")
@@ -282,9 +298,6 @@ public class ClusterPopupView extends AbstractTabbedModelBoundPopupView<ClusterM
     @Path(value = "optimizationCustom_IsSelected.entity")
     @WithElementId
     EntityModelRadioButtonEditor optimizationCustomEditor;
-
-    @UiField
-    Row cpuThreadsRow;
 
     @UiField
     @Ignore
@@ -435,6 +448,19 @@ public class ClusterPopupView extends AbstractTabbedModelBoundPopupView<ClusterM
     @WithElementId("migrateCompressed")
     ListModelListBoxEditor<Boolean> migrateCompressedEditor;
 
+    @UiField(provided = true)
+    InfoIcon parallelMigrationsInfoIcon;
+
+    @UiField(provided = true)
+    @Path(value = "parallelMigrationsType.selectedItem")
+    @WithElementId("parallelMigrationsType")
+    public ListModelListBoxEditor<ParallelMigrationsType> parallelMigrationsTypeEditor;
+
+    @UiField
+    @Path(value = "customParallelMigrations.entity")
+    @WithElementId
+    public IntegerEntityModelTextBoxEditor customParallelMigrationsEditor;
+
     @UiField
     @Ignore
     DialogTab consoleTab;
@@ -520,6 +546,11 @@ public class ClusterPopupView extends AbstractTabbedModelBoundPopupView<ClusterM
     @WithElementId
     EntityModelCheckBoxEditor skipFencingIfGlusterQuorumNotMetCheckBox;
 
+    @UiField(provided = true)
+    @Path(value = "fipsMode.selectedItem")
+    @WithElementId
+    ListModelListBoxEditor<FipsMode> fipsModeEditor;
+
     private final Driver driver = GWT.create(Driver.class);
 
     @UiField
@@ -546,6 +577,7 @@ public class ClusterPopupView extends AbstractTabbedModelBoundPopupView<ClusterM
     private static final ApplicationTemplates templates = AssetProvider.getTemplates();
     private static final ApplicationConstants constants = AssetProvider.getConstants();
     private static final ApplicationMessages messages = AssetProvider.getMessages();
+    private static final MigrationPoliciesTranslator translator = MigrationPoliciesTranslator.getInstance();
 
     @Inject
     public ClusterPopupView(EventBus eventBus) {
@@ -644,7 +676,8 @@ public class ClusterPopupView extends AbstractTabbedModelBoundPopupView<ClusterM
             }
         });
 
-        biosTypeEditor = new ListModelListBoxEditor<>(new EnumRenderer<BiosType>());
+        biosTypeRenderer = new BiosTypeRenderer(constants.autoDetect());
+        biosTypeEditor = new ListModelListBoxOnlyEditor<>(biosTypeRenderer);
 
         versionEditor = new ListModelListBoxEditor<>(new NullSafeRenderer<Version>() {
             @Override
@@ -710,15 +743,19 @@ public class ClusterPopupView extends AbstractTabbedModelBoundPopupView<ClusterM
                         new BooleanRenderer(constants.compress(), constants.dontCompress()),
                         AsyncDataProvider.getInstance().getMigrateCompressed()));
 
+        parallelMigrationsTypeEditor = new ListModelListBoxEditor<>(new EnumRenderer<ParallelMigrationsType>());
+        parallelMigrationsTypeEditor.hideLabel();
         migrationBandwidthLimitTypeEditor = new ListModelListBoxEditor<>(new EnumRenderer<MigrationBandwidthLimitType>());
         migrationBandwidthLimitTypeEditor.hideLabel();
-        migrationPolicyEditor = new ListModelListBoxEditor<>(new NameRenderer());
+        migrationPolicyEditor = new ListModelListBoxEditor<>(new MigrationPolicyNameRenderer());
         migrationPolicyEditor.hideLabel();
         macPoolListEditor = new ListModelListBoxEditor<>(new NameRenderer<MacPool>());
         macPoolListEditor.setLabel(constants.clusterPopupMacPoolLabel());
+        fipsModeEditor = new ListModelListBoxEditor<>(new EnumRenderer<FipsMode>());
     }
 
     private void initCheckBoxEditors() {
+        changeToQ35Editor = new EntityModelCheckBoxEditor(Align.RIGHT);
         enableOvirtServiceEditor = new EntityModelCheckBoxEditor(Align.RIGHT);
         enableGlusterServiceEditor = new EntityModelCheckBoxEditor(Align.RIGHT);
 
@@ -759,6 +796,8 @@ public class ClusterPopupView extends AbstractTabbedModelBoundPopupView<ClusterM
     }
 
     private void initInfoIcons() {
+        biosTypeEditorInfoIcon = new InfoIcon(templates.italicText(constants.clusterPopupBiosTypeInfoIcon()));
+
         memoryOptimizationInfo = new InfoIcon(templates.italicText(constants.clusterPopupMemoryOptimizationInfo()));
 
         cpuThreadsInfo = new InfoIcon(templates.italicText(constants.clusterPopupCpuThreadsInfo()));
@@ -786,6 +825,8 @@ public class ClusterPopupView extends AbstractTabbedModelBoundPopupView<ClusterM
 
         logMaxMemoryUsedThresholdInfoIcon =
                 new InfoIcon(templates.italicText(constants.logMaxMemoryUsedThresholdLabelHelpMessage()));
+
+        parallelMigrationsInfoIcon = new InfoIcon(templates.italicText(messages.parallelMigrationsInfo()));
     }
 
     @Override
@@ -852,9 +893,6 @@ public class ClusterPopupView extends AbstractTabbedModelBoundPopupView<ClusterM
         importGlusterExplanationLabel.setVisible(object.getEnableGlusterService().getEntity()
                 && object.getIsNew());
 
-        object.getVersionSupportsCpuThreads().getEntityChangedEvent().addListener((ev, sender, args) ->
-                cpuThreadsRow.setVisible(object.getVersionSupportsCpuThreads().getEntity()));
-
         schedulerOptimizationInfoIcon.setText(SafeHtmlUtils.fromTrustedString(
                 templates.italicText(object.getSchedulerOptimizationInfoMessage()).asString()
                         .replaceAll("(\r\n|\n)", "<br />"))); //$NON-NLS-1$ //$NON-NLS-2$
@@ -881,11 +919,16 @@ public class ClusterPopupView extends AbstractTabbedModelBoundPopupView<ClusterM
             MigrationPolicy selectedPolicy = object.getMigrationPolicies().getSelectedItem();
             if (selectedPolicy != null) {
                 migrationPolicyDetails.setHTML(
-                        templates.migrationPolicyDetails(selectedPolicy.getName(), selectedPolicy.getDescription())
+                        templates.migrationPolicyDetails(translator.getName(selectedPolicy), translator.getDescription(selectedPolicy))
                 );
             } else {
                 migrationPolicyDetails.setText(""); //$NON-NLS-1$
             }
+        });
+
+        object.getArchitecture().getSelectedItemChangedEvent().addListener((ev, sender, args) -> {
+            biosTypeRenderer.setArchitectureType(object.getArchitecture().getSelectedItem());
+            object.getBiosType().fireItemsChangedEvent();
         });
     }
 

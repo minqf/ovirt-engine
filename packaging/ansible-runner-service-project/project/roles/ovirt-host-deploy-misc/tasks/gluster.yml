@@ -1,25 +1,23 @@
 ---
 - name: Fetch packages information
-  package_facts:
-    manager: auto
+  ansible.builtin.package_facts:
+    manager: rpm
 
 - block:
-    - name: Update vdsm-gluster package
-      yum:
+    - name: Install vdsm-gluster package
+      ansible.builtin.yum:
         name: vdsm-gluster
-        state: latest
-      tags:
-      - skip_ansible_lint # E403
+        state: present
 
     - name: Restart gluster
-      service:
+      ansible.builtin.service:
         name: glusterd
         state: started
-        enabled: yes
+        enabled: true
 
     - name: Restart glustereventsd
-      service:
+      ansible.builtin.service:
         name: glustereventsd
         state: started
-        enabled: yes
+        enabled: true
   when: "'vdsm-gluster' in ansible_facts.packages"

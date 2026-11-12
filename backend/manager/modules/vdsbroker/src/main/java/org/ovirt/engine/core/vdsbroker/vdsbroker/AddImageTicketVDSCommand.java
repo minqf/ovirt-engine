@@ -11,16 +11,7 @@ public class AddImageTicketVDSCommand<P extends AddImageTicketVDSCommandParamete
 
     @Override
     protected void executeVdsBrokerCommand() {
-        retval = getBroker().add_image_ticket(
-                        getParameters().getTicketId().toString(),
-                        getParameters().getOperations(),
-                        getParameters().getTimeout(),
-                        getParameters().getSize(),
-                        getParameters().getUrl(),
-                        getParameters().getFilename(),
-                        getParameters().isSparse(),
-                        getParameters().getTransferId().toString());
-
+        retval = getBroker().add_image_ticket(getParameters().getImageTicket());
         proceedProxyReturnValue();
         setReturnValue(retval);
     }

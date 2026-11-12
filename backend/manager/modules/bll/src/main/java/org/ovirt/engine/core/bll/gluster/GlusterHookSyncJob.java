@@ -15,6 +15,7 @@ import java.util.concurrent.Callable;
 
 import javax.inject.Singleton;
 
+import org.ovirt.engine.core.bll.scheduling.OnTimerMethodAnnotation;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.VDS;
@@ -31,7 +32,6 @@ import org.ovirt.engine.core.common.vdscommands.VdsIdVDSCommandParametersBase;
 import org.ovirt.engine.core.common.vdscommands.gluster.GlusterHookVDSParameters;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.utils.threadpool.ThreadPoolUtil;
-import org.ovirt.engine.core.utils.timer.OnTimerMethodAnnotation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -75,7 +75,7 @@ public class GlusterHookSyncJob extends GlusterJob {
         List<Callable<Pair<VDS, VDSReturnValue>>> taskList = new ArrayList<>();
         for (final VDS upServer : upServers) {
             taskList.add(() -> {
-                VDSReturnValue returnValue =runVdsCommand(VDSCommandType.GlusterHooksList,
+                VDSReturnValue returnValue = runVdsCommand(VDSCommandType.GlusterHooksList,
                         new VdsIdVDSCommandParametersBase(upServer.getId()));
                 return new Pair<>(upServer, returnValue);
             });
@@ -91,7 +91,7 @@ public class GlusterHookSyncJob extends GlusterJob {
         }
     }
 
-    private void addOrUpdateHooks(Guid clusterId,  List<Pair<VDS, VDSReturnValue>> pairResults ) {
+    private void addOrUpdateHooks(Guid clusterId, List<Pair<VDS, VDSReturnValue>> pairResults) {
 
         try {
             List<GlusterHookEntity> existingHooks = hooksDao.getByClusterId(clusterId);
@@ -130,7 +130,7 @@ public class GlusterHookSyncJob extends GlusterJob {
                 List<GlusterHookEntity> fetchedHooks = (List<GlusterHookEntity>) pairResult.getSecond().getReturnValue();
 
                 for (GlusterHookEntity fetchedHook : fetchedHooks) {
-                    String key= fetchedHook.getHookKey();
+                    String key = fetchedHook.getHookKey();
                     fetchedHookKeyList.add(key);
 
                     GlusterHookEntity existingHook = existingHookMap.get(key);
@@ -145,7 +145,7 @@ public class GlusterHookSyncJob extends GlusterJob {
                         existingHook.setConflictStatus(conflictStatus | existingHookMap.get(key).getConflictStatus());
 
 
-                        if (conflictStatus!=0) {
+                        if (conflictStatus != 0) {
                             //there is a conflict. we need to either add or update entry in server hook
                             if (serverHook == null) {
                                 newServerHooks.add(buildServerHook(server.getId(), existingHook.getId(), fetchedHook));
@@ -241,7 +241,7 @@ public class GlusterHookSyncJob extends GlusterJob {
                 logMessage(hook.getClusterId(), hook.getHookKey(), AuditLogType.GLUSTER_HOOK_GETCONTENT_FAILED);
                 continue;
             }
-            final String content = (String)pairResult.getSecond().getReturnValue();
+            final String content = (String) pairResult.getSecond().getReturnValue();
             hooksDao.updateGlusterHookContent(hook.getId(), hook.getChecksum(), content);
         }
 
@@ -305,7 +305,7 @@ public class GlusterHookSyncJob extends GlusterJob {
     private void updateHookServerMap(Map<Guid, Set<VDS>> existingHookServersMap,
             Guid hookId,
             VDS server) {
-        Set<VDS> hookServers =  existingHookServersMap.get(hookId);
+        Set<VDS> hookServers = existingHookServersMap.get(hookId);
         hookServers.add(server);
         existingHookServersMap.put(hookId, hookServers);
     }

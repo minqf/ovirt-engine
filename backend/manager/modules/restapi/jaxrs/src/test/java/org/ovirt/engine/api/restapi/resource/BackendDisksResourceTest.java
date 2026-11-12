@@ -9,6 +9,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 import javax.ws.rs.core.Response;
 
@@ -28,16 +29,23 @@ import org.ovirt.engine.core.common.businessentities.storage.ImageStatus;
 import org.ovirt.engine.core.common.businessentities.storage.PropagateErrors;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeType;
+import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.interfaces.SearchType;
 import org.ovirt.engine.core.common.queries.IdQueryParameters;
 import org.ovirt.engine.core.common.queries.QueryParametersBase;
 import org.ovirt.engine.core.common.queries.QueryType;
+import org.ovirt.engine.core.utils.MockConfigDescriptor;
+import org.ovirt.engine.core.utils.MockedConfig;
 
 @MockitoSettings(strictness = Strictness.LENIENT)
 public class BackendDisksResourceTest extends AbstractBackendCollectionResourceTest<Disk, org.ovirt.engine.core.common.businessentities.storage.Disk, BackendDisksResource> {
 
     public BackendDisksResourceTest() {
         super(new BackendDisksResource(), SearchType.Disk, "Disks : ");
+    }
+
+    public static Stream<MockConfigDescriptor<?>> mockConfiguration() {
+        return Stream.of(MockConfigDescriptor.of(ConfigValues.PropagateDiskErrors, false));
     }
 
     @Override
@@ -54,18 +62,21 @@ public class BackendDisksResourceTest extends AbstractBackendCollectionResourceT
         entity.setVolumeType(VolumeType.Sparse);
         entity.setShareable(false);
         entity.setPropagateErrors(PropagateErrors.On);
-        return setUpStatisticalEntityExpectations(entity);    }
+        return setUpStatisticalEntityExpectations(entity); }
 
     static org.ovirt.engine.core.common.businessentities.storage.Disk setUpStatisticalEntityExpectations(DiskImage entity) {
-        entity.setReadRate(1);
-        entity.setWriteRate(2);
-        entity.setReadLatency(3.0);
-        entity.setWriteLatency(4.0);
-        entity.setFlushLatency(5.0);
+        entity.setReadRate(1L);
+        entity.setReadOps(2L);
+        entity.setWriteRate(3L);
+        entity.setWriteOps(4L);
+        entity.setReadLatency(5.0);
+        entity.setWriteLatency(6.0);
+        entity.setFlushLatency(7.0);
         return entity;
     }
 
     @Test
+    @MockedConfig("mockConfiguration")
     public void testAdd() {
         setUriInfo(setUpBasicUriExpectations());
         setUpHttpHeaderExpectations("Expect", "201-created");
@@ -97,11 +108,12 @@ public class BackendDisksResourceTest extends AbstractBackendCollectionResourceT
         Response response = collection.add(model);
         assertEquals(201, response.getStatus());
         assertTrue(response.getEntity() instanceof Disk);
-        verifyModel((Disk)response.getEntity(), 0);
-        assertNull(((Disk)response.getEntity()).getCreationStatus());
+        verifyModel((Disk) response.getEntity(), 0);
+        assertNull(((Disk) response.getEntity()).getCreationStatus());
     }
 
     @Test
+    @MockedConfig("mockConfiguration")
     public void testAddIdentifyStorageDomainByName() {
         setUriInfo(setUpBasicUriExpectations());
         setUpHttpHeaderExpectations("Expect", "201-created");
@@ -140,8 +152,8 @@ public class BackendDisksResourceTest extends AbstractBackendCollectionResourceT
         Response response = collection.add(model);
         assertEquals(201, response.getStatus());
         assertTrue(response.getEntity() instanceof Disk);
-        verifyModel((Disk)response.getEntity(), 0);
-        assertNull(((Disk)response.getEntity()).getCreationStatus());
+        verifyModel((Disk) response.getEntity(), 0);
+        assertNull(((Disk) response.getEntity()).getCreationStatus());
     }
 
     private List<org.ovirt.engine.core.common.businessentities.StorageDomain> getStorageDomains() {

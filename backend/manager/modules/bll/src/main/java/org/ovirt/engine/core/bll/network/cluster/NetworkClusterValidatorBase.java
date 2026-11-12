@@ -5,11 +5,13 @@ import java.util.Objects;
 
 import org.ovirt.engine.core.bll.ValidationResult;
 import org.ovirt.engine.core.bll.validator.IsRoleNetworkIpConfigurationValid;
+import org.ovirt.engine.core.common.FeatureSupported;
 import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.network.Network;
 import org.ovirt.engine.core.common.businessentities.network.NetworkCluster;
 import org.ovirt.engine.core.common.businessentities.network.VdsNetworkInterface;
 import org.ovirt.engine.core.common.errors.EngineMessage;
+import org.ovirt.engine.core.common.network.SwitchType;
 import org.ovirt.engine.core.dao.VdsDao;
 import org.ovirt.engine.core.dao.network.InterfaceDao;
 import org.ovirt.engine.core.dao.network.NetworkDao;
@@ -167,5 +169,18 @@ public abstract class NetworkClusterValidatorBase {
                 new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_EXTERNAL_NETWORK_CANNOT_BE_REQUIRED,
                         String.format(NETWORK_NAME_REPLACEMENT, networkName))
                 : ValidationResult.VALID;
+    }
+
+    public ValidationResult portIsolationCompatibleClusterLevel(Cluster cluster, Network network) {
+        return ValidationResult.failWith(EngineMessage.ACTION_TYPE_FAILED_PORT_ISOLATION_UNSUPPORTED_CLUSTER_LEVEL).
+                when(network.isPortIsolation()
+                        && !FeatureSupported.isPortIsolationSupported(cluster.getCompatibilityVersion()));
+    }
+
+    public ValidationResult portIsolationCompatibleSwitchType(Cluster cluster, Network network) {
+        return ValidationResult.failWith(EngineMessage.ACTION_TYPE_FAILED_PORT_ISOLATION_INCOMPATIBLE_SWITCH_TYPE,
+                String.format(NETWORK_NAME_REPLACEMENT, network.getName())).
+                when(network.isPortIsolation()
+                        && cluster.getRequiredSwitchTypeForCluster() != SwitchType.LEGACY);
     }
 }

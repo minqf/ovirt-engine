@@ -126,6 +126,60 @@ public class NetworkValidatorTest {
     }
 
     @Test
+    public void portIsolationWhenVmNetwork() {
+        portIsolationTest(isValid(), true, true);
+    }
+
+    @Test
+    public void noPortIsolationWhenVmNetwork() {
+        portIsolationTest(isValid(), true, false);
+    }
+
+    @Test
+    public void portIsolationWhenNonVmNetwork() {
+        portIsolationTest(failsWith(EngineMessage.NON_VM_NETWORK_CANNOT_SUPPORT_PORT_ISOLATION), false, true);
+    }
+
+    @Test
+    public void portIsolationWhenNoExternalNetwork() {
+        portIsolationExternalTest(isValid(), false, true);
+    }
+
+    @Test
+    public void noPortIsolationWhenExternalNetwork() {
+        portIsolationExternalTest(isValid(), true, false);
+    }
+
+    @Test
+    public void portIsolationWhenExternalNetwork() {
+        portIsolationExternalTest(failsWith(EngineMessage.EXTERNAL_NETWORK_CANNOT_SUPPORT_PORT_ISOLATION), true, true);
+    }
+
+    @Test
+    public void noPortIsolationWhenNonExternalNetwork() {
+        portIsolationExternalTest(isValid(), false, false);
+    }
+
+    private void portIsolationExternalTest(Matcher<ValidationResult> matcher, boolean externalNetwork, boolean portIsolation) {
+        when(network.isExternal()).thenReturn(externalNetwork);
+        when(network.isPortIsolation()).thenReturn(portIsolation);
+
+        assertThat(validator.portIsolationNoExternalNetwork(), matcher);
+    }
+
+    @Test
+    public void noPortIsolationWhenNonVmNetwork() {
+        portIsolationTest(isValid(), false, false);
+    }
+
+    private void portIsolationTest(Matcher<ValidationResult> matcher, boolean vmNetwork, boolean portIsolation) {
+        when(network.isVmNetwork()).thenReturn(vmNetwork);
+        when(network.isPortIsolation()).thenReturn(portIsolation);
+
+        assertThat(validator.portIsolationForVmNetworkOnly(), matcher);
+    }
+
+    @Test
     public void noStpWhenNonVmNetwork() {
         stpTest(isValid(), false, false);
     }
@@ -269,10 +323,10 @@ public class NetworkValidatorTest {
     @Test
     public void networkInUseByManyVms() {
         VM vm1 = mock(VM.class);
-        when(vm1.getName()).thenReturn(NAMEABLE_NAME+1);
+        when(vm1.getName()).thenReturn(NAMEABLE_NAME + 1);
 
         VM vm2 = mock(VM.class);
-        when(vm2.getName()).thenReturn(NAMEABLE_NAME+2);
+        when(vm2.getName()).thenReturn(NAMEABLE_NAME + 2);
 
         networkNotUsedByVmsTest(failsWithManyNetworkInUse(), Arrays.asList(vm1, vm2));
     }
@@ -298,10 +352,10 @@ public class NetworkValidatorTest {
     @Test
     public void networkInUseByManyHosts() {
         VDS host1 = mock(VDS.class);
-        when(host1.getName()).thenReturn(NAMEABLE_NAME+1);
+        when(host1.getName()).thenReturn(NAMEABLE_NAME + 1);
 
         VDS host2 = mock(VDS.class);
-        when(host2.getName()).thenReturn(NAMEABLE_NAME+2);
+        when(host2.getName()).thenReturn(NAMEABLE_NAME + 2);
 
         networkNotUsedByHostsTest(failsWithManyNetworkInUse(), Arrays.asList(host1, host2));
     }
@@ -327,10 +381,10 @@ public class NetworkValidatorTest {
     @Test
     public void networkInUseByManyTemplates() {
         VmTemplate template1 = mock(VmTemplate.class);
-        when(template1.getName()).thenReturn(NAMEABLE_NAME+1);
+        when(template1.getName()).thenReturn(NAMEABLE_NAME + 1);
 
         VmTemplate template2 = mock(VmTemplate.class);
-        when(template2.getName()).thenReturn(NAMEABLE_NAME+2);
+        when(template2.getName()).thenReturn(NAMEABLE_NAME + 2);
 
         networkNotUsedByTemplatesTest(failsWithManyNetworkInUse(), Arrays.asList(template1, template2));
     }

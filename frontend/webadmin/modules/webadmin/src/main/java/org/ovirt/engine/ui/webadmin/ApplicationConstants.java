@@ -3,6 +3,9 @@ package org.ovirt.engine.ui.webadmin;
 import org.ovirt.engine.ui.common.CommonApplicationConstants;
 
 public interface ApplicationConstants extends CommonApplicationConstants {
+
+    String andMore();
+
     String applicationTitle();
 
     String aboutPopupCaption();
@@ -26,8 +29,6 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String configureLinkLabel();
 
     String logoutLinkLabel();
-
-    String optionsLinkLabel();
 
     String aboutLinkLabel();
 
@@ -209,17 +210,11 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String externalProviderLabel();
 
+    String portIsolationLabel();
+
     String hostProviderTabLabel();
 
-    String discoveredHostsLabel();
-
-    String provisionedHostsLabel();
-
     String hostProviderType();
-
-    String hostGroupsLabel();
-
-    String computeResourceLabel();
 
     String computeLabel();
 
@@ -400,6 +395,8 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String clusterGlusterHooksSubTabLabel();
 
+    String clusterEventSubTabLabel();
+
     String affinityGroupSubTabLabel();
 
     String affinityLabelsImplicitGroupInfo();
@@ -502,9 +499,11 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String hostPopupHostAddressLabelHelpMessage();
 
-    String hostPopupHostFingerprintLabel();
+    String hostPopupHostPublicKeyLabel();
 
     String hostPopupUsernameLabel();
+
+    String hostPopupFqdnLabel();
 
     String hostPopupDefaultUsername();
 
@@ -522,11 +521,9 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String hostPopupEnableExternalHostProvider();
 
-    String hostPopupExternalHostName();
+    String hostPopupEnableExternalHostProviderHelpMessage();
 
     String hostPopupUpdateHosts();
-
-    String hostPopupProviderSearchFilter();
 
     String hostPopupPmEnabledLabel();
 
@@ -612,6 +609,10 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String activateHostAfterInstallLabel();
 
+    String rebootHostAfterInstallLabel();
+
+    String rebootHostAfterInstallLabelHelpMessage();
+
     String reconfigureGlusterLabel();
 
     String importVmGeneralSubTabLabel();
@@ -684,7 +685,11 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String clusterPopupBiosTypeLabel();
 
+    String clusterPopupBiosTypeInfoIcon();
+
     String clusterPopupArchitectureLabel();
+
+    String clusterPopupFipsModeLabel();
 
     String clusterPopupVersionLabel();
 
@@ -806,6 +811,7 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String clusterPolicyPolicyLabel();
 
+    @DefaultStringValue("") // Use annotation and not a properties key to leave it out of translations
     String copyRightNotice();
 
     String configurePopupTitle();
@@ -910,6 +916,8 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String quotaClusterSubTabLabel();
 
+    String clusterChangeToQ35();
+
     String clusterEnableOvirtServiceLabel();
 
     String clusterEnableGlusterServiceLabel();
@@ -917,8 +925,6 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String clusterImportGlusterConfigurationLabel();
 
     String clusterImportGlusterConfigurationExplanationLabel();
-
-    String clusterImportGlusterFingerprintInfoLabel();
 
     String quotaStorageSubTabLabel();
 
@@ -1116,6 +1122,8 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String migratableVnicProfile();
 
+    String failoverVnicProfile();
+
     String portMirroringVnicProfile();
 
     String customPropertiesVnicProfile();
@@ -1149,6 +1157,8 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String dnsServersExternalSubnet();
 
     String nameCluster();
+
+    String idCluster();
 
     String dcCluster();
 
@@ -1191,6 +1201,8 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String dcHost();
 
     String statusCluster();
+
+    String statusClusterUpgrade();
 
     String statusHost();
 
@@ -1251,8 +1263,6 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String stopHost();
 
     String pmHost();
-
-    String assignTagsHost();
 
     String refreshHostCapabilities();
 
@@ -1350,6 +1360,8 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String additionalStatusStorage();
 
+    String additionalStatusTemplate();
+
     String domainNameStorage();
 
     String domainDescriptionStorage();
@@ -1384,6 +1396,8 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String scanDisksStorage();
 
+    String selectStorageDomainAsMaster();
+
     String statusStorage();
 
     String statusIconStorage();
@@ -1391,6 +1405,8 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String usedSpaceStorage();
 
     String totalSpaceStorage();
+
+    String allocatedSpaceStorage();
 
     String attachDataStorage();
 
@@ -1482,6 +1498,8 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String memoryVm();
 
+    String memoryVmMB();
+
     String cpuVm();
 
     String cpusVm();
@@ -1531,8 +1549,6 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String createSnapshotVM();
 
     String changeCdVm();
-
-    String assignTagsVm();
 
     String enableGlobalHaMaintenanceVm();
 
@@ -1646,13 +1662,9 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String groupNameUser();
 
-    String emailUser();
-
     String addUser();
 
     String removeUser();
-
-    String assignTagsUser();
 
     String userUser();
 
@@ -1719,6 +1731,8 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String providerNetwork();
 
     String mtuNetwork();
+
+    String portIsolationNetwork();
 
     String mtuDefault();
 
@@ -2109,7 +2123,7 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String hostsPopupApply();
 
-    String hostsPopupFingerprint();
+    String hostsPopupSshPublicKey();
 
     String addTag();
 
@@ -2170,6 +2184,8 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String unmanagedNetworkItemInfo();
 
     String unmanagedNetworkDescriptionItemInfo();
+
+    String unmanagedNetworkItemTitle();
 
     String managementItemInfo();
 
@@ -2314,12 +2330,6 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String checkConnectivityInfoPart2();
 
-    String providerSearchInfo();
-
-    String provisionedHostInfo();
-
-    String discoveredHostInfoIcon();
-
     String commitChangesInfoPart1();
 
     String commitChangesInfoPart2();
@@ -2371,6 +2381,10 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String retainBricks();
 
     String replaceBrickBrick();
+
+    String replaceHostAction();
+
+    String replaceHostLabel();
 
     String advancedDetailsBrick();
 
@@ -2628,6 +2642,8 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String tenantName();
 
+    String authProtocol();
+
     String authHostName();
 
     String authPort();
@@ -2682,7 +2698,7 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String importedNetworks();
 
-    String fetchingHostFingerprint();
+    String fetchingHostPublicKey();
 
     String networkQoSName();
 
@@ -3419,6 +3435,16 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String isHostedEngineVmTooltip();
 
+    String isRunningInContainer();
+
+    String isRunninVmsInContainer();
+
+    String providedByContainerPlatform();
+
+    String integratedWithContainerPlatform();
+
+    String supportsContainerPlatform();
+
     String arbiterVolume();
 
     String externalLogicalNetwork();
@@ -3501,6 +3527,8 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String ovsVersionGeneral();
 
+    String nmstateVersionGeneral();
+
     String enabledVirtualFunctions();
 
     String freeVirtualFunctions();
@@ -3527,7 +3555,7 @@ public interface ApplicationConstants extends CommonApplicationConstants {
 
     String vncEncryptionLabel();
 
-    String fipsEnabledLabel();
+    String ovnConfiguredLabel();
 
     String vdsmName();
 
@@ -3546,6 +3574,12 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String tscScalingOff();
 
     String clusterHasHostWithMissingCpuFlagsWarning();
+
+    String clusterCpuConfigurationOutdatedWarning();
+
+    String clusterHasUpgradableHosts();
+
+    String clusterUpgradeInProgress();
 
     String vmCpuTypeDoesNotMatchClusterCpuType();
 
@@ -3576,4 +3610,10 @@ public interface ApplicationConstants extends CommonApplicationConstants {
     String prometheusCertificateAuthorityHelpMessage();
 
     String ipv6AutoconfAvailabilityInfo();
+
+    String cleanupFinishedTasks();
+
+    String accountSettings();
+
+    String assignTags();
 }

@@ -30,6 +30,7 @@ import org.ovirt.engine.core.common.action.AddVmTemplateParameters;
 import org.ovirt.engine.core.common.businessentities.AsyncTaskStatus;
 import org.ovirt.engine.core.common.businessentities.AsyncTaskStatusEnum;
 import org.ovirt.engine.core.common.businessentities.Cluster;
+import org.ovirt.engine.core.common.businessentities.CpuPinningPolicy;
 import org.ovirt.engine.core.common.businessentities.VmIcon;
 import org.ovirt.engine.core.common.businessentities.VmInit;
 import org.ovirt.engine.core.common.businessentities.VmStatic;
@@ -83,7 +84,7 @@ public class BackendTemplatesResourceTest
         setUpGetVirtioScsiExpectations(0, 0);
         setUpGetSoundcardExpectations(0, 0, 1);
         setUpGetRngDeviceExpectations(0, 0);
-        setUpGetBallooningExpectations(0, 0);
+        setUpGetTpmExpectations(0, 0);
 
         setUpCreationExpectations(ActionType.AddVmTemplate,
                 AddVmTemplateParameters.class,
@@ -103,8 +104,8 @@ public class BackendTemplatesResourceTest
         Response response = collection.add(model);
         assertEquals(201, response.getStatus());
         assertTrue(response.getEntity() instanceof Template);
-        verifyModel((Template)response.getEntity(), 0);
-        assertNull(((Template)response.getEntity()).getCreationStatus());
+        verifyModel((Template) response.getEntity(), 0);
+        assertNull(((Template) response.getEntity()).getCreationStatus());
     }
 
     protected Cluster getClusterEntity() {
@@ -134,7 +135,7 @@ public class BackendTemplatesResourceTest
         setUpGetVirtioScsiExpectations(0);
         setUpGetSoundcardExpectations(0, 1);
         setUpGetRngDeviceExpectations(0);
-        setUpGetBallooningExpectations(new Integer[] {0});
+        setUpGetTpmExpectations(0);
         setUpGetEntityExpectations(QueryType.GetVmByVmId,
                                    IdQueryParameters.class,
                                    new String[] { "Id" },
@@ -160,7 +161,7 @@ public class BackendTemplatesResourceTest
         assertEquals(202, response.getStatus());
         assertTrue(response.getEntity() instanceof Template);
         verifyModel((Template) response.getEntity(), 0);
-        Template created = (Template)response.getEntity();
+        Template created = (Template) response.getEntity();
         assertNotNull(created.getCreationStatus());
         assertEquals(creationStatus.value(), created.getCreationStatus());
     }
@@ -169,7 +170,7 @@ public class BackendTemplatesResourceTest
         setUpGetGraphicsExpectations(1);
         setUpGetConsoleExpectations(0, 0, 1);
         setUpGetSoundcardExpectations(1);
-        setUpGetBallooningExpectations(0, 0);
+        setUpGetTpmExpectations(0, 0);
 
         setUpGetEntityExpectations(QueryType.GetVmByVmId,
                 IdQueryParameters.class,
@@ -222,36 +223,36 @@ public class BackendTemplatesResourceTest
         setUpGetVirtioScsiExpectations(2, 2);
         setUpGetSoundcardExpectations(2, 2, 1);
         setUpGetRngDeviceExpectations(2, 2);
-        setUpGetBallooningExpectations(2, 2);
+        setUpGetTpmExpectations(2);
 
-            setUpGetEntityExpectations(QueryType.GetVmByVmId,
-                                       IdQueryParameters.class,
-                                       new String[] { "Id" },
-                                       new Object[] { GUIDS[1] },
-                                       setUpVm(GUIDS[1]));
+        setUpGetEntityExpectations(QueryType.GetVmByVmId,
+                                    IdQueryParameters.class,
+                                    new String[] { "Id" },
+                                    new Object[] { GUIDS[1] },
+                                    setUpVm(GUIDS[1]));
         setUpGetEntityExpectations(2);
 
-            setUpCreationExpectations(ActionType.AddVmTemplate,
-                                      AddVmTemplateParameters.class,
-                                      new String[] { "Name", "Description" },
-                                      new Object[] { NAMES[2], DESCRIPTIONS[2] },
-                                      true,
-                                      true,
-                                      GUIDS[2],
-                                      asList(GUIDS[2]),
-                                      asList(new AsyncTaskStatus(AsyncTaskStatusEnum.finished)),
-                                      QueryType.GetVmTemplate,
-                                      GetVmTemplateParameters.class,
-                                      new String[] { "Id" },
-                                      new Object[] { GUIDS[2] },
-                                      getEntity(2));
+        setUpCreationExpectations(ActionType.AddVmTemplate,
+                                AddVmTemplateParameters.class,
+                                new String[] { "Name", "Description" },
+                                new Object[] { NAMES[2], DESCRIPTIONS[2] },
+                                true,
+                                true,
+                                GUIDS[2],
+                                asList(GUIDS[2]),
+                                asList(new AsyncTaskStatus(AsyncTaskStatusEnum.finished)),
+                                QueryType.GetVmTemplate,
+                                GetVmTemplateParameters.class,
+                                new String[] { "Id" },
+                                new Object[] { GUIDS[2] },
+                                getEntity(2));
 
-            Response response = collection.add(getModel(2));
-            assertEquals(201, response.getStatus());
-            assertTrue(response.getEntity() instanceof Template);
-            assertEquals(VERSION_NAME, ((Template) response.getEntity()).getVersion().getVersionName());
-            assertEquals(((Template) response.getEntity()).getVersion().getBaseTemplate().getId(), GUIDS[1].toString());
-            verifyModel((Template)response.getEntity(), 2);
+        Response response = collection.add(getModel(2));
+        assertEquals(201, response.getStatus());
+        assertTrue(response.getEntity() instanceof Template);
+        assertEquals(VERSION_NAME, ((Template) response.getEntity()).getVersion().getVersionName());
+        assertEquals(((Template) response.getEntity()).getVersion().getBaseTemplate().getId(), GUIDS[1].toString());
+        verifyModel((Template) response.getEntity(), 2);
     }
 
     @Test
@@ -272,7 +273,7 @@ public class BackendTemplatesResourceTest
         setUpGetVirtioScsiExpectations(0, 0);
         setUpGetSoundcardExpectations(0, 0, 1);
         setUpGetRngDeviceExpectations(0, 0);
-        setUpGetBallooningExpectations(0, 0);
+        setUpGetTpmExpectations(0, 0);
 
         setUpCreationExpectations(ActionType.AddVmTemplate,
                                   AddVmTemplateParameters.class,
@@ -296,8 +297,8 @@ public class BackendTemplatesResourceTest
         Response response = collection.add(model);
         assertEquals(201, response.getStatus());
         assertTrue(response.getEntity() instanceof Template);
-        verifyModel((Template)response.getEntity(), 0);
-        assertNull(((Template)response.getEntity()).getCreationStatus());
+        verifyModel((Template) response.getEntity(), 0);
+        assertNull(((Template) response.getEntity()).getCreationStatus());
     }
 
     @Test
@@ -319,7 +320,7 @@ public class BackendTemplatesResourceTest
         setUpGetVirtioScsiExpectations(0, 0);
         setUpGetSoundcardExpectations(0, 0, 1);
         setUpGetRngDeviceExpectations(0, 0);
-        setUpGetBallooningExpectations(0, 0);
+        setUpGetTpmExpectations(0, 0);
 
         setUpCreationExpectations(ActionType.AddVmTemplate,
                                   AddVmTemplateParameters.class,
@@ -343,8 +344,8 @@ public class BackendTemplatesResourceTest
         Response response = collection.add(model);
         assertEquals(201, response.getStatus());
         assertTrue(response.getEntity() instanceof Template);
-        verifyModel((Template)response.getEntity(), 0);
-        assertNull(((Template)response.getEntity()).getCreationStatus());
+        verifyModel((Template) response.getEntity(), 0);
+        assertNull(((Template) response.getEntity()).getCreationStatus());
     }
 
     @Test
@@ -364,7 +365,7 @@ public class BackendTemplatesResourceTest
         setUpGetVirtioScsiExpectations(0, 0);
         setUpGetSoundcardExpectations(0, 0, 1);
         setUpGetRngDeviceExpectations(0, 0);
-        setUpGetBallooningExpectations(0, 0);
+        setUpGetTpmExpectations(0, 0);
 
         setUpCreationExpectations(ActionType.AddVmTemplate,
                 AddVmTemplateParameters.class,
@@ -388,8 +389,8 @@ public class BackendTemplatesResourceTest
         Response response = collection.add(model);
         assertEquals(201, response.getStatus());
         assertTrue(response.getEntity() instanceof Template);
-        verifyModel((Template)response.getEntity(), 0);
-        assertNull(((Template)response.getEntity()).getCreationStatus());
+        verifyModel((Template) response.getEntity(), 0);
+        assertNull(((Template) response.getEntity()).getCreationStatus());
     }
 
     @Test
@@ -414,7 +415,7 @@ public class BackendTemplatesResourceTest
         setUpGetVirtioScsiExpectations(0, 0);
         setUpGetSoundcardExpectations(0, 0, 1);
         setUpGetRngDeviceExpectations(0, 0);
-        setUpGetBallooningExpectations(0, 0);
+        setUpGetTpmExpectations(0, 0);
 
         setUpGetEntityExpectations(QueryType.GetClusterByName,
                 NameQueryParameters.class,
@@ -444,8 +445,8 @@ public class BackendTemplatesResourceTest
         Response response = collection.add(model);
         assertEquals(201, response.getStatus());
         assertTrue(response.getEntity() instanceof Template);
-        verifyModel((Template)response.getEntity(), 0);
-        assertNull(((Template)response.getEntity()).getCreationStatus());
+        verifyModel((Template) response.getEntity(), 0);
+        assertNull(((Template) response.getEntity()).getCreationStatus());
     }
 
     @Test
@@ -484,7 +485,7 @@ public class BackendTemplatesResourceTest
         setUpGetGraphicsExpectations(1);
         setUpGetConsoleExpectations(0, 0, 1);
         setUpGetSoundcardExpectations(1);
-        setUpGetBallooningExpectations(0, 0);
+        setUpGetTpmExpectations(0, 0);
 
         setUpGetEntityExpectations(QueryType.GetVmByVmId,
                 IdQueryParameters.class,
@@ -514,7 +515,7 @@ public class BackendTemplatesResourceTest
         restModel.setLargeIcon(IconTestHelpler.createIconWithData());
         Response response = doAdd(restModel);
         assertEquals(201, response.getStatus());
-        verifyModel((Template)response.getEntity(), 0);
+        verifyModel((Template) response.getEntity(), 0);
         assertNull(((Template) response.getEntity()).getCreationStatus());
     }
 
@@ -523,7 +524,7 @@ public class BackendTemplatesResourceTest
         setUpGetGraphicsExpectations(1);
         setUpGetConsoleExpectations(0, 0, 1);
         setUpGetSoundcardExpectations(1);
-        setUpGetBallooningExpectations(0, 0);
+        setUpGetTpmExpectations(0, 0);
 
         setUpGetEntityExpectations(QueryType.GetVmByVmId,
                 IdQueryParameters.class,
@@ -553,7 +554,7 @@ public class BackendTemplatesResourceTest
         restModel.setLargeIcon(IconTestHelpler.createIcon(GUIDS[3]));
         Response response = doAdd(restModel);
         assertEquals(201, response.getStatus());
-        verifyModel((Template)response.getEntity(), 0);
+        verifyModel((Template) response.getEntity(), 0);
         assertNull(((Template) response.getEntity()).getCreationStatus());
     }
 
@@ -589,11 +590,11 @@ public class BackendTemplatesResourceTest
         when(entity.getNumOfSockets()).thenReturn(2);
         when(entity.getThreadsPerCpu()).thenReturn(1);
         when(entity.getCpuPerSocket()).thenReturn(4);
-        if(index == 2) {
-           when(entity.getTemplateVersionName()).thenReturn(VERSION_NAME);
-           when(entity.getTemplateVersionNumber()).thenReturn(2);
-           when(entity.getBaseTemplateId()).thenReturn(GUIDS[1]);
-           when(entity.isBaseTemplate()).thenReturn(false);
+        if (index == 2) {
+            when(entity.getTemplateVersionName()).thenReturn(VERSION_NAME);
+            when(entity.getTemplateVersionNumber()).thenReturn(2);
+            when(entity.getBaseTemplateId()).thenReturn(GUIDS[1]);
+            when(entity.isBaseTemplate()).thenReturn(false);
         } else {
             when(entity.getTemplateVersionNumber()).thenReturn(1);
             // same base template id as the template itself
@@ -602,6 +603,7 @@ public class BackendTemplatesResourceTest
         }
         when(entity.getSmallIconId()).thenReturn(GUIDS[2]);
         when(entity.getLargeIconId()).thenReturn(GUIDS[3]);
+        when(entity.getCpuPinningPolicy()).thenReturn(CpuPinningPolicy.NONE);
         return entity;
     }
 
@@ -613,7 +615,7 @@ public class BackendTemplatesResourceTest
         model.getVm().setId(GUIDS[1].toString());
         model.setCluster(new org.ovirt.engine.api.model.Cluster());
         model.getCluster().setId(GUIDS[2].toString());
-        if(index == 2) {
+        if (index == 2) {
             populateVersion(model);
         }
         return model;
@@ -639,10 +641,10 @@ public class BackendTemplatesResourceTest
         super.verifyCollection(collection);
 
         for (Template template : collection) {
-            if(template.getId().equals(GUIDS[2].toString())) {
-                 assertEquals(VERSION_NAME, template.getVersion().getVersionName());
-                 assertEquals(new Integer(2), template.getVersion().getVersionNumber());
-                 assertEquals(template.getVersion().getBaseTemplate().getId(), GUIDS[1].toString());
+            if (template.getId().equals(GUIDS[2].toString())) {
+                assertEquals(VERSION_NAME, template.getVersion().getVersionName());
+                assertEquals(new Integer(2), template.getVersion().getVersionNumber());
+                assertEquals(template.getVersion().getBaseTemplate().getId(), GUIDS[1].toString());
             } else {
                 assertFalse(template.getVersion().isSetVersionName());
                 assertEquals(new Integer(1), template.getVersion().getVersionNumber());
@@ -665,7 +667,7 @@ public class BackendTemplatesResourceTest
         assertEquals(4, model.getCpu().getTopology().getCores().intValue());
         assertEquals(2, model.getCpu().getTopology().getSockets().intValue());
         assertEquals(1, model.getCpu().getTopology().getThreads().intValue());
-        if(index == 2) {
+        if (index == 2) {
             assertNotNull(model.getVersion());
             assertNotSame(model.getVersion().getBaseTemplate().getId(), model.getId());
         }
@@ -699,5 +701,4 @@ public class BackendTemplatesResourceTest
         }
         return vmInits;
     }
-
 }

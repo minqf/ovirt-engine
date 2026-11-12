@@ -7,84 +7,89 @@
 
 
 
-Create or replace FUNCTION InsertVmTemplate(v_child_count INTEGER,
- v_creation_date TIMESTAMP WITH TIME ZONE,
- v_description VARCHAR(4000) ,
- v_free_text_comment text,
- v_mem_size_mb INTEGER,
- v_max_memory_size_mb INTEGER,
- v_num_of_io_threads INTEGER,
- v_name VARCHAR(40),
- v_num_of_sockets INTEGER,
- v_cpu_per_socket INTEGER,
- v_threads_per_cpu INTEGER,
- v_os INTEGER,
- v_vmt_guid UUID,
- v_cluster_id UUID,
- v_num_of_monitors INTEGER,
- v_single_qxl_pci BOOLEAN,
- v_allow_console_reconnect BOOLEAN,
- v_status INTEGER,
- v_usb_policy INTEGER,
- v_time_zone VARCHAR(40) ,
- v_vm_type INTEGER ,
- v_nice_level INTEGER,
- v_cpu_shares INTEGER,
- v_default_boot_sequence INTEGER,
- v_default_display_type INTEGER,
- v_priority INTEGER,
- v_auto_startup BOOLEAN,
- v_is_stateless BOOLEAN,
- v_is_smartcard_enabled BOOLEAN,
- v_is_delete_protected BOOLEAN,
- v_sso_method VARCHAR(32),
- v_is_disabled BOOLEAN,
- v_iso_path VARCHAR(4000) ,
- v_origin INTEGER ,
- v_initrd_url    VARCHAR(4000) ,
- v_kernel_url    VARCHAR(4000) ,
- v_kernel_params VARCHAR(4000) ,
- v_quota_id UUID,
- v_migration_support integer,
- v_dedicated_vm_for_vds text,
- v_tunnel_migration BOOLEAN,
- v_vnc_keyboard_layout	VARCHAR(16),
- v_min_allocated_mem INTEGER,
- v_is_run_and_pause BOOLEAN,
- v_created_by_user_id UUID,
- v_template_type VARCHAR(40),
- v_migration_downtime INTEGER,
- v_base_template_id UUID,
- v_template_version_name VARCHAR(40),
- v_serial_number_policy SMALLINT,
- v_custom_serial_number VARCHAR(255),
- v_is_boot_menu_enabled BOOLEAN,
- v_is_spice_file_transfer_enabled BOOLEAN,
- v_is_spice_copy_paste_enabled BOOLEAN,
- v_cpu_profile_id UUID,
- v_host_cpu_flags BOOLEAN,
- v_numatune_mode VARCHAR(20),
- v_is_auto_converge BOOLEAN,
- v_is_migrate_compressed BOOLEAN,
- v_is_migrate_encrypted BOOLEAN,
- v_predefined_properties VARCHAR(4000),
- v_userdefined_properties VARCHAR(4000),
- v_custom_emulated_machine VARCHAR(40),
- v_bios_type INTEGER,
- v_custom_cpu_name VARCHAR(40),
- v_small_icon_id UUID,
- v_large_icon_id UUID,
- v_console_disconnect_action VARCHAR(64),
- v_resume_behavior VARCHAR(64),
- v_custom_compatibility_version VARCHAR(40),
- v_migration_policy_id UUID,
- v_lease_sd_id UUID,
- v_multi_queues_enabled BOOLEAN,
- v_use_tsc_frequency BOOLEAN,
- v_is_template_sealed BOOLEAN)
-
+CREATE OR REPLACE FUNCTION InsertVmTemplate(
+   v_child_count INTEGER,
+   v_creation_date TIMESTAMP WITH TIME ZONE,
+   v_description VARCHAR(4000) ,
+   v_free_text_comment text,
+   v_mem_size_mb INTEGER,
+   v_max_memory_size_mb INTEGER,
+   v_num_of_io_threads INTEGER,
+   v_name VARCHAR(255),
+   v_num_of_sockets INTEGER,
+   v_cpu_per_socket INTEGER,
+   v_threads_per_cpu INTEGER,
+   v_os INTEGER,
+   v_vmt_guid UUID,
+   v_cluster_id UUID,
+   v_num_of_monitors INTEGER,
+   v_allow_console_reconnect BOOLEAN,
+   v_status INTEGER,
+   v_usb_policy INTEGER,
+   v_time_zone VARCHAR(40) ,
+   v_vm_type INTEGER ,
+   v_nice_level INTEGER,
+   v_cpu_shares INTEGER,
+   v_default_boot_sequence INTEGER,
+   v_default_display_type INTEGER,
+   v_priority INTEGER,
+   v_auto_startup BOOLEAN,
+   v_is_stateless BOOLEAN,
+   v_is_smartcard_enabled BOOLEAN,
+   v_is_delete_protected BOOLEAN,
+   v_sso_method VARCHAR(32),
+   v_is_disabled BOOLEAN,
+   v_iso_path VARCHAR(4000) ,
+   v_origin INTEGER ,
+   v_initrd_url VARCHAR(4000) ,
+   v_kernel_url VARCHAR(4000) ,
+   v_kernel_params VARCHAR(4000) ,
+   v_quota_id UUID,
+   v_migration_support integer,
+   v_dedicated_vm_for_vds text,
+   v_tunnel_migration BOOLEAN,
+   v_vnc_keyboard_layout VARCHAR(16),
+   v_min_allocated_mem INTEGER,
+   v_is_run_and_pause BOOLEAN,
+   v_created_by_user_id UUID,
+   v_template_type VARCHAR(40),
+   v_migration_downtime INTEGER,
+   v_base_template_id UUID,
+   v_template_version_name VARCHAR(40),
+   v_serial_number_policy SMALLINT,
+   v_custom_serial_number VARCHAR(255),
+   v_is_boot_menu_enabled BOOLEAN,
+   v_is_spice_file_transfer_enabled BOOLEAN,
+   v_is_spice_copy_paste_enabled BOOLEAN,
+   v_cpu_profile_id UUID,
+   v_host_cpu_flags BOOLEAN,
+   v_is_auto_converge BOOLEAN,
+   v_is_migrate_compressed BOOLEAN,
+   v_is_migrate_encrypted BOOLEAN,
+   v_predefined_properties VARCHAR(4000),
+   v_userdefined_properties VARCHAR(4000),
+   v_custom_emulated_machine VARCHAR(40),
+   v_bios_type INTEGER,
+   v_custom_cpu_name VARCHAR(255),
+   v_small_icon_id UUID,
+   v_large_icon_id UUID,
+   v_console_disconnect_action VARCHAR(64),
+   v_resume_behavior VARCHAR(64),
+   v_custom_compatibility_version VARCHAR(40),
+   v_migration_policy_id UUID,
+   v_lease_sd_id UUID,
+   v_multi_queues_enabled BOOLEAN,
+   v_virtio_scsi_multi_queues INTEGER,
+   v_use_tsc_frequency BOOLEAN,
+   v_is_template_sealed BOOLEAN,
+   v_cpu_pinning TEXT,
+   v_balloon_enabled BOOLEAN,
+   v_console_disconnect_action_delay INTEGER,
+   v_cpu_pinning_policy SMALLINT,
+   v_parallel_migrations SMALLINT
+)
 RETURNS VOID
-   AS $procedure$
+   AS $FUNCTION$
 DECLARE
 v_template_version_number INTEGER;
 BEGIN
@@ -116,7 +121,6 @@ BEGIN
         vm_guid,
         cluster_id,
         num_of_monitors,
-        single_qxl_pci,
         allow_console_reconnect,
         template_status,
         usb_policy,
@@ -138,7 +142,6 @@ BEGIN
         quota_id,
         migration_support,
         is_disabled,
-        dedicated_vm_for_vds,
         is_smartcard_enabled,
         is_delete_protected,
         sso_method,
@@ -158,7 +161,6 @@ BEGIN
         is_spice_copy_paste_enabled,
         cpu_profile_id,
         host_cpu_flags,
-        numatune_mode,
         is_auto_converge,
         is_migrate_compressed,
         is_migrate_encrypted,
@@ -175,8 +177,14 @@ BEGIN
         migration_policy_id,
         lease_sd_id,
         multi_queues_enabled,
+        virtio_scsi_multi_queues,
         use_tsc_frequency,
-        is_template_sealed)
+        is_template_sealed,
+        cpu_pinning,
+        balloon_enabled,
+        console_disconnect_action_delay,
+        cpu_pinning_policy,
+        parallel_migrations)
     VALUES(
         v_child_count,
         v_creation_date,
@@ -193,7 +201,6 @@ BEGIN
         v_vmt_guid,
         v_cluster_id,
         v_num_of_monitors,
-        v_single_qxl_pci,
         v_allow_console_reconnect,
         v_status,
         v_usb_policy,
@@ -215,7 +222,6 @@ BEGIN
         v_quota_id,
         v_migration_support,
         v_is_disabled,
-        v_dedicated_vm_for_vds,
         v_is_smartcard_enabled,
         v_is_delete_protected,
         v_sso_method,
@@ -235,7 +241,6 @@ BEGIN
         v_is_spice_copy_paste_enabled,
         v_cpu_profile_id,
         v_host_cpu_flags,
-        v_numatune_mode,
         v_is_auto_converge,
         v_is_migrate_compressed,
         v_is_migrate_encrypted,
@@ -252,8 +257,14 @@ BEGIN
         v_migration_policy_id,
         v_lease_sd_id,
         v_multi_queues_enabled,
+        v_virtio_scsi_multi_queues,
         v_use_tsc_frequency,
-        v_is_template_sealed);
+        v_is_template_sealed,
+        v_cpu_pinning,
+        v_balloon_enabled,
+        v_console_disconnect_action_delay,
+        v_cpu_pinning_policy,
+        v_parallel_migrations);
     -- perform deletion from vm_ovf_generations to ensure that no record exists when performing insert to avoid PK violation.
     DELETE FROM vm_ovf_generations gen WHERE gen.vm_guid = v_vmt_guid;
     INSERT INTO vm_ovf_generations(
@@ -270,91 +281,97 @@ BEGIN
         v_vmt_guid,
         v_dedicated_vm_for_vds);
 
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
 
 
 
-Create or replace FUNCTION UpdateVmTemplate(v_child_count INTEGER,
- v_creation_date TIMESTAMP WITH TIME ZONE,
- v_description VARCHAR(4000) ,
- v_free_text_comment text,
- v_mem_size_mb INTEGER,
- v_max_memory_size_mb INTEGER,
- v_num_of_io_threads INTEGER,
- v_name VARCHAR(40),
- v_num_of_sockets INTEGER,
- v_cpu_per_socket INTEGER,
- v_threads_per_cpu INTEGER,
- v_os INTEGER,
- v_vmt_guid UUID,
- v_cluster_id UUID,
- v_num_of_monitors INTEGER,
- v_single_qxl_pci BOOLEAN,
- v_allow_console_reconnect BOOLEAN,
- v_status INTEGER,
- v_usb_policy INTEGER,
- v_time_zone VARCHAR(40) ,
- v_vm_type INTEGER ,
- v_nice_level INTEGER,
- v_cpu_shares INTEGER,
- v_default_boot_sequence INTEGER,
- v_default_display_type INTEGER,
- v_priority INTEGER,
- v_auto_startup BOOLEAN,
- v_is_stateless BOOLEAN,
- v_is_smartcard_enabled BOOLEAN,
- v_is_delete_protected BOOLEAN,
- v_sso_method VARCHAR(32),
- v_is_disabled BOOLEAN,
- v_iso_path VARCHAR(4000) ,
- v_origin INTEGER ,
- v_initrd_url VARCHAR(4000) ,
- v_kernel_url VARCHAR(4000) ,
- v_kernel_params VARCHAR(4000),
- v_quota_id UUID,
- v_migration_support integer,
- v_dedicated_vm_for_vds text,
- v_tunnel_migration BOOLEAN,
- v_vnc_keyboard_layout VARCHAR(16),
- v_min_allocated_mem INTEGER,
- v_is_run_and_pause BOOLEAN,
- v_created_by_user_id UUID,
- v_template_type VARCHAR(40),
- v_migration_downtime INTEGER,
- v_template_version_name VARCHAR(40),
- v_serial_number_policy SMALLINT,
- v_custom_serial_number VARCHAR(255),
- v_is_boot_menu_enabled BOOLEAN,
- v_is_spice_file_transfer_enabled BOOLEAN,
- v_is_spice_copy_paste_enabled BOOLEAN,
- v_cpu_profile_id UUID,
- v_host_cpu_flags BOOLEAN,
- v_numatune_mode VARCHAR(20),
- v_is_auto_converge BOOLEAN,
- v_is_migrate_compressed BOOLEAN,
- v_is_migrate_encrypted BOOLEAN,
- v_predefined_properties VARCHAR(4000),
- v_userdefined_properties VARCHAR(4000),
- v_custom_emulated_machine VARCHAR(40),
- v_bios_type INTEGER,
- v_custom_cpu_name VARCHAR(40),
- v_small_icon_id UUID,
- v_large_icon_id UUID,
- v_console_disconnect_action VARCHAR(64),
- v_resume_behavior VARCHAR(64),
- v_custom_compatibility_version VARCHAR(40),
- v_migration_policy_id UUID,
- v_lease_sd_id UUID,
- v_multi_queues_enabled BOOLEAN,
- v_use_tsc_frequency BOOLEAN,
- v_is_template_sealed BOOLEAN)
+CREATE OR REPLACE FUNCTION UpdateVmTemplate(
+   v_child_count INTEGER,
+   v_creation_date TIMESTAMP WITH TIME ZONE,
+   v_description VARCHAR(4000) ,
+   v_free_text_comment text,
+   v_mem_size_mb INTEGER,
+   v_max_memory_size_mb INTEGER,
+   v_num_of_io_threads INTEGER,
+   v_name VARCHAR(255),
+   v_num_of_sockets INTEGER,
+   v_cpu_per_socket INTEGER,
+   v_threads_per_cpu INTEGER,
+   v_os INTEGER,
+   v_vmt_guid UUID,
+   v_cluster_id UUID,
+   v_num_of_monitors INTEGER,
+   v_allow_console_reconnect BOOLEAN,
+   v_status INTEGER,
+   v_usb_policy INTEGER,
+   v_time_zone VARCHAR(40) ,
+   v_vm_type INTEGER ,
+   v_nice_level INTEGER,
+   v_cpu_shares INTEGER,
+   v_default_boot_sequence INTEGER,
+   v_default_display_type INTEGER,
+   v_priority INTEGER,
+   v_auto_startup BOOLEAN,
+   v_is_stateless BOOLEAN,
+   v_is_smartcard_enabled BOOLEAN,
+   v_is_delete_protected BOOLEAN,
+   v_sso_method VARCHAR(32),
+   v_is_disabled BOOLEAN,
+   v_iso_path VARCHAR(4000) ,
+   v_origin INTEGER ,
+   v_initrd_url VARCHAR(4000) ,
+   v_kernel_url VARCHAR(4000) ,
+   v_kernel_params VARCHAR(4000),
+   v_quota_id UUID,
+   v_migration_support integer,
+   v_dedicated_vm_for_vds text,
+   v_tunnel_migration BOOLEAN,
+   v_vnc_keyboard_layout VARCHAR(16),
+   v_min_allocated_mem INTEGER,
+   v_is_run_and_pause BOOLEAN,
+   v_created_by_user_id UUID,
+   v_template_type VARCHAR(40),
+   v_migration_downtime INTEGER,
+   v_template_version_name VARCHAR(40),
+   v_serial_number_policy SMALLINT,
+   v_custom_serial_number VARCHAR(255),
+   v_is_boot_menu_enabled BOOLEAN,
+   v_is_spice_file_transfer_enabled BOOLEAN,
+   v_is_spice_copy_paste_enabled BOOLEAN,
+   v_cpu_profile_id UUID,
+   v_host_cpu_flags BOOLEAN,
+   v_is_auto_converge BOOLEAN,
+   v_is_migrate_compressed BOOLEAN,
+   v_is_migrate_encrypted BOOLEAN,
+   v_predefined_properties VARCHAR(4000),
+   v_userdefined_properties VARCHAR(4000),
+   v_custom_emulated_machine VARCHAR(40),
+   v_bios_type INTEGER,
+   v_custom_cpu_name VARCHAR(255),
+   v_small_icon_id UUID,
+   v_large_icon_id UUID,
+   v_console_disconnect_action VARCHAR(64),
+   v_resume_behavior VARCHAR(64),
+   v_custom_compatibility_version VARCHAR(40),
+   v_migration_policy_id UUID,
+   v_lease_sd_id UUID,
+   v_multi_queues_enabled BOOLEAN,
+   v_virtio_scsi_multi_queues INTEGER,
+   v_use_tsc_frequency BOOLEAN,
+   v_is_template_sealed BOOLEAN,
+   v_cpu_pinning TEXT,
+   v_balloon_enabled BOOLEAN,
+   v_console_disconnect_action_delay INTEGER,
+   v_cpu_pinning_policy SMALLINT,
+   v_parallel_migrations SMALLINT
+)
 RETURNS VOID
 
 	--The [vm_templates] table doesn't have a timestamp column. Optimistic concurrency logic cannot be generated
-   AS $procedure$
+   AS $FUNCTION$
 BEGIN
       UPDATE vm_static
       SET child_count = v_child_count,
@@ -371,7 +388,6 @@ BEGIN
       os = v_os,
       cluster_id = v_cluster_id,
       num_of_monitors = v_num_of_monitors,
-      single_qxl_pci = v_single_qxl_pci,
       allow_console_reconnect = v_allow_console_reconnect,
       template_status = v_status,
       usb_policy = v_usb_policy,
@@ -392,7 +408,6 @@ BEGIN
       _update_date = CURRENT_TIMESTAMP,
       quota_id = v_quota_id,
       migration_support = v_migration_support,
-      dedicated_vm_for_vds = v_dedicated_vm_for_vds,
       is_smartcard_enabled = v_is_smartcard_enabled,
       is_delete_protected = v_is_delete_protected,
       sso_method = v_sso_method,
@@ -411,7 +426,6 @@ BEGIN
       is_spice_copy_paste_enabled = v_is_spice_copy_paste_enabled,
       cpu_profile_id = v_cpu_profile_id,
       host_cpu_flags = v_host_cpu_flags,
-      numatune_mode = v_numatune_mode,
       is_auto_converge = v_is_auto_converge,
       is_migrate_compressed = v_is_migrate_compressed,
       is_migrate_encrypted = v_is_migrate_encrypted,
@@ -428,8 +442,14 @@ BEGIN
       migration_policy_id = v_migration_policy_id,
       lease_sd_id = v_lease_sd_id,
       multi_queues_enabled = v_multi_queues_enabled,
+      virtio_scsi_multi_queues = v_virtio_scsi_multi_queues,
       use_tsc_frequency = v_use_tsc_frequency,
-      is_template_sealed = v_is_template_sealed
+      is_template_sealed = v_is_template_sealed,
+      cpu_pinning = v_cpu_pinning,
+      balloon_enabled = v_balloon_enabled,
+      console_disconnect_action_delay = v_console_disconnect_action_delay,
+      cpu_pinning_policy = v_cpu_pinning_policy,
+      parallel_migrations = v_parallel_migrations
       WHERE vm_guid = v_vmt_guid
           AND entity_type = v_template_type;
 
@@ -442,7 +462,7 @@ BEGIN
 
       -- Update connections to dedicated hosts
       PERFORM UpdateDedicatedHostsToVm(v_vmt_guid, v_dedicated_vm_for_vds);
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
@@ -451,19 +471,19 @@ Create or replace FUNCTION UpdateVmTemplateStatus(
         v_status INTEGER)
 RETURNS VOID
 
-   AS $procedure$
+   AS $FUNCTION$
 BEGIN
       UPDATE vm_static
       SET    template_status = v_status
       WHERE  vm_guid = v_vmt_guid;
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
 -- It abandons the base template of id v_base_template_id and makes its direct successor to be the next base template
 CREATE OR REPLACE FUNCTION UpdateVmTemplateShiftBaseTemplate(v_base_template_id UUID)
 RETURNS VOID
-    AS $procedure$
+    AS $FUNCTION$
 BEGIN
     UPDATE vm_static
     SET vmt_guid = (SELECT vm_guid
@@ -477,19 +497,19 @@ BEGIN
     WHERE entity_type = 'TEMPLATE'
         AND vmt_guid = v_base_template_id
         AND vm_guid != vmt_guid;
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
 Create or replace FUNCTION DeleteVmTemplates(v_vmt_guid UUID)
 RETURNS VOID
-   AS $procedure$
+   AS $FUNCTION$
    DECLARE
    v_val  UUID;
 BEGIN
         -- Get (and keep) a shared lock with "right to upgrade to exclusive"
         -- in order to force locking parent before children
-      SELECT   vm_guid INTO v_val
+      SELECT vm_guid INTO v_val
       FROM vm_static
       WHERE vm_guid = v_vmt_guid
       FOR UPDATE;
@@ -498,7 +518,7 @@ BEGIN
       WHERE vm_guid = v_vmt_guid;
       -- delete Template permissions --
       PERFORM DeletePermissionsByEntityId(v_vmt_guid);
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
@@ -506,7 +526,7 @@ LANGUAGE plpgsql;
 
 
 Create or replace FUNCTION GetAllFromVmTemplates(v_user_id UUID, v_is_filtered boolean, v_entity_type VARCHAR(32)) RETURNS SETOF vm_templates_based_view STABLE
-   AS $procedure$
+   AS $FUNCTION$
 BEGIN
       RETURN QUERY
       SELECT vm_templates.*
@@ -517,20 +537,20 @@ BEGIN
               WHERE  user_id = v_user_id
                   AND entity_id = vmt_guid))
       ORDER BY name;
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
 
 
 Create or replace FUNCTION GetVmTemplatesWithoutIcon() RETURNS SETOF vm_templates_view STABLE
-AS $procedure$
+AS $FUNCTION$
 BEGIN
 RETURN QUERY
    SELECT vm_template.*
    FROM vm_templates_view AS vm_template
    WHERE small_icon_id IS NULL OR large_icon_id IS NULL;
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
@@ -538,12 +558,12 @@ LANGUAGE plpgsql;
 
 
 Create or replace FUNCTION GetTemplateCount() RETURNS SETOF BIGINT STABLE
-   AS $procedure$
+   AS $FUNCTION$
 BEGIN
       RETURN QUERY
       SELECT count (vm_templates.*)
       FROM vm_templates_based_view vm_templates;
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
@@ -552,13 +572,13 @@ LANGUAGE plpgsql;
 
 
 Create or replace FUNCTION GetVmTemplatesByIds(v_vm_templates_ids VARCHAR(5000)) RETURNS SETOF vm_templates_based_view STABLE
-   AS $procedure$
+   AS $FUNCTION$
 BEGIN
 RETURN QUERY
    SELECT vm_templates.*
    FROM vm_templates_based_view vm_templates
    WHERE vm_templates.vmt_guid IN (SELECT * FROM fnSplitterUuid(v_vm_templates_ids));
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
@@ -568,7 +588,7 @@ LANGUAGE plpgsql;
 
 
 Create or replace FUNCTION getAllVmTemplatesRelatedToQuotaId(v_quota_id UUID) RETURNS SETOF vm_templates_based_view STABLE
-   AS $procedure$
+   AS $FUNCTION$
 BEGIN
       RETURN QUERY
       SELECT vm_templates.*
@@ -581,12 +601,12 @@ BEGIN
       INNER JOIN images ON images.image_group_id = vd.device_id AND images.active = TRUE
       INNER JOIN image_storage_domain_map ON image_storage_domain_map.image_id = images.image_guid
       WHERE image_storage_domain_map.quota_id = v_quota_id;
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
 Create or replace FUNCTION GetVmTemplateByVmtGuid(v_vmt_guid UUID, v_user_id UUID, v_is_filtered boolean) RETURNS SETOF vm_templates_based_view STABLE
-   AS $procedure$
+   AS $FUNCTION$
 BEGIN
       RETURN QUERY
       SELECT vm_templates.*
@@ -597,12 +617,12 @@ BEGIN
               FROM   user_vm_template_permissions_view
               WHERE  user_id = v_user_id
                   AND entity_id = v_vmt_guid));
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
 Create or replace FUNCTION GetVmTemplateByVmtName(v_storage_pool_id UUID, v_vmt_name VARCHAR(255), v_user_id UUID, v_is_filtered boolean) RETURNS SETOF vm_templates_based_view STABLE
-   AS $procedure$
+   AS $FUNCTION$
 BEGIN
       RETURN QUERY
       SELECT vm_templates.*
@@ -615,7 +635,7 @@ BEGIN
               WHERE  user_id = v_user_id
                   AND entity_id = vmt_guid))
       ORDER BY vm_templates.template_version_number DESC;
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
@@ -624,26 +644,26 @@ LANGUAGE plpgsql;
 
 
 Create or replace FUNCTION GetVmTemplateByClusterId(v_cluster_id UUID) RETURNS SETOF vm_templates_based_view STABLE
-   AS $procedure$
+   AS $FUNCTION$
 BEGIN
       RETURN QUERY
       SELECT vm_templates.*
       FROM vm_templates_based_view vm_templates
       WHERE cluster_id = v_cluster_id;
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
 
 
 Create or replace FUNCTION GetVmTemplatesByStoragePoolId(v_storage_pool_id UUID) RETURNS SETOF vm_templates_based_view STABLE
-   AS $procedure$
+   AS $FUNCTION$
 BEGIN
       RETURN QUERY
       SELECT DISTINCT vm_templates.*
       FROM vm_templates_based_view vm_templates
       WHERE vm_templates.storage_pool_id = v_storage_pool_id;
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
@@ -651,18 +671,18 @@ LANGUAGE plpgsql;
 
 
 Create or replace FUNCTION GetVmTemplatesByImageId(v_image_guid UUID) RETURNS SETOF vm_templates_based_with_plug_info STABLE
-   AS $procedure$
+   AS $FUNCTION$
 BEGIN
       RETURN QUERY
       SELECT *
       FROM vm_templates_based_with_plug_info t
       WHERE t.image_guid = v_image_guid;
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
 Create or replace FUNCTION GetVmTemplatesByStorageDomainId(v_storage_domain_id UUID, v_user_id UUID, v_is_filtered boolean) RETURNS SETOF vm_templates_based_view STABLE
-   AS $procedure$
+   AS $FUNCTION$
 BEGIN
       RETURN QUERY
       SELECT DISTINCT vm_templates.*
@@ -678,13 +698,13 @@ BEGIN
                   FROM   user_vm_template_permissions_view
                   WHERE  user_id = v_user_id
                       AND entity_id = vm_templates.vmt_guid));
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
 --This SP returns all templates with permissions to run the given action by user
 Create or replace FUNCTION fn_perms_get_templates_with_permitted_action(v_user_id UUID, v_action_group_id integer) RETURNS SETOF vm_templates_based_view STABLE
-   AS $procedure$
+   AS $FUNCTION$
 BEGIN
       RETURN QUERY SELECT vm_templates_based_view.*
       FROM vm_templates_based_view, user_vm_template_permissions_view
@@ -695,12 +715,12 @@ BEGIN
               v_action_group_id,
               vm_templates_based_view.vmt_guid,
               4) IS NOT NULL);
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
 Create or replace FUNCTION GetVmTemplatesByNetworkId(v_network_id UUID) RETURNS SETOF vm_templates_based_view STABLE
-   AS $procedure$
+   AS $FUNCTION$
 BEGIN
    RETURN QUERY SELECT *
    FROM vm_templates_based_view
@@ -712,11 +732,11 @@ BEGIN
       WHERE vnic_profiles.network_id = v_network_id
           AND vm_interface.vm_guid = vm_templates_based_view.vmt_guid
           AND vm_templates_based_view.entity_type = 'TEMPLATE');
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 Create or replace FUNCTION GetVmTemplatesByVnicProfileId(v_vnic_profile_id UUID) RETURNS SETOF vm_templates_based_view STABLE
-   AS $procedure$
+   AS $FUNCTION$
 BEGIN
    RETURN QUERY
    SELECT *
@@ -727,12 +747,12 @@ BEGIN
       WHERE vm_interface.vnic_profile_id = v_vnic_profile_id
       AND vm_interface.vm_guid = vm_templates_based_view.vmt_guid
       AND vm_templates_based_view.entity_type = 'TEMPLATE');
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
 Create or replace FUNCTION GetTemplateVersionsForBaseTemplate(v_base_template_id UUID) RETURNS SETOF vm_templates_based_view STABLE
-AS $procedure$
+AS $FUNCTION$
 BEGIN
    RETURN QUERY
    SELECT *
@@ -740,12 +760,12 @@ BEGIN
    WHERE base_template_id = v_base_template_id
        AND vmt_guid != v_base_template_id
    ORDER BY template_version_number desc;
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
 Create or replace FUNCTION GetTemplateWithLatestVersionInChain(v_template_id UUID) RETURNS SETOF vm_templates_based_view STABLE
-AS $procedure$
+AS $FUNCTION$
 BEGIN
    RETURN QUERY
    SELECT *
@@ -756,12 +776,12 @@ BEGIN
        WHERE vm_guid = v_template_id)
    ORDER BY template_version_number DESC
    LIMIT 1;
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
 Create or replace FUNCTION GetAllVmTemplatesWithDisksOnOtherStorageDomain(v_storage_domain_id UUID) RETURNS SETOF vm_templates_based_view STABLE
-AS $procedure$
+AS $FUNCTION$
 BEGIN
 RETURN QUERY SELECT DISTINCT templates.*
       FROM vm_templates_based_view templates
@@ -777,23 +797,23 @@ RETURN QUERY SELECT DISTINCT templates.*
       INNER JOIN images i ON i.image_group_id = vd.device_id
       INNER JOIN image_storage_domain_map on i.image_guid = image_storage_domain_map.image_id
       WHERE image_storage_domain_map.storage_domain_id != v_storage_domain_id;
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVmTemplatesByCpuProfileId(v_cpu_profile_id UUID)
 RETURNS SETOF vm_templates_based_view STABLE
-AS $procedure$
+AS $FUNCTION$
 BEGIN
     RETURN QUERY SELECT vm_templates_based_view.*
         FROM vm_templates_based_view
         WHERE cpu_profile_id = v_cpu_profile_id;
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
 CREATE OR REPLACE FUNCTION GetAllVmTemplatesRelatedToDiskProfile(v_disk_profile_id UUID)
 RETURNS SETOF vm_templates_based_view STABLE
-AS $procedure$
+AS $FUNCTION$
 BEGIN
     RETURN QUERY SELECT vm_templates.*
         FROM vm_templates_based_view vm_templates
@@ -802,7 +822,7 @@ BEGIN
             AND images.active = TRUE
         INNER JOIN image_storage_domain_map ON image_storage_domain_map.image_id = images.image_guid
         WHERE image_storage_domain_map.disk_profile_id = v_disk_profile_id;
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;
 
 
@@ -810,11 +830,11 @@ LANGUAGE plpgsql;
 
 Create or replace FUNCTION GetTemplatesWithLeaseOnStorageDomain(v_storage_domain_id UUID)
 RETURNS SETOF vm_templates_based_view STABLE
-   AS $procedure$
+   AS $FUNCTION$
 BEGIN
     RETURN QUERY SELECT *
     FROM vm_templates_based_view
     WHERE lease_sd_id = v_storage_domain_id
         AND entity_type = 'TEMPLATE';
-END; $procedure$
+END; $FUNCTION$
 LANGUAGE plpgsql;

@@ -67,7 +67,7 @@ public class MappingTestHelper {
                     random(method, model);
                 } else if (takesEnum(method)) {
                     //do nothing
-                } else if(takesBigDecimal(method)) {
+                } else if (takesBigDecimal(method)) {
                     populateBigDecimal(method, model);
                 } else if (takesXmlGregorianCalendar(method)) {
                     populateXmlGregorianCalendar(method, model);
@@ -103,7 +103,7 @@ public class MappingTestHelper {
             takesInteger(m) ||
             takesLong(m) ||
             takesDouble(m)
-        );
+            );
     }
 
     private static void random(Method m, Object model) throws Exception {
@@ -135,7 +135,7 @@ public class MappingTestHelper {
     private static void descend(Method method, Object model, List<Class<?>> seen, int level) throws Exception {
         Object child = method.getParameterTypes()[0].newInstance();
         method.invoke(model, child);
-        if (level == 1 || (unseen(method, seen) && (level <= 3))) {
+        if (level == 1 || unseen(method, seen) && level <= 3) {
             populate(child, child.getClass(), seen, ++level);
         }
     }
@@ -234,6 +234,6 @@ public class MappingTestHelper {
     private static Object garble(Method m) {
         return m.getName().endsWith("Id") ? GuidUtils.asGuid(UUID.randomUUID().toString()).toString()
                 : new String(new byte[] { (byte) (65 + rand(26)), (byte) (65 + rand(26)),
-                        (byte) (65 + rand(26)) });
+                    (byte) (65 + rand(26)) });
     }
 }

@@ -5,10 +5,13 @@ import java.util.stream.Collectors;
 
 import org.ovirt.engine.api.model.Backup;
 import org.ovirt.engine.api.model.BackupPhase;
+import org.ovirt.engine.api.model.Host;
+import org.ovirt.engine.api.model.Snapshot;
 import org.ovirt.engine.api.model.Vm;
 import org.ovirt.engine.api.restapi.utils.GuidUtils;
 import org.ovirt.engine.core.common.businessentities.VmBackup;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
+import org.ovirt.engine.core.compat.Guid;
 
 public class VmBackupMapper {
     @Mapping(from = Backup.class, to = VmBackup.class)
@@ -23,8 +26,8 @@ public class VmBackupMapper {
         if (model.isSetToCheckpointId()) {
             entity.setToCheckpointId(GuidUtils.asGuid(model.getToCheckpointId()));
         }
-        if (model.isSetPhase()) {
-            entity.setPhase(map(model.getPhase()));
+        if (model.isSetDescription()) {
+            entity.setDescription(model.getDescription());
         }
         if (model.isSetDisks()) {
             List<DiskImage> disks = model.getDisks().getDisks().stream().map(
@@ -50,42 +53,54 @@ public class VmBackupMapper {
         if (entity.getCreationDate() != null) {
             model.setCreationDate(DateMapper.map(entity.getCreationDate(), null));
         }
+        if (entity.getModificationDate() != null) {
+            model.setModificationDate(DateMapper.map(entity.getModificationDate(), null));
+        }
+        if (entity.getDescription() != null) {
+            model.setDescription(entity.getDescription());
+        }
         if (entity.getVmId() != null) {
             Vm vm = new Vm();
             vm.setId(entity.getVmId().toString());
             model.setVm(vm);
+        }
+        if (entity.getHostId() != null) {
+            Host host = new Host();
+            host.setId(entity.getHostId().toString());
+            model.setHost(host);
+        }
+        if (!Guid.isNullOrEmpty(entity.getSnapshotId())) {
+            Snapshot snapshot = new Snapshot();
+            snapshot.setId(entity.getSnapshotId().toString());
+            model.setSnapshot(snapshot);
         }
         return model;
     }
 
     public static BackupPhase map(org.ovirt.engine.core.common.businessentities.VmBackupPhase action) {
         switch (action) {
-        case INITIALIZING:
-            return BackupPhase.INITIALIZING;
-        case STARTING:
-            return BackupPhase.STARTING;
-        case READY:
-            return BackupPhase.READY;
-        case FINALIZING:
-            return BackupPhase.FINALIZING;
-        default:
-            return null;
+        // Creating and preparing scratch disks should be considered
+        // as the backup is still in INITIALIZING phase, scratch disks
+        // should be created before the backup can start.
+            case INITIALIZING:
+            case CREATING_SCRATCH_DISKS:
+            case ADDING_BITMAPS:
+            case WAITING_FOR_BITMAPS:
+                return BackupPhase.INITIALIZING;
+            case STARTING:
+                return BackupPhase.STARTING;
+            case READY:
+                return BackupPhase.READY;
+            case FINALIZING:
+            case FINALIZING_FAILURE:
+            case REMOVING_SNAPSHOT:
+                return BackupPhase.FINALIZING;
+            case SUCCEEDED:
+                return BackupPhase.SUCCEEDED;
+            case FAILED:
+                return BackupPhase.FAILED;
+            default:
+                return null;
         }
     }
-
-    public static org.ovirt.engine.core.common.businessentities.VmBackupPhase map(BackupPhase action) {
-        switch (action) {
-        case INITIALIZING:
-            return org.ovirt.engine.core.common.businessentities.VmBackupPhase.INITIALIZING;
-        case STARTING:
-            return org.ovirt.engine.core.common.businessentities.VmBackupPhase.STARTING;
-        case READY:
-            return org.ovirt.engine.core.common.businessentities.VmBackupPhase.READY;
-        case FINALIZING:
-            return org.ovirt.engine.core.common.businessentities.VmBackupPhase.FINALIZING;
-        default:
-            return null;
-        }
-    }
-
 }

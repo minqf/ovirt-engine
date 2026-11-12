@@ -312,9 +312,14 @@ public abstract class RegisterEntityInfoPanel<T, D extends ImportEntityData<T>, 
         AbstractTextColumn<VmNetworkInterface> dropsColumn = new AbstractSumUpColumn<VmNetworkInterface>() {
             @Override
             protected Double[] getRawValue(VmNetworkInterface object) {
-                Double receiveDropRate = object != null ? object.getStatistics().getReceiveDropRate() : null;
-                Double transmitDropRate = object != null ? object.getStatistics().getTransmitDropRate() : null;
-                return new Double[] { receiveDropRate, transmitDropRate };
+                Double receiveDrops = (object != null && object.getStatistics() != null
+                    && object.getStatistics().getReceiveDrops() != null)
+                    ? object.getStatistics().getReceiveDrops().doubleValue() : 0.0;
+                Double transmitDrops = (object != null && object.getStatistics() != null
+                    && object.getStatistics().getTransmitDrops() != null)
+                    ? object.getStatistics().getTransmitDrops().doubleValue() : 0.0;
+
+                return new Double[] { receiveDrops, transmitDrops };
             }
         };
         nicsTable.addColumn(dropsColumn, templates.sub(constants.dropsInterface(), constants.pkts()), "90px"); //$NON-NLS-1$

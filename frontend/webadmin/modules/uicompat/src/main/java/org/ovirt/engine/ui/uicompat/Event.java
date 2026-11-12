@@ -138,11 +138,10 @@ public class Event<T extends EventArgs> {
     }
 
     public boolean matchesDefinition(EventDefinition other) {
-        if(other == null){
+        if (other == null) {
             return false;
         }
-        return getName().equals(other.getName())
-        && getOwnerType() == other.getOwnerType();
+        return getName().equals(other.getName()) && getOwnerType() == other.getOwnerType();
     }
 
     public List<IEventListener<? super T>> getListeners() {

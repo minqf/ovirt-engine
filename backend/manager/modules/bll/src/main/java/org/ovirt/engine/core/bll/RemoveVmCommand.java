@@ -177,7 +177,7 @@ public class RemoveVmCommand<T extends RemoveVmParameters> extends VmCommand<T> 
             return null;
         });
 
-        Collection<DiskImage> unremovedDisks = Collections.emptyList();
+        Collection<DiskImage> unremovedDisks = new ArrayList<>();
         if (getParameters().isRemoveDisks()) {
             if (!diskImages.isEmpty()) {
                 unremovedDisks = removeVmImages(diskImages).getActionReturnValue();
@@ -234,7 +234,8 @@ public class RemoveVmCommand<T extends RemoveVmParameters> extends VmCommand<T> 
         }
 
         vmHandler.updateDisksFromDb(getVm());
-        getParameters().setUseCinderCommandCallback(getParameters().isRemoveDisks() && !getCinderDisks().isEmpty());
+        getParameters().setUseCinderCommandCallback(
+                getParameters().isRemoveDisks() && !(getCinderDisks().isEmpty() && getManagedBlockDisks().isEmpty()));
 
         if (!getParameters().isRemoveDisks() && !canRemoveVmWithDetachDisks()) {
             return false;
@@ -249,7 +250,7 @@ public class RemoveVmCommand<T extends RemoveVmParameters> extends VmCommand<T> 
             case Suspended:
                 return failValidation(EngineMessage.VM_CANNOT_REMOVE_VM_WHEN_STATUS_IS_NOT_DOWN);
             default:
-                return (getVm().isHostedEngine() && isInternalExecution()) || failValidation(EngineMessage.ACTION_TYPE_FAILED_VM_IS_RUNNING);
+                return getVm().isHostedEngine() && isInternalExecution() || failValidation(EngineMessage.ACTION_TYPE_FAILED_VM_IS_RUNNING);
         }
 
         if (getVm().getVmPoolId() != null) {
@@ -313,6 +314,10 @@ public class RemoveVmCommand<T extends RemoveVmParameters> extends VmCommand<T> 
             return false;
         }
 
+        if (isVmDuringBackup()) {
+            return failValidation(EngineMessage.ACTION_TYPE_FAILED_VM_IS_DURING_BACKUP);
+        }
+
         return true;
     }
 
@@ -367,11 +372,11 @@ public class RemoveVmCommand<T extends RemoveVmParameters> extends VmCommand<T> 
     @Override
     public AuditLogType getAuditLogTypeValue() {
         if (getSucceeded()) {
-            return isInternalExecution() ? AuditLogType.USER_REMOVE_VM_FINISHED_INTERNAL: AuditLogType.USER_REMOVE_VM_FINISHED;
+            return isInternalExecution() ? AuditLogType.USER_REMOVE_VM_FINISHED_INTERNAL : AuditLogType.USER_REMOVE_VM_FINISHED;
         }
 
         return isInternalExecution() ?
-                AuditLogType.USER_REMOVE_VM_FINISHED_WITH_ILLEGAL_DISKS_INTERNAL:
+                AuditLogType.USER_REMOVE_VM_FINISHED_WITH_ILLEGAL_DISKS_INTERNAL :
                 AuditLogType.USER_REMOVE_VM_FINISHED_WITH_ILLEGAL_DISKS;
     }
 
@@ -521,6 +526,6 @@ public class RemoveVmCommand<T extends RemoveVmParameters> extends VmCommand<T> 
 
     @Override
     public CommandCallback getCallback() {
-        return getParameters().isUseCinderCommandCallback() ? callbackProvider.get() : null;
+        return callbackProvider.get();
     }
 }

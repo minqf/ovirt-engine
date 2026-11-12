@@ -12,13 +12,10 @@ import org.ovirt.engine.core.common.businessentities.StoragePool;
 import org.ovirt.engine.core.common.businessentities.VmBase;
 import org.ovirt.engine.core.common.businessentities.VmTemplate;
 import org.ovirt.engine.core.common.businessentities.VmWatchdog;
-import org.ovirt.engine.core.common.queries.IdQueryParameters;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
-import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.ui.frontend.AsyncCallback;
 import org.ovirt.engine.ui.frontend.AsyncQuery;
-import org.ovirt.engine.ui.frontend.Frontend;
 import org.ovirt.engine.ui.uicommonweb.builders.BuilderExecutor;
 import org.ovirt.engine.ui.uicommonweb.builders.vm.CommentVmBaseToUnitBuilder;
 import org.ovirt.engine.ui.uicommonweb.builders.vm.CommonVmBaseToUnitBuilder;
@@ -36,6 +33,7 @@ public class TemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
     @Override
     public void initialize() {
         super.initialize();
+        toggleAutoSetVmHostname();
         getModel().getTemplateWithVersion().setIsChangeable(false);
         getModel().getBaseTemplate().setIsChangeable(false);
         getModel().getTemplateWithVersion().setIsChangeable(false);
@@ -45,6 +43,9 @@ public class TemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
         getModel().getVmType().setIsChangeable(true);
         getModel().getTemplateVersionName().setIsChangeable(!template.isBaseTemplate());
         getModel().getName().setIsChangeable(template.isBaseTemplate());
+        // Storage domain and provisioning are not available for an existing VM.
+        getModel().getStorageDomain().setIsChangeable(false);
+        getModel().getProvisioning().setIsAvailable(false);
 
         if (template.getStoragePoolId() != null && !template.getStoragePoolId().equals(Guid.Empty)) {
             AsyncDataProvider.getInstance().getDataCenterById(new AsyncQuery<>(
@@ -75,11 +76,6 @@ public class TemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
                                                     initTemplate();
                                                     initCdImage();
                                                 }), template.getId());
-
-                                        Frontend.getInstance().runQuery(QueryType.IsBalloonEnabled, new IdQueryParameters(template.getId()), new AsyncQuery<>(
-                                                (QueryReturnValue returnValue) ->
-                                                        getModel().getMemoryBalloonDeviceEnabled().setEntity((Boolean) returnValue.getReturnValue())
-                                        ));
 
                                         AsyncDataProvider.getInstance().isVirtioScsiEnabledForVm(new AsyncQuery<>(
                                                 returnValue -> getModel().getIsVirtioScsiEnabled().setEntity(returnValue)), template.getId());
@@ -121,22 +117,12 @@ public class TemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
 
     @Override
     public void postDataCenterWithClusterSelectedItemChanged() {
-        updateGraphics(template.getId());
-        updateDefaultHost();
-        updateNumOfSockets();
+        super.postDataCenterWithClusterSelectedItemChanged();
         updateQuotaByCluster(template.getQuotaId(), template.getQuotaName());
-        updateMemoryBalloon();
-        updateCpuSharesAvailability();
         getModel().getCpuSharesAmount().setEntity(template.getCpuShares());
         updateCpuSharesSelection();
-        updateVirtioScsiAvailability();
         updateMigrationForLocalSD();
-        updateOSValues();
-        if (getModel().getSelectedCluster() != null) {
-            updateCpuProfile(getModel().getSelectedCluster().getId(), template.getCpuProfileId());
-        }
-        updateCustomPropertySheet();
-        getModel().getCustomPropertySheet().deserialize(template.getCustomProperties());
+        updateCpuProfile(getModel().getSelectedCluster(), template.getCpuProfileId());
         updateLeaseStorageDomains(template.getLeaseStorageDomainId());
     }
 
@@ -152,7 +138,7 @@ public class TemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
     @Override
     protected void changeDefaultHost() {
         super.changeDefaultHost();
-        doChangeDefaultHost(template.getDedicatedVmForVdsList());
+        updateDefaultHost(template.getDedicatedVmForVdsList());
 
         if (isHostCpuValueStillBasedOnTemp()) {
             getModel().getHostCpu().setEntity(template.isUseHostCpuFlags());
@@ -171,38 +157,28 @@ public class TemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
     private void initTemplate() {
         // Update model state according to VM properties.
         buildModel(template, (source, destination) -> {
-            if (!isHostCpuValueStillBasedOnTemp()) {
-                getModel().getHostCpu().setEntity(false);
-            }
-
+            // Header
+            getModel().getTemplateVersionName().setEntity(template.getTemplateVersionName());
+            // System
             updateTimeZone(template.getTimeZone());
-
-            // Storage domain and provisioning are not available for an existing VM.
-            getModel().getStorageDomain().setIsChangeable(false);
-            getModel().getProvisioning().setIsAvailable(false);
-
-            // Select display protocol.
+            // Console
             DisplayType displayType = template.getDefaultDisplayType();
             if (getModel().getDisplayType().getItems().contains(displayType)) {
                 getModel().getDisplayType().setSelectedItem(displayType);
             }
 
+            updateGraphics(template.getId());
             updateConsoleDevice(template.getId());
-
-            toggleAutoSetVmHostname();
+            // Initial Run
             getModel().getVmInitEnabled().setEntity(template.getVmInit() != null);
             getModel().getVmInitModel().init(template);
-            getModel().getTemplateVersionName().setEntity(template.getTemplateVersionName());
-
-            getModel().getBootMenuEnabled().setEntity(template.isBootMenuEnabled());
-
-            getModel().getSpiceFileTransferEnabled().setEntity(template.isSpiceFileTransferEnabled());
-            getModel().getSpiceCopyPasteEnabled().setEntity(template.isSpiceCopyPasteEnabled());
-
-            getModel().getMigrationMode().setSelectedItem(template.getMigrationSupport());
-
-            initPriority(template.getPriority());
+            // High availability
             getModel().updateResumeBehavior();
+            initPriority(template.getPriority());
+            // Host
+            getModel().getHostCpu().setEntity(isHostCpuValueStillBasedOnTemp() ? template.isUseHostCpuFlags() : false);
+            // Resource allocation
+            updateTpm(template.getId());
         });
     }
 
@@ -216,19 +192,6 @@ public class TemplateVmModelBehavior extends VmModelBehaviorBase<UnitVmModel> {
         return template;
     }
 
-    @Override
-    public void enableSinglePCI(boolean enabled) {
-        super.enableSinglePCI(enabled);
-        if (enabled) {
-            getModel().setSingleQxlEnabled(template.getSingleQxlPci() && getModel().getIsQxlSupported());
-        } else {
-            getModel().setSingleQxlEnabled(false);
-        }
-    }
-
-    @Override public int getMaxNameLength() {
-        return UnitVmModel.VM_TEMPLATE_AND_INSTANCE_TYPE_NAME_MAX_LIMIT;
-    }
 
     private void toggleAutoSetVmHostname() {
         // always switch off auto setting of hostname for a template

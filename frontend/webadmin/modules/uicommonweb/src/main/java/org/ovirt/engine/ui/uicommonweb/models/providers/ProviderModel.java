@@ -3,6 +3,7 @@ package org.ovirt.engine.ui.uicommonweb.models.providers;
 import static org.ovirt.engine.core.common.businessentities.BusinessEntitiesDefinitions.GENERAL_MAX_SIZE;
 import static org.ovirt.engine.core.common.businessentities.BusinessEntitiesDefinitions.NETWORK_MAX_LEGAL_PORT;
 import static org.ovirt.engine.core.common.businessentities.BusinessEntitiesDefinitions.NETWORK_MIN_LEGAL_PORT;
+import static org.ovirt.engine.core.common.businessentities.CertificateInfo.SHA256_NAME;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -26,8 +27,6 @@ import org.ovirt.engine.core.common.businessentities.StoragePool;
 import org.ovirt.engine.core.common.businessentities.VDS;
 import org.ovirt.engine.core.common.businessentities.comparators.LexoNumericComparator;
 import org.ovirt.engine.core.common.businessentities.comparators.NameableComparator;
-import org.ovirt.engine.core.common.businessentities.storage.OpenStackVolumeProviderProperties;
-import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.ui.frontend.AsyncCallback;
 import org.ovirt.engine.ui.frontend.Frontend;
@@ -247,11 +246,11 @@ public class ProviderModel extends Model {
     }
 
     private boolean supportsAuthApiV3() {
-        return isTypeOpenStackNetwork();
+        return isTypeOpenStack();
     }
 
     private boolean isTypeOpenStack() {
-        return isTypeOpenStackImage() || isTypeOpenStackVolume() || isTypeOpenStackNetwork();
+        return isTypeOpenStackImage() || isTypeOpenStackNetwork();
     }
 
     private boolean isTypeOpenStackNetwork() {
@@ -260,10 +259,6 @@ public class ProviderModel extends Model {
 
     private boolean isTypeOpenStackImage() {
         return getType().getSelectedItem() == ProviderType.OPENSTACK_IMAGE;
-    }
-
-    private boolean isTypeOpenStackVolume() {
-        return getType().getSelectedItem() == ProviderType.OPENSTACK_VOLUME;
     }
 
     private boolean isTypeExternalNetwork() {
@@ -297,7 +292,7 @@ public class ProviderModel extends Model {
     private String getAuthUrl() {
         String scheme = getAuthProtocol().getSelectedItem() == OpenStackProtocolType.https ?
                 Uri.SCHEME_HTTPS : Uri.SCHEME_HTTP;
-        String authority = getAuthHostname().getEntity() + ":" +  getAuthPort().getEntity(); //$NON-NLS-1$
+        String authority = getAuthHostname().getEntity() + ":" + getAuthPort().getEntity(); //$NON-NLS-1$
         Uri uri = new Uri(scheme, authority, getAuthApiVersion().getSelectedItem().getPath());
         return uri.getStringRepresentation();
     }
@@ -311,24 +306,22 @@ public class ProviderModel extends Model {
             return ""; //$NON-NLS-1$
         }
         switch (type) {
-        case EXTERNAL_NETWORK:
-        case OPENSTACK_NETWORK:
-            return "http://localhost:9696"; //$NON-NLS-1$
-        case OPENSTACK_IMAGE:
-            return "http://localhost:9292"; //$NON-NLS-1$
-        case OPENSTACK_VOLUME:
-            return "http://localhost:8776"; //$NON-NLS-1$
-        case VMWARE:
-            return ""; //$NON-NLS-1$
-        case KVM:
-            return ""; //$NON-NLS-1$
-        case XEN:
-            return ""; //$NON-NLS-1$
-        case KUBEVIRT:
-            return ""; //$NON-NLS-1$
-        case FOREMAN:
-        default:
-            return "http://localhost"; //$NON-NLS-1$
+            case EXTERNAL_NETWORK:
+            case OPENSTACK_NETWORK:
+                return "http://localhost:9696"; //$NON-NLS-1$
+            case OPENSTACK_IMAGE:
+                return "http://localhost:9292"; //$NON-NLS-1$
+            case VMWARE:
+                return ""; //$NON-NLS-1$
+            case KVM:
+                return ""; //$NON-NLS-1$
+            case XEN:
+                return ""; //$NON-NLS-1$
+            case KUBEVIRT:
+                return ""; //$NON-NLS-1$
+            case FOREMAN:
+            default:
+                return "http://localhost"; //$NON-NLS-1$
         }
     }
 
@@ -337,7 +330,7 @@ public class ProviderModel extends Model {
         this.action = action;
         this.provider = provider;
 
-        setAuthApiVersion(new ListModel<OpenStackApiVersionType>(){
+        setAuthApiVersion(new ListModel<OpenStackApiVersionType>() {
             @Override
             protected void onSelectedItemChanging(OpenStackApiVersionType newValue, OpenStackApiVersionType oldValue) {
                 super.onSelectedItemChanging(newValue, oldValue);
@@ -436,11 +429,7 @@ public class ProviderModel extends Model {
             getRequiresAuthentication().setEntity(isVmware || isKubevirt || Boolean.valueOf(requiresAuth));
             getRequiresAuthentication().setIsChangeable(!requiresAuth);
 
-            boolean isCinder = isTypeOpenStackVolume();
-            getDataCenter().setIsAvailable(isCinder || isVmware || isKvm || isXen);
-            if (isCinder) {
-                updateDatacentersForVolumeProvider();
-            }
+            getDataCenter().setIsAvailable(isVmware || isKvm || isXen);
 
             getVmwarePropertiesModel().setIsAvailable(isVmware);
             getKvmPropertiesModel().setIsAvailable(isKvm);
@@ -461,11 +450,9 @@ public class ProviderModel extends Model {
         getTenantName().setIsAvailable(false);
 
         List<ProviderType> providerTypes = new ArrayList<>(Arrays.asList(ProviderType.values()));
-
-        if (!(Boolean) AsyncDataProvider.getInstance()
-                .getConfigValuePreConverted(ConfigValues.KubevirtProviderSupportEnabled)) {
-            providerTypes.remove(ProviderType.KUBEVIRT);
-        }
+        // Filtering out the old cinder integration from the providers type list on UI.
+        // The OPENSTACK_VOLUME provider type should be removed from the ProviderType enum (bug 1950731).
+        providerTypes.remove(ProviderType.OPENSTACK_VOLUME);
 
         Collections.sort(providerTypes,
                 Comparator.comparing(t -> EnumTranslator.getInstance().translate(t), new LexoNumericComparator()));
@@ -549,7 +536,7 @@ public class ProviderModel extends Model {
             return getVmwarePropertiesModel();
         } else {
             // null object, to avoid null checks everywhere
-            return new ProxyHostPropertiesModel() {};
+            return new ProxyHostPropertiesModel() { };
         }
     }
 
@@ -580,10 +567,6 @@ public class ProviderModel extends Model {
         }));
     }
 
-    protected void updateDatacentersForVolumeProvider() {
-        // implemented on sub-classes
-    }
-
     private boolean validate() {
         getName().validateEntity(new IValidation[] { new NotEmptyValidation(), new AsciiNameValidation() });
         getType().validateSelectedItem(new IValidation[] { new NotEmptyValidation() });
@@ -605,18 +588,18 @@ public class ProviderModel extends Model {
     private boolean validateConnectionSettings() {
         getUsername().validateEntity(new IValidation[] { new NotEmptyValidation() });
         getPassword().validateEntity(new IValidation[] {
-                new NotEmptyValidation(),
-                new LengthValidation(GENERAL_MAX_SIZE)
+            new NotEmptyValidation(),
+            new LengthValidation(GENERAL_MAX_SIZE)
         });
         if (isTypeOpenStack()) {
-            getTenantName().validateEntity(new IValidation[] { new NotEmptyValidation()} );
-            getUserDomainName().validateEntity(new IValidation[] { new NotEmptyValidation()} );
+            getTenantName().validateEntity(new IValidation[] { new NotEmptyValidation()});
+            getUserDomainName().validateEntity(new IValidation[] { new NotEmptyValidation()});
         }
 
-        getAuthHostname().validateEntity(new IValidation[] { new HostnameValidation()} );
+        getAuthHostname().validateEntity(new IValidation[] { new HostnameValidation()});
         getAuthPort().validateEntity(new IValidation[] {
-                new NotNullIntegerValidation(NETWORK_MIN_LEGAL_PORT, NETWORK_MAX_LEGAL_PORT)
-        } );
+            new NotNullIntegerValidation(NETWORK_MIN_LEGAL_PORT, NETWORK_MAX_LEGAL_PORT)
+        });
 
         return (getUrl().getEntity() == null || getUrl().getIsValid() || getUrl().getEntity().isEmpty()) &&
                 getUsername().getIsValid() &&
@@ -645,8 +628,6 @@ public class ProviderModel extends Model {
             properties.setAutoSync(autoSync.getEntity());
         } else if (isTypeOpenStackImage()) {
             provider.setAdditionalProperties(new OpenStackImageProviderProperties());
-        } else if (isTypeOpenStackVolume()) {
-            provider.setAdditionalProperties(new OpenStackVolumeProviderProperties(getDataCenter().getSelectedItem().getId()));
         } else if (isTypeVmware()) {
             provider.setAdditionalProperties(getVmwarePropertiesModel().getVmwareVmProviderProperties(
                     dataCenter.getSelectedItem() != null ? dataCenter.getSelectedItem().getId() : null));
@@ -667,7 +648,9 @@ public class ProviderModel extends Model {
         provider.setRequiringAuthentication(authenticationRequired);
         if (authenticationRequired) {
             provider.setUsername(getUsername().getEntity());
-            provider.setPassword(getPassword().getEntity());
+            if (!getPassword().getEntity().equals("********")) { //$NON-NLS-1$
+                provider.setPassword(getPassword().getEntity());
+            }
             if (getTenantName().getIsAvailable()) {
                 OpenStackProviderProperties properties = getOpenStackProviderProperties();
                 properties.setTenantName(getTenantName().getEntity());
@@ -790,11 +773,11 @@ public class ProviderModel extends Model {
         if (certInfo.getSelfSigned()) {
             confirmationModel.setMessage(
                     ConstantsManager.getInstance().getMessages().approveRootCertificateTrust(
-                            certInfo.getSubject(), certInfo.getSHA1Fingerprint()));
+                            certInfo.getSubject(), certInfo.getSHA256Fingerprint(), SHA256_NAME));
         } else {
             confirmationModel.setMessage(
                     ConstantsManager.getInstance().getMessages().approveCertificateTrust(
-                            certInfo.getSubject(), certInfo.getIssuer(), certInfo.getSHA1Fingerprint()));
+                        certInfo.getSubject(), certInfo.getIssuer(), certInfo.getSHA256Fingerprint(), SHA256_NAME));
         }
         confirmationModel.setTitle(ConstantsManager.getInstance().getConstants().importProviderCertificateTitle());
         confirmationModel.setHelpTag(HelpTag.import_provider_certificate);

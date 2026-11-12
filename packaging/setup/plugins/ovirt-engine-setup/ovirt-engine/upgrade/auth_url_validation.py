@@ -37,7 +37,7 @@ def _(m):
 class Plugin(plugin.PluginBase):
     """auth_url validation plugin."""
 
-    _VALID_AUTH_URL = '^http(s)?://[^/]*:[\d]+/(v3|v2\.0)/?$'
+    _VALID_AUTH_URL = '^http(s)?://[^/]*:[\\d]+/(v3|v2\\.0)/?$'
     _RE_VALID_AUTH_URL = re.compile(_VALID_AUTH_URL)
 
     def __init__(self, context):
@@ -76,7 +76,6 @@ class Plugin(plugin.PluginBase):
             'FROM providers WHERE '
             'auth_url !~ \'{valid_url}\''.format(
                 valid_url=self._VALID_AUTH_URL,
-                ownConnection=True,
             )
         )
         return dbstatement.execute(

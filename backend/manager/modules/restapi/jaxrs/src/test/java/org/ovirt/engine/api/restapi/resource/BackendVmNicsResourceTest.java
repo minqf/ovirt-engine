@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -20,7 +21,6 @@ import org.ovirt.engine.api.model.Nic;
 import org.ovirt.engine.api.model.NicInterface;
 import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.AddVmInterfaceParameters;
-import org.ovirt.engine.core.common.businessentities.VmGuestAgentInterface;
 import org.ovirt.engine.core.common.businessentities.network.VmNetworkInterface;
 import org.ovirt.engine.core.common.businessentities.network.VmNetworkStatistics;
 import org.ovirt.engine.core.common.queries.IdQueryParameters;
@@ -109,11 +109,11 @@ public class BackendVmNicsResourceTest
             VmNetworkStatistics statistics) {
         when(entity.getStatistics()).thenReturn(statistics);
         when(statistics.getReceiveRate()).thenReturn(1D);
-        when(statistics.getReceiveDropRate()).thenReturn(2D);
+        when(statistics.getReceiveDrops()).thenReturn(BigInteger.TWO);
         when(statistics.getTransmitRate()).thenReturn(3D);
-        when(statistics.getTransmitDropRate()).thenReturn(4D);
-        when(statistics.getReceivedBytes()).thenReturn(5L);
-        when(statistics.getTransmittedBytes()).thenReturn(6L);
+        when(statistics.getTransmitDrops()).thenReturn(new BigInteger("4"));
+        when(statistics.getReceivedBytes()).thenReturn(new BigInteger("5"));
+        when(statistics.getTransmittedBytes()).thenReturn(new BigInteger("6"));
         return entity;
     }
 
@@ -144,45 +144,9 @@ public class BackendVmNicsResourceTest
         assertEquals(ADDRESSES[2], model.getMac().getAddress());
     }
 
-    protected void setGetGuestAgentQueryExpectations(int times) {
-        while (times-- > 0) {
-            setUpEntityQueryExpectations(QueryType.GetVmGuestAgentInterfacesByVmId,
-                    IdQueryParameters.class,
-                    new String[] { "Id" },
-                    new Object[] { VM_ID },
-                    getListOfVmGuestAgentInterfaces());
-        }
-    }
-
-    @SuppressWarnings("serial")
-    private Object getListOfVmGuestAgentInterfaces() {
-        VmGuestAgentInterface iface = new VmGuestAgentInterface();
-        iface.setMacAddress(ADDRESSES[2]);
-        List<VmGuestAgentInterface> list = new ArrayList<>();
-        list.add(iface);
-        return list;
-    }
-
-    @Test
-    public void testListIncludeStatistics() throws Exception {
-        try {
-            accepts.add("application/xml; detail=statistics");
-            setUriInfo(setUpUriExpectations(null));
-            setGetGuestAgentQueryExpectations(3);
-            setUpQueryExpectations("");
-
-            List<Nic> nics = getCollection();
-            assertTrue(nics.get(0).isSetStatistics());
-            verifyCollection(nics);
-        } finally {
-            accepts.clear();
-        }
-    }
-
     @Test
     public void testAddNic() {
         setUriInfo(setUpBasicUriExpectations());
-        setGetGuestAgentQueryExpectations(1);
         setUpCreationExpectations(
             ActionType.AddVmInterface,
             AddVmInterfaceParameters.class,
@@ -250,7 +214,6 @@ public class BackendVmNicsResourceTest
     @Override
     public void testList() throws Exception {
         UriInfo uriInfo = setUpUriExpectations(null);
-        setGetGuestAgentQueryExpectations(3);
         setUpQueryExpectations("");
         collection.setUriInfo(uriInfo);
         verifyCollection(getCollection());

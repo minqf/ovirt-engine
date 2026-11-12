@@ -4,18 +4,18 @@
 
 CREATE OR REPLACE FUNCTION GetAllFromImageUploads()
 RETURNS SETOF image_transfers STABLE
-AS $PROCEDURE$
+AS $FUNCTION$
 BEGIN
     RETURN QUERY
     SELECT image_transfers.*
     FROM image_transfers;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 
 CREATE OR REPLACE FUNCTION GetImageUploadsByCommandId(v_command_id UUID, v_user_id UUID, v_is_filtered BOOLEAN)
 RETURNS SETOF image_transfers STABLE
-AS $PROCEDURE$
+AS $FUNCTION$
 BEGIN
     RETURN QUERY
     SELECT image_transfers.*
@@ -25,36 +25,36 @@ BEGIN
                                   FROM      user_disk_permissions_view
                                   WHERE     user_disk_permissions_view.user_id = v_user_id AND
                                             user_disk_permissions_view.entity_id = image_transfers.disk_id ));
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 
 CREATE OR REPLACE FUNCTION GetImageUploadsByDiskId(v_disk_id UUID)
 RETURNS SETOF image_transfers STABLE
-AS $PROCEDURE$
+AS $FUNCTION$
 BEGIN
     RETURN QUERY
     SELECT image_transfers.*
     FROM image_transfers
     WHERE image_transfers.disk_id = v_disk_id;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 
 CREATE OR REPLACE FUNCTION GetImageTransfersByVdsId(v_vds_id UUID)
 RETURNS SETOF image_transfers STABLE
-AS $PROCEDURE$
+AS $FUNCTION$
 BEGIN
     RETURN QUERY
     SELECT image_transfers.*
     FROM image_transfers
     WHERE image_transfers.vds_id = v_vds_id;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetImageTransfersByStorageId(v_storage_id UUID)
 RETURNS SETOF image_transfers STABLE
-AS $PROCEDURE$
+AS $FUNCTION$
 BEGIN
     RETURN QUERY
     SELECT image_transfers.*
@@ -62,7 +62,18 @@ BEGIN
     INNER JOIN images ON images.image_group_id = image_transfers.disk_id
     INNER JOIN image_storage_domain_map ON image_storage_domain_map.image_id = images.image_guid
     WHERE image_storage_domain_map.storage_domain_id = v_storage_id;
-END;$PROCEDURE$
+END;$FUNCTION$
+LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION GetImageTransfersByBackupId(v_backup_id UUID)
+RETURNS SETOF image_transfers STABLE
+AS $FUNCTION$
+BEGIN
+    RETURN QUERY
+    SELECT image_transfers.*
+    FROM image_transfers
+    WHERE image_transfers.backup_id = v_backup_id;
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION UpdateImageUploads(
@@ -71,23 +82,25 @@ CREATE OR REPLACE FUNCTION UpdateImageUploads(
     v_phase INTEGER,
     v_type INTEGER,
     v_active BOOLEAN,
-    v_last_updated TIMESTAMP,
+    v_last_updated TIMESTAMP WITH TIME ZONE,
     v_message VARCHAR,
     v_vds_id UUID,
     v_disk_id UUID,
     v_imaged_ticket_id UUID,
     v_proxy_uri VARCHAR,
     v_daemon_uri VARCHAR,
-    v_signed_ticket VARCHAR,
     v_bytes_sent BIGINT,
     v_bytes_total BIGINT,
     v_client_inactivity_timeout INTEGER,
+    v_timeout_policy VARCHAR(10),
     v_image_format INTEGER,
     v_backend INTEGER,
-    v_backup_id UUID
+    v_backup_id UUID,
+    v_client_type SMALLINT,
+    v_shallow BOOLEAN
     )
 RETURNS VOID
-AS $PROCEDURE$
+AS $FUNCTION$
 BEGIN
     UPDATE image_transfers
     SET command_id = v_command_id,
@@ -102,26 +115,28 @@ BEGIN
         imaged_ticket_id = v_imaged_ticket_id,
         proxy_uri = v_proxy_uri,
         daemon_uri = v_daemon_uri,
-        signed_ticket = v_signed_ticket,
         bytes_sent = v_bytes_sent,
         bytes_total = v_bytes_total,
         client_inactivity_timeout = v_client_inactivity_timeout,
+        timeout_policy = v_timeout_policy,
         image_format = v_image_format,
         backend = v_backend,
-        backup_id = v_backup_id
+        backup_id = v_backup_id,
+        client_type = v_client_type,
+        shallow = v_shallow
     WHERE command_id = v_command_id;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 
 CREATE OR REPLACE FUNCTION DeleteImageUploads(v_command_id UUID)
 RETURNS VOID
-AS $PROCEDURE$
+AS $FUNCTION$
 BEGIN
     DELETE
     FROM image_transfers
     WHERE command_id = v_command_id;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 
@@ -131,23 +146,25 @@ CREATE OR REPLACE FUNCTION InsertImageUploads(
     v_phase INTEGER,
     v_type INTEGER,
     v_active BOOLEAN,
-    v_last_updated TIMESTAMP,
+    v_last_updated TIMESTAMP WITH TIME ZONE,
     v_message VARCHAR,
     v_vds_id UUID,
     v_disk_id UUID,
     v_imaged_ticket_id UUID,
     v_proxy_uri VARCHAR,
     v_daemon_uri VARCHAR,
-    v_signed_ticket VARCHAR,
     v_bytes_sent BIGINT,
     v_bytes_total BIGINT,
     v_client_inactivity_timeout INTEGER,
+    v_timeout_policy VARCHAR(10),
     v_image_format INTEGER,
     v_backend INTEGER,
-    v_backup_id UUID
+    v_backup_id UUID,
+    v_client_type SMALLINT,
+    v_shallow BOOLEAN
     )
 RETURNS VOID
-AS $PROCEDURE$
+AS $FUNCTION$
 BEGIN
     INSERT INTO image_transfers(
         command_id,
@@ -162,13 +179,15 @@ BEGIN
         imaged_ticket_id,
         proxy_uri,
         daemon_uri,
-        signed_ticket,
         bytes_sent,
         bytes_total,
         client_inactivity_timeout,
+        timeout_policy,
         image_format,
         backend,
-        backup_id
+        backup_id,
+        client_type,
+        shallow
         )
     VALUES (
         v_command_id,
@@ -183,14 +202,40 @@ BEGIN
         v_imaged_ticket_id,
         v_proxy_uri,
         v_daemon_uri,
-        v_signed_ticket,
         v_bytes_sent,
         v_bytes_total,
         v_client_inactivity_timeout,
+        v_timeout_policy,
         v_image_format,
         v_backend,
-        v_backup_id
+        v_backup_id,
+        v_client_type,
+        v_shallow
         );
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
+
+-----------------------------------------------------------
+-- Cleanup image transfer entities by last updated time and phase
+-----------------------------------------------------------
+CREATE OR REPLACE FUNCTION DeleteCompletedImageTransfersOlderThanDate (
+    v_succeeded_end_time TIMESTAMP WITH TIME ZONE,
+    v_failed_end_time TIMESTAMP WITH TIME ZONE
+    )
+RETURNS VOID AS $FUNCTION$
+BEGIN
+    DELETE
+    FROM image_transfers
+    WHERE (
+            (
+                last_updated < v_succeeded_end_time
+                AND phase = 9
+                )
+            OR (
+                last_updated < v_failed_end_time
+                AND phase = 10
+                )
+            );
+END;$FUNCTION$
+LANGUAGE plpgsql;

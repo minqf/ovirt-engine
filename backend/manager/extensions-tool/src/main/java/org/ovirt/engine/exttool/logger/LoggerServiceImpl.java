@@ -30,47 +30,44 @@ public class LoggerServiceImpl implements ModuleService {
     }
 
     private enum Action {
-        LOG_RECORD(
-            module -> {
-                ExtensionProxy proxy = module.getExtensionsManager().getExtensionByName((String) module.argMap.get("extension-name"));
+        LOG_RECORD(module -> {
+            ExtensionProxy proxy = module.getExtensionsManager().getExtensionByName((String) module.argMap.get("extension-name"));
 
-                LogRecord logRecord = new LogRecord(
-                    (Level) module.argMap.get("level"),
-                    (String) module.argMap.get("message")
-                );
-                logRecord.setLoggerName((String) module.argMap.get("logger-name"));
+            LogRecord logRecord = new LogRecord(
+                (Level) module.argMap.get("level"),
+                (String) module.argMap.get("message")
+            );
+            logRecord.setLoggerName((String) module.argMap.get("logger-name"));
 
-                log.info("API: -->Logger.InvokeCommands.PUBLISH level={}, name={}", logRecord.getLevel(), logRecord.getLoggerName());
-                proxy.invoke(
-                    new ExtMap().mput(
-                        Base.InvokeKeys.COMMAND,
-                        Logger.InvokeCommands.PUBLISH
-                    ).mput(
-                        Logger.InvokeKeys.LOG_RECORD,
-                        logRecord
-                    )
-                );
-                log.info("API: <--Logger.InvokeCommands.PUBLISH");
+            log.info("API: -->Logger.InvokeCommands.PUBLISH level={}, name={}", logRecord.getLevel(), logRecord.getLoggerName());
+            proxy.invoke(
+                new ExtMap().mput(
+                    Base.InvokeKeys.COMMAND,
+                    Logger.InvokeCommands.PUBLISH
+                ).mput(
+                    Logger.InvokeKeys.LOG_RECORD,
+                    logRecord
+                )
+            );
+            log.info("API: <--Logger.InvokeCommands.PUBLISH");
 
-                log.info("API: -->Logger.InvokeCommands.FLUSH");
-                proxy.invoke(
-                    new ExtMap().mput(
-                        Base.InvokeKeys.COMMAND,
-                        Logger.InvokeCommands.FLUSH
-                    )
-                );
-                log.info("API: <--Logger.InvokeCommands.FLUSH");
+            log.info("API: -->Logger.InvokeCommands.FLUSH");
+            proxy.invoke(
+                new ExtMap().mput(
+                    Base.InvokeKeys.COMMAND,
+                    Logger.InvokeCommands.FLUSH
+                )
+            );
+            log.info("API: <--Logger.InvokeCommands.FLUSH");
 
-                log.info("API: -->Logger.InvokeCommands.CLOSE");
-                proxy.invoke(
-                    new ExtMap().mput(
-                        Base.InvokeKeys.COMMAND,
-                        Logger.InvokeCommands.CLOSE
-                    )
-                );
-                log.info("API: <--Logger.InvokeCommands.CLOSE");
-            }
-        );
+            log.info("API: -->Logger.InvokeCommands.CLOSE");
+            proxy.invoke(
+                new ExtMap().mput(
+                Base.InvokeKeys.COMMAND,
+                Logger.InvokeCommands.CLOSE
+            ));
+            log.info("API: <--Logger.InvokeCommands.CLOSE");
+        });
 
         private Logic logic;
 
@@ -84,12 +81,12 @@ public class LoggerServiceImpl implements ModuleService {
             parser.parse(actionArgs);
             Map<String, Object> argMap = parser.getParsedArgs();
 
-            if((Boolean)argMap.get("help")) {
+            if ((Boolean) argMap.get("help")) {
                 System.out.format("Usage: %s", parser.getUsage());
                 throw new ExitException("Help", 0);
             }
-            if(!parser.getErrors().isEmpty()) {
-                for(Throwable t : parser.getErrors()) {
+            if (!parser.getErrors().isEmpty()) {
+                for (Throwable t : parser.getErrors()) {
                     log.error(t.getMessage());
                 }
                 throw new ExitException("Parsing error", 1);
@@ -113,7 +110,7 @@ public class LoggerServiceImpl implements ModuleService {
     private Map<String, Object> argMap;
 
     private ExtensionsManager getExtensionsManager() {
-        return (ExtensionsManager)context.get(ContextKeys.EXTENSION_MANAGER);
+        return (ExtensionsManager) context.get(ContextKeys.EXTENSION_MANAGER);
     }
 
     @Override
@@ -154,12 +151,12 @@ public class LoggerServiceImpl implements ModuleService {
         parser.parse(args);
         argModuleMap = parser.getParsedArgs();
 
-        if((Boolean)argModuleMap.get("help")) {
+        if ((Boolean) argModuleMap.get("help")) {
             System.out.format("Usage: %s", parser.getUsage());
             throw new ExitException("Help", 0);
         }
-        if(!parser.getErrors().isEmpty()) {
-            for(Throwable t : parser.getErrors()) {
+        if (!parser.getErrors().isEmpty()) {
+            for (Throwable t : parser.getErrors()) {
                 log.error(t.getMessage());
             }
             throw new ExitException("Parsing error", 1);
@@ -172,7 +169,7 @@ public class LoggerServiceImpl implements ModuleService {
 
         try {
             action = Action.valueOf(args.get(0).toUpperCase().replace("-", "_"));
-        } catch(IllegalArgumentException e) {
+        } catch (IllegalArgumentException e) {
             log.error("Invalid action '{}'", args.get(0));
             throw new ExitException("Invalid action", 1);
         }

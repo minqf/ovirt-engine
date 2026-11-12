@@ -291,25 +291,23 @@ public class ConsolePopupView extends AbstractModelBoundPopupView<ConsolePopupMo
 
         useLocalDrives = new EntityModelValueCheckBoxEditor<>(Align.RIGHT, new ValueCheckboxRenderer<ConsoleModel>() {
 
-                            @Override
-                            public boolean render(ConsoleModel value) {
-                                if (value instanceof RdpConsoleModel) {
-                                    return ((RdpConsoleModel) value).getrdp().getUseLocalDrives();
-                                }
+            @Override
+            public boolean render(ConsoleModel value) {
+                if (value instanceof RdpConsoleModel) {
+                    return ((RdpConsoleModel) value).getrdp().getUseLocalDrives();
+                }
+                return false;
+            }
 
-                                return false;
-                            }
+            @Override
+            public ConsoleModel read(boolean value, ConsoleModel model) {
+                if (model instanceof RdpConsoleModel) {
+                    ((RdpConsoleModel) model).getrdp().setUseLocalDrives(value);
+                }
+                return model;
+            }
 
-                            @Override
-                            public ConsoleModel read(boolean value, ConsoleModel model) {
-                                if (model instanceof RdpConsoleModel) {
-                                    ((RdpConsoleModel) model).getrdp().setUseLocalDrives(value);
-                                }
-
-                                return model;
-                            }
-
-                        });
+        });
         useLocalDrives.setLabel(constants.useLocalDrives());
 
         remoteDesktopRadioButton = new EntityModelRadioButtonEditor("1"); //$NON-NLS-1$
@@ -325,9 +323,9 @@ public class ConsolePopupView extends AbstractModelBoundPopupView<ConsolePopupMo
         Label rdpInvocationLabel = new Label();
         rdpInvocationLabel.setText(constants.consoleInvocation());
 
-        vncHeadline= new WidgetWithInfo(vncInvocationLabel);
+        vncHeadline = new WidgetWithInfo(vncInvocationLabel);
         vncHeadline.setIconTooltipText(SafeHtmlUtils.fromTrustedString(createVncInvocationInfo()));
-        rdpHeadline= new WidgetWithInfo(rdpInvocationLabel);
+        rdpHeadline = new WidgetWithInfo(rdpInvocationLabel);
         rdpHeadline.setIconTooltipText(SafeHtmlUtils.fromTrustedString(createRdpInvocationInfo()));
 
         initWidget(ViewUiBinder.uiBinder.createAndBindUi(this));
@@ -447,7 +445,7 @@ public class ConsolePopupView extends AbstractModelBoundPopupView<ConsolePopupMo
     }
 
     private void setSelectedVncImpl() {
-        VncConsoleModel vncConsoleModel= model.getVmConsoles().getConsoleModel(VncConsoleModel.class);
+        VncConsoleModel vncConsoleModel = model.getVmConsoles().getConsoleModel(VncConsoleModel.class);
 
         if (vncConsoleModel == null) {
             return;
@@ -695,21 +693,21 @@ public class ConsolePopupView extends AbstractModelBoundPopupView<ConsolePopupMo
     @Override
     public void selectRdpImplementation(RdpConsoleModel.ClientConsoleMode consoleMode) {
         switch (consoleMode) {
-        case Native:
-            rdpAutoImplRadioButton.asRadioButton().setValue(false);
-            rdpPluginImplRadioButton.asRadioButton().setValue(false);
-            rdpNativeImplRadioButton.asRadioButton().setValue(true);
-            break;
-        case Plugin:
-            rdpAutoImplRadioButton.asRadioButton().setValue(false);
-            rdpPluginImplRadioButton.asRadioButton().setValue(true);
-            rdpNativeImplRadioButton.asRadioButton().setValue(false);
-            break;
-        default:
-            rdpAutoImplRadioButton.asRadioButton().setValue(true);
-            rdpPluginImplRadioButton.asRadioButton().setValue(false);
-            rdpNativeImplRadioButton.asRadioButton().setValue(false);
-            break;
+            case Native:
+                rdpAutoImplRadioButton.asRadioButton().setValue(false);
+                rdpPluginImplRadioButton.asRadioButton().setValue(false);
+                rdpNativeImplRadioButton.asRadioButton().setValue(true);
+                break;
+            case Plugin:
+                rdpAutoImplRadioButton.asRadioButton().setValue(false);
+                rdpPluginImplRadioButton.asRadioButton().setValue(true);
+                rdpNativeImplRadioButton.asRadioButton().setValue(false);
+                break;
+            default:
+                rdpAutoImplRadioButton.asRadioButton().setValue(true);
+                rdpPluginImplRadioButton.asRadioButton().setValue(false);
+                rdpNativeImplRadioButton.asRadioButton().setValue(false);
+                break;
         }
     }
 

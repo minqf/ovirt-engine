@@ -50,7 +50,7 @@ public class NegotiationFilter implements Filter {
     private long caps = 0;
 
     @Override
-    public void init(FilterConfig filterConfig) throws ServletException {
+    public void init(FilterConfig filterConfig) {
         String capsParam = filterConfig.getInitParameter(CAPABILITIES_PARAMETER);
         if (capsParam != null) {
             for (String nego : capsParam.trim().split(" *\\| *")) {
@@ -91,7 +91,7 @@ public class NegotiationFilter implements Filter {
     public void doFilter(ServletRequest req, ServletResponse rsp, FilterChain chain)
             throws IOException, ServletException {
 
-        HttpServletRequest httpreq = (HttpServletRequest)req;
+        HttpServletRequest httpreq = (HttpServletRequest) req;
 
         if (FiltersHelper.isAuthenticated(httpreq) || httpreq.getAttribute(FiltersHelper.Constants.REQUEST_AUTH_RECORD_KEY) != null) {
             chain.doFilter(req, rsp);
@@ -100,7 +100,7 @@ public class NegotiationFilter implements Filter {
             HttpSession session = httpreq.getSession(false);
             Deque<AuthenticationProfile> stack = null;
             if (session != null) {
-                stack = (Deque<AuthenticationProfile>)session.getAttribute(STACK_ATTR);
+                stack = (Deque<AuthenticationProfile>) session.getAttribute(STACK_ATTR);
             }
             if (stack == null) {
                 stack = new ArrayDeque<>();
@@ -118,8 +118,7 @@ public class NegotiationFilter implements Filter {
         }
     }
 
-    private void doAuth(HttpServletRequest req, HttpServletResponse rsp, Deque<AuthenticationProfile> stack)
-            throws IOException, ServletException {
+    private void doAuth(HttpServletRequest req, HttpServletResponse rsp, Deque<AuthenticationProfile> stack) {
 
         boolean stop = false;
         while (!stop && !stack.isEmpty()) {
@@ -139,28 +138,28 @@ public class NegotiationFilter implements Filter {
             );
 
             switch (output.<Integer> get(Authn.InvokeKeys.RESULT)) {
-            case Authn.AuthResult.SUCCESS:
-                req.setAttribute(FiltersHelper.Constants.REQUEST_AUTH_RECORD_KEY,
-                    output.<ExtMap> get(Authn.InvokeKeys.AUTH_RECORD));
-                req.setAttribute(FiltersHelper.Constants.REQUEST_AUTH_TYPE_KEY,
-                    AuthType.NEGOTIATION);
-                req.setAttribute(FiltersHelper.Constants.REQUEST_PROFILE_KEY, profile.getName());
-                stack.clear();
-                break;
+                case Authn.AuthResult.SUCCESS:
+                    req.setAttribute(FiltersHelper.Constants.REQUEST_AUTH_RECORD_KEY,
+                        output.<ExtMap> get(Authn.InvokeKeys.AUTH_RECORD));
+                    req.setAttribute(FiltersHelper.Constants.REQUEST_AUTH_TYPE_KEY,
+                        AuthType.NEGOTIATION);
+                    req.setAttribute(FiltersHelper.Constants.REQUEST_PROFILE_KEY, profile.getName());
+                    stack.clear();
+                    break;
 
-            case Authn.AuthResult.NEGOTIATION_UNAUTHORIZED:
-                stack.pop();
-                break;
+                case Authn.AuthResult.NEGOTIATION_UNAUTHORIZED:
+                    stack.pop();
+                    break;
 
-            case Authn.AuthResult.NEGOTIATION_INCOMPLETE:
-                stop = true;
-                break;
+                case Authn.AuthResult.NEGOTIATION_INCOMPLETE:
+                    stop = true;
+                    break;
 
-            default:
-                log.error("Unexpected authentication result. AuthResult code is {}",
-                    output.<Integer> get(Authn.InvokeKeys.RESULT));
-                stack.pop();
-                break;
+                default:
+                    log.error("Unexpected authentication result. AuthResult code is {}",
+                        output.<Integer> get(Authn.InvokeKeys.RESULT));
+                    stack.pop();
+                    break;
             }
         }
     }

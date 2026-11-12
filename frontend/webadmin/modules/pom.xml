@@ -4,7 +4,7 @@
   <parent>
     <groupId>org.ovirt.engine.ui</groupId>
     <artifactId>webadmin-all</artifactId>
-    <version>4.4.0-SNAPSHOT</version>
+    <version>4.5.8-SNAPSHOT</version>
   </parent>
   <artifactId>webadmin-modules</artifactId>
   <packaging>pom</packaging>
@@ -21,15 +21,6 @@
     <module>webadmin</module>
   </modules>
   <properties>
-    <aspectj.version>1.9.3.RC1</aspectj.version>
-    <gwtp.version>1.6</gwtp.version>
-    <guice.version>4.1.0</guice.version>
-    <gin.version>2.1.2</gin.version>
-    <!-- gwtbootstrap3 version -->
-    <gwtbootstrap3.version>0.9.4</gwtbootstrap3.version>
-    <maven-resources-plugin.version>2.5</maven-resources-plugin.version>
-    <maven-clean-plugin.version>2.4.1</maven-clean-plugin.version>
-    <maven-processor-plugin.version>3.3.3</maven-processor-plugin.version>
     <!-- Directory where JSR-269 annotation processors generate their sources -->
     <generatedSourcesDirectory>generated-sources/annotations</generatedSourcesDirectory>
     <!-- Directory where GWT compiler generates normally-transient types for review (-gen compiler option) -->
@@ -61,26 +52,6 @@
     <!-- GWT CSS obfuscation style. production should be 'obf', use 'pretty' in development for easier css debugging -->
     <gwt.cssResourceStyle>obf</gwt.cssResourceStyle>
   </properties>
-  <dependencyManagement>
-    <dependencies>
-      <!-- Exclude Guice dependencies from GIN -->
-      <dependency>
-        <groupId>com.google.gwt.inject</groupId>
-        <artifactId>gin</artifactId>
-        <version>${gin.version}</version>
-        <exclusions>
-          <exclusion>
-            <groupId>com.google.inject</groupId>
-            <artifactId>guice</artifactId>
-          </exclusion>
-          <exclusion>
-            <groupId>com.google.inject.extensions</groupId>
-            <artifactId>guice-assistedinject</artifactId>
-          </exclusion>
-        </exclusions>
-      </dependency>
-    </dependencies>
-  </dependencyManagement>
   <dependencies>
     <dependency>
       <groupId>javax.annotation</groupId>
@@ -90,15 +61,10 @@
   <build>
     <pluginManagement>
       <plugins>
-
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-compiler-plugin</artifactId>
           <configuration>
-            <source>1.8</source>
-            <target>1.8</target>
-            <release>8</release>
-
             <!-- We use maven-processor-plugin to invoke annotation processors -->
             <compilerArgument>-proc:none</compilerArgument>
             <excludes>
@@ -110,7 +76,6 @@
         <plugin>
           <groupId>org.bsc.maven</groupId>
           <artifactId>maven-processor-plugin</artifactId>
-          <version>${maven-processor-plugin.version}</version>
           <configuration>
             <outputDirectory>${project.build.directory}/${generatedSourcesDirectory}</outputDirectory>
           </configuration>
@@ -118,14 +83,7 @@
 
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
-          <artifactId>maven-resources-plugin</artifactId>
-          <version>${maven-resources-plugin.version}</version>
-        </plugin>
-
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-clean-plugin</artifactId>
-          <version>${maven-clean-plugin.version}</version>
           <configuration>
             <filesets>
               <fileset>
@@ -141,23 +99,6 @@
         <plugin>
           <groupId>org.codehaus.mojo</groupId>
           <artifactId>gwt-maven-plugin</artifactId>
-          <dependencies>
-            <dependency>
-              <groupId>com.google.gwt</groupId>
-              <artifactId>gwt-user</artifactId>
-              <version>${gwt.version}</version>
-            </dependency>
-            <dependency>
-              <groupId>com.google.gwt</groupId>
-              <artifactId>gwt-dev</artifactId>
-              <version>${gwt.version}</version>
-            </dependency>
-            <dependency>
-              <groupId>com.google.gwt</groupId>
-              <artifactId>gwt-servlet</artifactId>
-              <version>${gwt.version}</version>
-            </dependency>
-          </dependencies>
           <configuration>
             <logLevel>${gwt.logLevel}</logLevel>
             <port>${engine.port.http}</port>
@@ -165,7 +106,7 @@
             <noServer>true</noServer>
             <bindAddress>0.0.0.0</bindAddress>
             <gen>${gwtGenDirectory}</gen>
-            <extraJvmArgs>${aspectj.agent} ${gwt-plugin.extraJvmArgs} ${gwt.dontPrune}</extraJvmArgs>
+            <extraJvmArgs>${aspectj.agent} ${gwt-plugin.extraJvmArgs} ${gwt.dontPrune} --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED</extraJvmArgs>
             <copyWebapp>true</copyWebapp>
             <failOnError>true</failOnError>
             <!-- Use Classic Dev Mode (debug as remote Java application) by default -->
@@ -197,13 +138,13 @@
       <id>all-user-agents</id>
       <properties>
         <!-- See [gwt-user.jar:com/google/gwt/useragent/UserAgent.gwt.xml] for a complete list -->
-        <gwt.userAgent>ie10,gecko1_8,safari</gwt.userAgent>
+        <gwt.userAgent>gecko1_8,safari</gwt.userAgent>
       </properties>
     </profile>
     <profile>
       <id>all-langs</id>
       <properties>
-        <gwt.locale>en_US,es_ES,fr_FR,ja_JP,pt_BR,zh_CN,de_DE,ko_KR,it_IT,cs_CZ</gwt.locale>
+        <gwt.locale>en_US,es_ES,fr_FR,ja_JP,pt_BR,zh_CN,de_DE,ko_KR,it_IT,cs_CZ,ka_GE</gwt.locale>
       </properties>
     </profile>
     <profile>
@@ -218,7 +159,6 @@
               <groupId>org.codehaus.mojo</groupId>
               <artifactId>gwt-maven-plugin</artifactId>
               <configuration>
-                <jvm>/lib/jvm/jre-1.8.0-openjdk/bin/java</jvm>
                 <style>DETAILED</style>
                 <draftCompile>true</draftCompile>
                 <!--
@@ -243,7 +183,7 @@
               <artifactId>gwt-maven-plugin</artifactId>
               <dependencies>
                 <dependency>
-                  <groupId>com.google.gwt</groupId>
+                  <groupId>org.gwtproject</groupId>
                   <artifactId>gwt-codeserver</artifactId>
                   <version>${gwt.version}</version>
                 </dependency>

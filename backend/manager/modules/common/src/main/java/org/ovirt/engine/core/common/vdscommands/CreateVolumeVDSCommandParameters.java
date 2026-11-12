@@ -7,27 +7,117 @@ import org.ovirt.engine.core.common.utils.ToStringBuilder;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.Version;
 
-public class CreateVolumeVDSCommandParameters extends CreateImageVDSCommandParameters {
+public class CreateVolumeVDSCommandParameters extends StoragePoolDomainAndGroupIdBaseVDSCommandParameters {
+
+    private Version poolCompatibilityVersion;
+    private DiskContentType diskContentType;
+    private long _imageSizeInBytes;
+    private VolumeType _imageType;
+    private long imageInitialSizeInBytes;
+    private boolean shouldAddBitmaps;
+    private boolean legal = true;
+    private Integer sequenceNumber;
+    private Guid bitmap = null;
+
+    // Initialize with Guid.Empty for creating a new image.
+    private Guid _imageId;
+    private Guid privateSourceImageGroupId;
+
     public CreateVolumeVDSCommandParameters(Guid storagePoolId,
             Guid storageDomainId,
             Guid imageGroupId,
             Guid imageId,
-            long imgSizeInBytes,
+            long imageSizeInBytes,
             VolumeType imageType,
             VolumeFormat volFormat,
             Guid sourceImageGroupId,
             Guid newImageId,
             String newImageDescription,
             Version compatibilityVersion,
-            DiskContentType diskContentType) {
-        super(storagePoolId, storageDomainId, imageGroupId, imgSizeInBytes, imageType, volFormat, newImageId,
-                newImageDescription, compatibilityVersion, diskContentType);
+            DiskContentType diskContentType,
+            Integer sequenceNumber) {
+        super(storagePoolId, storageDomainId, imageGroupId);
+        _imageSizeInBytes = imageSizeInBytes;
+        _imageType = imageType;
+        this.setVolumeFormat(volFormat);
+        setNewImageID(newImageId);
+        setNewImageDescription(newImageDescription);
+        setPoolCompatibilityVersion(compatibilityVersion);
+        setDiskContentType(diskContentType);
         _imageId = imageId;
         setSourceImageGroupId(sourceImageGroupId);
+        this.sequenceNumber = sequenceNumber;
     }
 
-    private Guid _imageId;
-    private Guid privateSourceImageGroupId;
+    public CreateVolumeVDSCommandParameters() {
+        _imageType = VolumeType.Unassigned;
+        privateVolumeFormat = VolumeFormat.UNUSED0;
+        privateNewImageID = Guid.Empty;
+        _imageId = Guid.Empty;
+        privateSourceImageGroupId = Guid.Empty;
+    }
+
+    public long getImageSizeInBytes() {
+        return _imageSizeInBytes;
+    }
+
+    public VolumeType getImageType() {
+        return _imageType;
+    }
+
+    public long getImageInitialSizeInBytes() {
+        return imageInitialSizeInBytes;
+    }
+
+    public void setImageInitialSizeInBytes(long imageInitialSizeInBytes) {
+        this.imageInitialSizeInBytes = imageInitialSizeInBytes;
+    }
+
+    private VolumeFormat privateVolumeFormat;
+
+    public VolumeFormat getVolumeFormat() {
+        return privateVolumeFormat;
+    }
+
+    protected void setVolumeFormat(VolumeFormat value) {
+        privateVolumeFormat = value;
+    }
+
+    private Guid privateNewImageID;
+
+    public Guid getNewImageID() {
+        return privateNewImageID;
+    }
+
+    protected void setNewImageID(Guid value) {
+        privateNewImageID = value;
+    }
+
+    private String privateNewImageDescription;
+
+    public String getNewImageDescription() {
+        return privateNewImageDescription;
+    }
+
+    protected void setNewImageDescription(String value) {
+        privateNewImageDescription = value;
+    }
+
+    public Version getPoolCompatibilityVersion() {
+        return poolCompatibilityVersion;
+    }
+
+    public void setPoolCompatibilityVersion(Version poolCompatibilityVersion) {
+        this.poolCompatibilityVersion = poolCompatibilityVersion;
+    }
+
+    public DiskContentType getDiskContentType() {
+        return diskContentType;
+    }
+
+    public void setDiskContentType(DiskContentType diskContentType) {
+        this.diskContentType = diskContentType;
+    }
 
     public Guid getImageId() {
         return _imageId;
@@ -41,15 +131,52 @@ public class CreateVolumeVDSCommandParameters extends CreateImageVDSCommandParam
         privateSourceImageGroupId = value;
     }
 
-    public CreateVolumeVDSCommandParameters() {
-        _imageId = Guid.Empty;
-        privateSourceImageGroupId = Guid.Empty;
+    public boolean shouldAddBitmaps() {
+        return shouldAddBitmaps;
+    }
+
+    public void setShouldAddBitmaps(boolean shouldAddBitmaps) {
+        this.shouldAddBitmaps = shouldAddBitmaps;
+    }
+
+    public boolean isLegal() {
+        return legal;
+    }
+
+    public void setLegal(boolean legal) {
+        this.legal = legal;
+    }
+
+    public Integer getSequenceNumber() {
+        return sequenceNumber;
+    }
+
+    public void setSequenceNumber(Integer sequenceNumber) {
+        this.sequenceNumber = sequenceNumber;
     }
 
     @Override
     protected ToStringBuilder appendAttributes(ToStringBuilder tsb) {
         return super.appendAttributes(tsb)
+                .append("imageSizeInBytes", getImageSizeInBytes())
+                .append("volumeFormat", getVolumeFormat())
+                .append("newImageId", getNewImageID())
+                .append("imageType", getImageType())
+                .append("newImageDescription", getNewImageDescription())
+                .append("imageInitialSizeInBytes", getImageInitialSizeInBytes())
                 .append("imageId", getImageId())
-                .append("sourceImageGroupId", getSourceImageGroupId());
+                .append("sourceImageGroupId", getSourceImageGroupId())
+                .append("shouldAddBitmaps", shouldAddBitmaps())
+                .append("legal", isLegal())
+                .append("sequenceNumber", getSequenceNumber())
+                .append("bitmap", getBitmap());
+    }
+
+    public Guid getBitmap() {
+        return bitmap;
+    }
+
+    public void setBitmap(Guid bitmap) {
+        this.bitmap = bitmap;
     }
 }

@@ -13,6 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.ovirt.engine.core.common.businessentities.NumaNodeStatistics;
 import org.ovirt.engine.core.common.businessentities.NumaTuneMode;
+import org.ovirt.engine.core.common.businessentities.VM;
 import org.ovirt.engine.core.common.businessentities.VdsNumaNode;
 import org.ovirt.engine.core.common.businessentities.VmNumaNode;
 import org.ovirt.engine.core.compat.Guid;
@@ -63,17 +64,15 @@ public class NumaSettingFactoryTest {
                 NumaSettingFactory.buildCpuPinningWithNumaSetting(vmNumaNodes, vdsNumaNodes);
         assertThat(cpuPinning).isEmpty();
         Map<String, Object> mapping =
-                NumaSettingFactory.buildVmNumatuneSetting(NumaTuneMode.INTERLEAVE, vmNumaNodes);
+                NumaSettingFactory.buildVmNumatuneSetting(new VM(), vmNumaNodes);
         assertThat(mapping).doesNotContainKeys(VdsProperties.NUMA_TUNE_MODE, VdsProperties.NUMA_TUNE_NODESET);
     }
 
     @Test
     public void testBuildVmNumatuneSetting() {
         Map<String, Object> numaTune =
-                NumaSettingFactory.buildVmNumatuneSetting(numaTuneMode, vmNumaNodes);
-        assertEquals(2, numaTune.size());
-        assertTrue(numaTune.containsKey(VdsProperties.NUMA_TUNE_MODE));
-        assertEquals(NumaTuneMode.INTERLEAVE.getValue(), numaTune.get(VdsProperties.NUMA_TUNE_MODE));
+                NumaSettingFactory.buildVmNumatuneSetting(new VM(), vmNumaNodes);
+        assertEquals(1, numaTune.size());
 
         assertTrue(numaTune.containsKey(VdsProperties.NUMA_TUNE_MEMNODES));
         List<Map<String, String>> memNodes =
@@ -81,9 +80,11 @@ public class NumaSettingFactoryTest {
 
         assertEquals("0", memNodes.get(0).get(VdsProperties.NUMA_TUNE_VM_NODE_INDEX));
         assertEquals("0", memNodes.get(0).get(VdsProperties.NUMA_TUNE_NODESET));
+        assertEquals(NumaTuneMode.INTERLEAVE.getValue(), memNodes.get(0).get(VdsProperties.NUMA_TUNE_MODE));
 
         assertEquals("1", memNodes.get(1).get(VdsProperties.NUMA_TUNE_VM_NODE_INDEX));
         assertEquals("1", memNodes.get(1).get(VdsProperties.NUMA_TUNE_NODESET));
+        assertEquals(NumaTuneMode.STRICT.getValue(), memNodes.get(1).get(VdsProperties.NUMA_TUNE_MODE));
     }
 
     private static List<VmNumaNode> createTestVmNumaNodes() {
@@ -95,6 +96,7 @@ public class NumaSettingFactoryTest {
         newVmNumaNode.setIndex(0);
         newVmNumaNode.setMemTotal(1024);
         newVmNumaNode.getVdsNumaNodeList().add(0);
+        newVmNumaNode.setNumaTuneMode(NumaTuneMode.INTERLEAVE);
         newVmNodes.add(newVmNumaNode);
 
         newVmNumaNode = new VmNumaNode();
@@ -103,6 +105,7 @@ public class NumaSettingFactoryTest {
         newVmNumaNode.setIndex(1);
         newVmNumaNode.setMemTotal(1024);
         newVmNumaNode.getVdsNumaNodeList().add(1);
+        newVmNumaNode.setNumaTuneMode(NumaTuneMode.STRICT);
         newVmNodes.add(newVmNumaNode);
 
         return newVmNodes;
@@ -116,7 +119,7 @@ public class NumaSettingFactoryTest {
 
         List<VdsNumaNode> newVdsNodes = new ArrayList<>();
 
-        VdsNumaNode newVdsNumaNode= new VdsNumaNode();
+        VdsNumaNode newVdsNumaNode = new VdsNumaNode();
         newVdsNumaNode.setCpuIds(generateCpuList(0, 4));
         newVdsNumaNode.setId(Guid.newGuid());
         newVdsNumaNode.setIndex(0);
@@ -124,7 +127,7 @@ public class NumaSettingFactoryTest {
         newVdsNumaNode.setNumaNodeStatistics(newNodeStatistics);
         newVdsNodes.add(newVdsNumaNode);
 
-        newVdsNumaNode= new VdsNumaNode();
+        newVdsNumaNode = new VdsNumaNode();
         newVdsNumaNode.setCpuIds(generateCpuList(4, 4));
         newVdsNumaNode.setId(Guid.newGuid());
         newVdsNumaNode.setIndex(1);

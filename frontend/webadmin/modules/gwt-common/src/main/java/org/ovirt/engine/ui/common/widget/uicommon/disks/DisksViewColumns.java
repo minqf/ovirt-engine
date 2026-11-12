@@ -50,7 +50,6 @@ public class DisksViewColumns {
 
     private static final Predicate<Disk> diskImagePredicate =
             disk -> disk.getDiskStorageType() == DiskStorageType.IMAGE ||
-                    disk.getDiskStorageType() == DiskStorageType.CINDER ||
                     disk.getDiskStorageType() == DiskStorageType.MANAGED_BLOCK_STORAGE;
 
     public static AbstractTextColumn<Disk> getAliasColumn(String sortBy) {
@@ -99,7 +98,7 @@ public class DisksViewColumns {
                     DiskImage diskImage = (DiskImage) object;
                     List<String> quotaNamesArr = diskImage.getQuotaNames();
                     if (quotaNamesArr != null) {
-                        value = String.join(", ", quotaNamesArr);//$NON-NLS-1$
+                        value = String.join(", ", quotaNamesArr); //$NON-NLS-1$
                     }
                 }
                 return value;
@@ -227,7 +226,7 @@ public class DisksViewColumns {
         }
     };
 
-    public static final DiskContainersColumn getdiskContainersColumn(String sortBy){
+    public static final DiskContainersColumn getdiskContainersColumn(String sortBy) {
         DiskContainersColumn diskContainersColumn = new DiskContainersColumn();
         makeSortable(diskContainersColumn, sortBy);
         return diskContainersColumn;
@@ -351,6 +350,16 @@ public class DisksViewColumns {
             }
         };
 
+        return makeSortable(column, sortBy);
+    }
+
+    public static final AbstractFullDateTimeColumn<Disk> getSnapshotCreationDateColumn(String sortBy) {
+        AbstractFullDateTimeColumn<Disk> column = new AbstractFullDateTimeColumn<Disk>() {
+            @Override
+            protected Date getRawValue(Disk object) {
+                return diskImagePredicate.test(object) ? ((DiskImage) object).getSnapshotCreationDate() : null;
+            }
+        };
         return makeSortable(column, sortBy);
     }
 
@@ -523,19 +532,8 @@ public class DisksViewColumns {
         return makeSortable(column, sortBy);
     }
 
-    public static final AbstractTextColumn<Disk> getCinderVolumeTypeColumn(String sortBy) {
-        AbstractTextColumn<Disk> column = new AbstractTextColumn<Disk>() {
-            @Override
-            public String getValue(Disk object) {
-                return object.getCinderVolumeType();
-            }
-        };
-
-        return makeSortable(column, sortBy);
-    }
-
     public static <C extends AbstractTextColumn<T>, T> C makeSortable(C column, String sortBy) {
-        if (sortBy == null ) {
+        if (sortBy == null) {
             // Client sorting
             column.makeSortable();
         } else if (!sortBy.equals(constants.empty())) {

@@ -37,7 +37,7 @@ public class BackendVmSessionsResource extends AbstractBackendCollectionResource
     @Override
     public Sessions list() {
         Object obj = getEntity(entityType, QueryType.GetVmByVmId, new IdQueryParameters(vmId), vmId.toString(), true);
-        VM vm = (VM)obj;
+        VM vm = (VM) obj;
         Sessions sessions = VmMapper.map(vm, new Sessions());
         org.ovirt.engine.api.model.Vm vmModel = new org.ovirt.engine.api.model.Vm();
         vmModel.setId(vm.getId().toString());
@@ -138,9 +138,9 @@ public class BackendVmSessionsResource extends AbstractBackendCollectionResource
     }
 
     private void addLinkToUser(Session session) {
-         ServiceTreeNode node = ServiceTree.getNode(UsersResource.class);
-         String href = CurrentManager.get().getAbsolutePath(node.getPath(), session.getUser().getId());
-         session.getUser().setHref(href);
+        ServiceTreeNode node = ServiceTree.getNode(UsersResource.class);
+        String href = CurrentManager.get().getAbsolutePath(node.getPath(), session.getUser().getId());
+        session.getUser().setHref(href);
     }
 
     private BackendUserResource getUserResource() {

@@ -1,5 +1,6 @@
 package org.ovirt.engine.core.common.businessentities.storage;
 
+import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
 
@@ -13,7 +14,7 @@ public class ManagedBlockStorageDisk extends DiskImage {
 
     private Map<String, Object> connectionInfo;
 
-    private CinderVolumeDriver cinderVolumeDriver;
+    private ManagedVolumeDriver managedVolumeDriver;
 
     @Override
     public DiskStorageType getDiskStorageType() {
@@ -21,6 +22,11 @@ public class ManagedBlockStorageDisk extends DiskImage {
     }
 
     public ManagedBlockStorageDisk() {
+    }
+
+    public ManagedBlockStorageDisk(DiskImage diskImage) {
+        super(diskImage);
+        setStorageTypes(Arrays.asList(StorageType.MANAGED_BLOCK_STORAGE));
     }
 
     public Map<String, Object> getDevice() {
@@ -39,12 +45,12 @@ public class ManagedBlockStorageDisk extends DiskImage {
         this.connectionInfo = connectionInfo;
     }
 
-    public CinderVolumeDriver getCinderVolumeDriver() {
-        return cinderVolumeDriver;
+    public ManagedVolumeDriver getManagedVolumeDriver() {
+        return managedVolumeDriver;
     }
 
-    public void setCinderVolumeDriver(CinderVolumeDriver cinderVolumeDriver) {
-        this.cinderVolumeDriver = cinderVolumeDriver;
+    public void setManagedVolumeDriver(ManagedVolumeDriver managedVolumeDriver) {
+        this.managedVolumeDriver = managedVolumeDriver;
     }
 
     @Override
@@ -61,11 +67,11 @@ public class ManagedBlockStorageDisk extends DiskImage {
         ManagedBlockStorageDisk that = (ManagedBlockStorageDisk) o;
         return Objects.equals(device, that.device) &&
                 Objects.equals(connectionInfo, that.connectionInfo) &&
-                cinderVolumeDriver == that.cinderVolumeDriver;
+                managedVolumeDriver == that.managedVolumeDriver;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), device, connectionInfo, cinderVolumeDriver);
+        return Objects.hash(super.hashCode(), device, connectionInfo, managedVolumeDriver);
     }
 }

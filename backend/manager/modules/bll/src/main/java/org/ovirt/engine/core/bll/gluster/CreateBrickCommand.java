@@ -1,7 +1,6 @@
 package org.ovirt.engine.core.bll.gluster;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,7 +31,9 @@ import org.ovirt.engine.core.common.utils.ansible.AnsibleExecutor;
 import org.ovirt.engine.core.common.utils.ansible.AnsibleReturnCode;
 import org.ovirt.engine.core.common.utils.ansible.AnsibleReturnValue;
 import org.ovirt.engine.core.dao.gluster.StorageDeviceDao;
-import org.ovirt.engine.core.utils.JsonHelper;
+
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 
 public class CreateBrickCommand extends VdsCommand<CreateBrickParameters> {
 
@@ -142,7 +143,7 @@ public class CreateBrickCommand extends VdsCommand<CreateBrickParameters> {
 
     private void runAnsibleCreateBrickPlaybook() throws IOException, InterruptedException {
 
-        List<String> disks = new ArrayList<>();
+        ArrayNode disks = JsonNodeFactory.instance.arrayNode();
         Double totalSize = 0.0;
         for (StorageDevice device : getParameters().getDisks()) {
             disks.add(device.getDevPath());
@@ -152,7 +153,7 @@ public class CreateBrickCommand extends VdsCommand<CreateBrickParameters> {
         if (totalSize < MIN_VG_SIZE) {
             poolmetadatsize = MIN_METADATA_PERCENT * totalSize;
         } else {
-            poolmetadatsize =  Double.valueOf(DEFAULT_METADATA_SIZE_MB);
+            poolmetadatsize = Double.valueOf(DEFAULT_METADATA_SIZE_MB);
         }
         totalSize = totalSize - poolmetadatsize;
 
@@ -165,9 +166,9 @@ public class CreateBrickCommand extends VdsCommand<CreateBrickParameters> {
                 : getParameters().getNoOfPhysicalDisksInRaidVolume();
 
         AnsibleCommandConfig commandConfig = new AnsibleCommandConfig()
-                .hosts(getVds())
+                .host(getVds())
                 .variable("ssd", ssdDevice)
-                .variable("disks", JsonHelper.objectToJson(disks, false))
+                .variable("disks", disks)
                 .variable("vgname", "RHGS_vg_" + getParameters().getLvName())
                 .variable("size", totalSize.toString())
                 .variable("diskcount", diskCount)
@@ -185,11 +186,10 @@ public class CreateBrickCommand extends VdsCommand<CreateBrickParameters> {
                 .logFileDirectory(CreateBrickCommand.CREATE_BRICK_LOG_DIRECTORY)
                 .logFilePrefix("ovirt-gluster-brick-ansible")
                 .logFileName(getVds().getHostName())
-                .logFileSuffix(getCorrelationId())
                 .playAction("Create Brick")
                 .playbook(AnsibleConstants.CREATE_BRICK_PLAYBOOK);
 
-         AnsibleReturnValue ansibleReturnValue = ansibleExecutor.runCommand(commandConfig);
+        AnsibleReturnValue ansibleReturnValue = ansibleExecutor.runCommand(commandConfig);
         if (ansibleReturnValue.getAnsibleReturnCode() != AnsibleReturnCode.OK) {
             log.error("Failed to execute Ansible create brick role. Please check logs for more details: {}",
                     ansibleReturnValue.getLogFile());

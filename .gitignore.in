@@ -4,6 +4,7 @@
 # mvn folders
 ###########################
 target
+repository/
 
 # build-time files
 ###########################
@@ -27,6 +28,7 @@ maven-eclipse.xml
 *.iml
 .idea
 .pydevproject
+.vscode
 
 # python files
 ###########################

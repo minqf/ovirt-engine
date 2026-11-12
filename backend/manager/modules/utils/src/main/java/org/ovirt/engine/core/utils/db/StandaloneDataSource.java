@@ -49,7 +49,7 @@ public class StandaloneDataSource implements DataSource {
         // Load the driver:
         try {
             Class.forName(driver);
-        } catch(ClassNotFoundException exception) {
+        } catch (ClassNotFoundException exception) {
             throw new SQLException("Failed to load database driver \"" + driver + "\".", exception);
         }
 
@@ -58,12 +58,12 @@ public class StandaloneDataSource implements DataSource {
 
         // Register a shutdown hook to close the connection when finishing:
         Runtime.getRuntime().addShutdownHook(
-           new Thread() {
-               @Override
-               public void run() {
-                   closeConnection();
-               }
-           }
+            new Thread() {
+                @Override
+                public void run() {
+                    closeConnection();
+                }
+            }
         );
     }
 
@@ -90,7 +90,7 @@ public class StandaloneDataSource implements DataSource {
             if (connection != null) {
                 connection.close();
             }
-        } catch(SQLException exception) {
+        } catch (SQLException exception) {
             log.error("Can't close connection.", exception);
         }
         connection = null;
@@ -119,7 +119,7 @@ public class StandaloneDataSource implements DataSource {
                 openConnection();
             }
             checkConnection();
-        } catch(SQLException exception) {
+        } catch (SQLException exception) {
             log.warn("Can't check the connection, will close it and open a new one.", exception);
             closeConnection();
             openConnection();

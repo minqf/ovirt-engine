@@ -10,7 +10,7 @@
   <parent>
     <groupId>org.ovirt.engine.ui</groupId>
     <artifactId>brands-all</artifactId>
-    <version>4.4.0-SNAPSHOT</version>
+    <version>4.5.8-SNAPSHOT</version>
   </parent>
 
   <artifactId>ovirt-brand</artifactId>
@@ -36,6 +36,13 @@
            <outputPath>${project.basedir}/target/generated-resources</outputPath>
            <generateSourceMap>false</generateSourceMap>
          </configuration>
+         <dependencies>
+          <dependency>
+            <groupId>io.bit3</groupId>
+            <artifactId>jsass</artifactId>
+            <version>${jsass.version}</version>
+          </dependency>
+         </dependencies>
       </plugin>
 
       <plugin>
@@ -78,6 +85,13 @@
               <sourceMapOutputPath>${project.basedir}/target/generated-resources</sourceMapOutputPath>
               <embedSourceContentsInSourceMap>true</embedSourceContentsInSourceMap>
             </configuration>
+            <dependencies>
+              <dependency>
+                <groupId>io.bit3</groupId>
+                <artifactId>jsass</artifactId>
+                <version>${jsass.version}</version>
+              </dependency>
+            </dependencies>
           </plugin>
         </plugins>
       </build>

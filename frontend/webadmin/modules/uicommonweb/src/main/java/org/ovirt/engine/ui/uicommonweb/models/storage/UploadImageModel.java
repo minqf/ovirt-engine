@@ -2,6 +2,7 @@ package org.ovirt.engine.ui.uicommonweb.models.storage;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.logging.Logger;
 
 import org.ovirt.engine.core.common.action.ActionParametersBase;
@@ -9,6 +10,7 @@ import org.ovirt.engine.core.common.action.ActionType;
 import org.ovirt.engine.core.common.action.AddDiskParameters;
 import org.ovirt.engine.core.common.action.TransferDiskImageParameters;
 import org.ovirt.engine.core.common.action.TransferImageStatusParameters;
+import org.ovirt.engine.core.common.businessentities.StorageDomain;
 import org.ovirt.engine.core.common.businessentities.StorageFormatType;
 import org.ovirt.engine.core.common.businessentities.StoragePool;
 import org.ovirt.engine.core.common.businessentities.storage.Disk;
@@ -17,19 +19,23 @@ import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.DiskStorageType;
 import org.ovirt.engine.core.common.businessentities.storage.ImageTransfer;
 import org.ovirt.engine.core.common.businessentities.storage.ImageTransferPhase;
+import org.ovirt.engine.core.common.businessentities.storage.TransferClientType;
 import org.ovirt.engine.core.common.businessentities.storage.TransferType;
 import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
-import org.ovirt.engine.core.common.config.ConfigValues;
+import org.ovirt.engine.core.common.businessentities.storage.VolumeType;
+import org.ovirt.engine.core.common.queries.IdQueryParameters;
+import org.ovirt.engine.core.common.queries.QueryReturnValue;
+import org.ovirt.engine.core.common.queries.QueryType;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.StringHelper;
 import org.ovirt.engine.ui.frontend.Frontend;
 import org.ovirt.engine.ui.uicommonweb.ICommandTarget;
-import org.ovirt.engine.ui.uicommonweb.Linq;
 import org.ovirt.engine.ui.uicommonweb.UICommand;
 import org.ovirt.engine.ui.uicommonweb.dataprovider.AsyncDataProvider;
 import org.ovirt.engine.ui.uicommonweb.help.HelpTag;
 import org.ovirt.engine.ui.uicommonweb.models.ConfirmationModel;
 import org.ovirt.engine.ui.uicommonweb.models.EntityModel;
+import org.ovirt.engine.ui.uicommonweb.models.ListModel;
 import org.ovirt.engine.ui.uicommonweb.models.Model;
 import org.ovirt.engine.ui.uicommonweb.models.vms.AbstractDiskModel;
 import org.ovirt.engine.ui.uicommonweb.models.vms.NewDiskModel;
@@ -161,30 +167,48 @@ public class UploadImageModel extends Model implements ICommandTarget {
     public UploadImageModel(final Guid limitToStorageDomainId, final DiskImage resumeUploadDisk) {
         if (resumeUploadDisk == null) {
             setDiskModel(new NewDiskModel() {
+                private final boolean isChangeable = limitToStorageDomainId == null;
+
                 @Override
                 public void initialize() {
                     super.initialize();
 
-                    getStorageDomain().setIsChangeable(limitToStorageDomainId == null);
-                    getDataCenter().setIsChangeable(limitToStorageDomainId == null);
+                    getDataCenter().setIsChangeable(isChangeable);
+                    if (!isChangeable) {
+                        // Set the selected item on the storage domains and data centers lists.
+                        Frontend.getInstance().runQuery(
+                                QueryType.GetStorageDomainListById,
+                                new IdQueryParameters(limitToStorageDomainId),
+                                new AsyncQuery<QueryReturnValue>(returnValue -> {
+                                    ArrayList<StorageDomain> domains = returnValue.getReturnValue();
+                                    if (!domains.isEmpty()) {
+                                        StorageDomain storageDomain = domains.get(0);
+                                        // Set the selected item on the storage domains list.
+                                        List<StorageDomain> availableDomains = new ArrayList<>();
+                                        availableDomains.add(storageDomain);
+                                        getStorageDomain().setItems(availableDomains);
+                                        Guid dcId = storageDomain.getStoragePoolId();
+                                        if (!Guid.isNullOrEmpty(dcId)) {
+                                            // Set selected data center if the list of data centers is populated.
+                                            if (!selectDataCenter(dcId)) {
+                                                // If the data center is not there then need to listen to the data centers list
+                                                // change to update the selected data center.
+                                                getDataCenter().getItemsChangedEvent()
+                                                    .addListener((ev, sender, args) -> selectDataCenter(dcId));
+                                            }
+                                        }
+                                    }
+                                }));
+                    }
+                    getStorageDomain().setIsChangeable(isChangeable);
                     getStorageType().setIsChangeable(false);
                     getSize().setIsChangeable(false);
                 }
 
                 @Override
                 protected void updateStorageDomains(final StoragePool datacenter) {
-                    if (limitToStorageDomainId == null) {
+                    if (isChangeable) {
                         super.updateStorageDomains(datacenter);
-                    } else {
-                        AsyncDataProvider backend = AsyncDataProvider.getInstance();
-                        backend.getStorageDomainById(
-                                new AsyncQuery<>(storageDomain -> {
-                                    getStorageDomain().setSelectedItem(storageDomain);
-                                    backend.getDataCentersByStorageDomain(new AsyncQuery<>(storagePools -> {
-                                        getDataCenter().setSelectedItem(Linq.firstOrNull(storagePools));
-                                    }), limitToStorageDomainId);
-                                }),
-                                limitToStorageDomainId);
                     }
                 }
 
@@ -196,6 +220,23 @@ public class UploadImageModel extends Model implements ICommandTarget {
                 @Override
                 protected boolean performUpdateHosts() {
                     return true;
+                }
+
+                private boolean selectDataCenter(Guid dcId) {
+                    ListModel<StoragePool> dcList = getDataCenter();
+                    // Find a data center with the desired Id
+                    Optional<StoragePool> dataCenter = dcList.getItems()
+                            .stream()
+                            .filter(dc -> dcId.equals(dc.getId()))
+                            .findFirst();
+                    if (dataCenter.isPresent()) {
+                        // Activate this data center in the data center dropdown list
+                        dcList.setSelectedItem(dataCenter.get());
+                        return true;
+                    }
+                    // Since we populate data centers asynchronously, we may have a situation when the needed
+                    // data center is still not there. So, need to wait...
+                    return false;
                 }
             });
         } else {
@@ -246,9 +287,13 @@ public class UploadImageModel extends Model implements ICommandTarget {
             if (imageInfoModel.getContentType() == DiskContentType.ISO) {
                 getDiskModel().getAlias().setEntity(imageInfoModel.getFileName());
                 getDiskModel().getDescription().setEntity(imageInfoModel.getFileName());
+                getDiskModel().getIsIncrementalBackup().setEntity(false);
+                getDiskModel().getIsIncrementalBackup().setIsChangeable(false);
             } else {
                 getDiskModel().getAlias().setEntity(null);
                 getDiskModel().getDescription().setEntity(null);
+                getDiskModel().getIsIncrementalBackup().setEntity(true);
+                getDiskModel().getIsIncrementalBackup().setIsChangeable(true);
             }
             getDiskModel().getSize().setEntity(getVirtualSizeInGB());
         });
@@ -266,12 +311,14 @@ public class UploadImageModel extends Model implements ICommandTarget {
     }
 
     public void onUpload() {
+
         if (flush()) {
             if (getProgress() != null) {
                 return;
             }
 
             if (!isResumeUpload) {
+                setConnection(createRequest(), false);
                 initiateNewUpload();
             } else {
                 initiateResumeUpload();
@@ -279,17 +326,21 @@ public class UploadImageModel extends Model implements ICommandTarget {
         }
     }
 
-    private void onTest() {
-        String imageProxyAddress = (String) AsyncDataProvider.getInstance().getConfigValuePreConverted(
-                ConfigValues.ImageProxyAddress);
-        String url = "https://" + imageProxyAddress + "/info/"; //$NON-NLS-1$ //$NON-NLS-2$
+    private void handleConnectionError(boolean isTest, Throwable ex) {
+        if (isTest) {
+            getTestResponse().getEntityChangedEvent().raise(this, EventArgs.EMPTY);
+            log.severe("Connection to ovirt-imageio-image has failed:" + ex.getMessage()); //$NON-NLS-1$
+        } else {
+            log.info("Failed to initiate ovirt-imageio session for image uploading:" + ex.getMessage()); //$NON-NLS-1$
+        }
+    }
 
-        RequestBuilder requestBuilder = new RequestBuilder(RequestBuilder.GET, url);
+    private void setConnection(RequestBuilder requestBuilder, boolean isTest) {
         try {
             requestBuilder.sendRequest(null, new RequestCallback() {
                 @Override
                 public void onError(Request request, Throwable ex) {
-                    onTestError(ex);
+                    handleConnectionError(isTest, ex);
                 }
 
                 @Override
@@ -297,18 +348,22 @@ public class UploadImageModel extends Model implements ICommandTarget {
                     try {
                         getTestResponse().setEntity(response);
                     } catch (IllegalArgumentException ex) {
-                        onTestError(ex);
+                        handleConnectionError(isTest, ex);
                     }
                 }
             });
         } catch (RequestException ex) {
-            onTestError(ex);
+            handleConnectionError(isTest, ex);
         }
     }
 
-    private void onTestError(Throwable ex) {
-        getTestResponse().getEntityChangedEvent().raise(this, EventArgs.EMPTY);
-        log.severe("Connection to ovirt-imageio-image has failed:" + ex.getMessage()); //$NON-NLS-1$
+    private void onTest() {
+        setConnection(createRequest(), true);
+    }
+
+    private RequestBuilder createRequest() {
+        String url = AsyncDataProvider.getInstance().getImageioProxyUri() + "/info/"; //$NON-NLS-1$
+        return new RequestBuilder(RequestBuilder.GET, url);
     }
 
     public boolean flush() {
@@ -323,6 +378,14 @@ public class UploadImageModel extends Model implements ICommandTarget {
                     diskImage.getVolumeFormat(),
                     getDiskModel().getStorageDomain().getSelectedItem().getStorageType(), null, null));
             diskImage.setContentType(getImageInfoModel().getContentType());
+            if (diskImage.getVolumeFormat() != VolumeFormat.COW && getImageInfoModel().getContentType() == DiskContentType.ISO) {
+                // RAW+ThinProvision is not supported by a block storage. So, if you later try to move such ISO disk to
+                // a block storage the system will convert it automatically into COW+ThinProvision. But this corrupts
+                // bootable ISO disks.
+                // Since there is no much sense to upload ISO images as ThinProvision we can upload them as Preallocated
+                // and this would address the issue explained above.
+                diskImage.setVolumeType(VolumeType.Preallocated);
+            }
             return true;
         } else {
             setIsValid(false);
@@ -389,7 +452,6 @@ public class UploadImageModel extends Model implements ICommandTarget {
     private void initiateSilentResumeUpload() {
         TransferImageStatusParameters parameters = new TransferImageStatusParameters();
         parameters.setDiskId(getDiskModel().getDisk().getId());
-        parameters.setStorageDomainId(getDiskModel().getStorageDomain().getSelectedItem().getId());
         UploadImageManager.getInstance().resumeUpload(null, parameters, getProxyLocation(),
                 new AsyncQuery<>(errorMessage -> {
                     if (errorMessage != null) {
@@ -402,8 +464,7 @@ public class UploadImageModel extends Model implements ICommandTarget {
         Disk newDisk = diskModel.getDisk();
         AddDiskParameters diskParameters = new AddDiskParameters(newDisk);
 
-        if (diskModel.getDiskStorageType().getEntity() == DiskStorageType.IMAGE ||
-                diskModel.getDiskStorageType().getEntity() == DiskStorageType.CINDER) {
+        if (diskModel.getDiskStorageType().getEntity() == DiskStorageType.IMAGE) {
             diskParameters.setStorageDomainId(getDiskModel().getStorageDomain().getSelectedItem().getId());
         }
 
@@ -413,7 +474,7 @@ public class UploadImageModel extends Model implements ICommandTarget {
         parameters.setTransferSize(imageInfoModel.getActualSize());
         parameters.setVolumeFormat(imageInfoModel.getFormat());
         parameters.setVdsId(getDiskModel().getHost().getSelectedItem().getId());
-        parameters.setTransferringViaBrowser(true);
+        parameters.setTransferClientType(TransferClientType.TRANSFER_VIA_BROWSER);
 
         return parameters;
     }
@@ -516,7 +577,7 @@ public class UploadImageModel extends Model implements ICommandTarget {
     }
 
     public static void pauseUploads(List<? extends Disk> disks) {
-                ArrayList<ActionParametersBase> list = new ArrayList<>();
+        ArrayList<ActionParametersBase> list = new ArrayList<>();
         for (Disk disk : disks) {
             ImageTransfer updates = new ImageTransfer();
             updates.setPhase(ImageTransferPhase.PAUSED_USER);

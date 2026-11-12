@@ -232,13 +232,16 @@ public class RemoveDiskSnapshotsCommand<T extends RemoveDiskSnapshotsParameters>
 
     private void sortImages() {
 
-        // Sort images from parent to leaf (active) - needed only once as the sorted list is
-        // being saved in the parameters.  The conditions to check vary between cold and live
-        // merge (and we can't yet run isLiveMerge()), so we just use an explicit flag.
         if (!getParameters().isImageIdsSorted()) {
             // Retrieve and sort the entire chain of images
             List<DiskImage> images = getAllImagesForDisk();
             ImagesHandler.sortImageList(images);
+
+            // We reverse the list here because since 4.4 we use block commit which merges the child into
+            // the snapshot we remove. To prevent a situation where the child was already removed we need
+            // reverse the list to ensure the children are removed first, so we don't attempt to remove them
+            // again.
+            Collections.reverse(images);
 
             // Get a sorted list of the selected images
             List<DiskImage> sortedImages =
@@ -260,7 +263,7 @@ public class RemoveDiskSnapshotsCommand<T extends RemoveDiskSnapshotsParameters>
     }
 
     private boolean isLiveMerge() {
-        return (getParameters().isLiveMerge() || (getVm() != null && getVm().isQualifiedForLiveSnapshotMerge()))
+        return (getParameters().isLiveMerge() || getVm() != null && getVm().isQualifiedForLiveSnapshotMerge())
                 && !DisksFilter.filterImageDisks(getImages()).isEmpty();
     }
 
@@ -430,8 +433,8 @@ public class RemoveDiskSnapshotsCommand<T extends RemoveDiskSnapshotsParameters>
             }
         } catch (InterruptedException | ExecutionException e) {
             log.error("Error removing snapshots for Cinder disks");
-             endWithFailure();
-             getParameters().setTaskGroupSuccess(false);
+            endWithFailure();
+            getParameters().setTaskGroupSuccess(false);
         }
     }
 
@@ -575,14 +578,14 @@ public class RemoveDiskSnapshotsCommand<T extends RemoveDiskSnapshotsParameters>
     public AuditLogType getAuditLogTypeValue() {
         addAuditLogCustomValues();
         switch (getActionState()) {
-        case EXECUTE:
-            return AuditLogType.USER_REMOVE_DISK_SNAPSHOT;
+            case EXECUTE:
+                return AuditLogType.USER_REMOVE_DISK_SNAPSHOT;
 
-        case END_SUCCESS:
-            return AuditLogType.USER_REMOVE_DISK_SNAPSHOT_FINISHED_SUCCESS;
+            case END_SUCCESS:
+                return AuditLogType.USER_REMOVE_DISK_SNAPSHOT_FINISHED_SUCCESS;
 
-        case END_FAILURE:
-            return AuditLogType.USER_REMOVE_DISK_SNAPSHOT_FINISHED_FAILURE;
+            case END_FAILURE:
+                return AuditLogType.USER_REMOVE_DISK_SNAPSHOT_FINISHED_FAILURE;
         }
         return AuditLogType.UNASSIGNED;
     }

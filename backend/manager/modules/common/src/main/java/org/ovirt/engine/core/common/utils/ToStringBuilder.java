@@ -14,7 +14,7 @@ public class ToStringBuilder {
     static final char CLASS_NAME_SUFFIX = ':';
     static final char ATTRIBUTES_LIST_PREFIX = '{';
     static final char ATTRIBUTES_LIST_SUFFIX = '}';
-    static final String ATTRIBUTES_SEPARATOR =  ", ";
+    static final String ATTRIBUTES_SEPARATOR = ", ";
     static final String NAME_VALUE_SEPARATOR = "='";
     static final char VALUE_SUFFIX = '\'';
     static final String FILTERED_CONTENT = "***";
@@ -357,15 +357,15 @@ public class ToStringBuilder {
     public String build() {
         final int bufferLength = buffer.length();
         if (bufferLength > 0) {
-           final char lastChar = buffer.charAt(bufferLength - 1);
-           if (lastChar == VALUE_SUFFIX) {
-               // at least one attribute was added to list
-               buffer.append(ATTRIBUTES_LIST_SUFFIX);
-           } else if (lastChar == CLASS_NAME_SUFFIX) {
-               // only class name was added to buffer
-               buffer.append(ATTRIBUTES_LIST_PREFIX);
-               buffer.append(ATTRIBUTES_LIST_SUFFIX);
-           }
+            final char lastChar = buffer.charAt(bufferLength - 1);
+            if (lastChar == VALUE_SUFFIX) {
+                // at least one attribute was added to list
+                buffer.append(ATTRIBUTES_LIST_SUFFIX);
+            } else if (lastChar == CLASS_NAME_SUFFIX) {
+                // only class name was added to buffer
+                buffer.append(ATTRIBUTES_LIST_PREFIX);
+                buffer.append(ATTRIBUTES_LIST_SUFFIX);
+            }
         }
         return buffer.toString();
     }
@@ -410,5 +410,14 @@ public class ToStringBuilder {
      */
     private String filterValue(String value) {
         return value == null ? null : FILTERED_CONTENT;
+    }
+
+    /**
+     * @return String that is under construction via this builder
+     * @see #build()
+     */
+    @Override
+    public String toString() {
+        return build();
     }
 }

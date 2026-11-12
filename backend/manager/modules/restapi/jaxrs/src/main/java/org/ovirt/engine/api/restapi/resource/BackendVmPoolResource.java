@@ -11,7 +11,9 @@ import org.ovirt.engine.api.resource.ActionResource;
 import org.ovirt.engine.api.resource.AssignedPermissionsResource;
 import org.ovirt.engine.api.resource.CreationResource;
 import org.ovirt.engine.api.resource.VmPoolResource;
+import org.ovirt.engine.api.restapi.types.VmMapper;
 import org.ovirt.engine.api.restapi.util.LinkHelper;
+import org.ovirt.engine.api.restapi.util.ParametersHelper;
 import org.ovirt.engine.core.common.VdcObjectType;
 import org.ovirt.engine.core.common.action.ActionParametersBase;
 import org.ovirt.engine.core.common.action.ActionType;
@@ -19,6 +21,7 @@ import org.ovirt.engine.core.common.action.AddVmPoolParameters;
 import org.ovirt.engine.core.common.action.AttachUserToVmFromPoolAndRunParameters;
 import org.ovirt.engine.core.common.action.VmPoolParametersBase;
 import org.ovirt.engine.core.common.businessentities.VM;
+import org.ovirt.engine.core.common.businessentities.VmStatic;
 import org.ovirt.engine.core.common.businessentities.VmTemplate;
 import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.queries.GetPermissionsForObjectParameters;
@@ -31,6 +34,8 @@ import org.ovirt.engine.core.compat.Guid;
 public class BackendVmPoolResource
         extends AbstractBackendActionableResource<VmPool, org.ovirt.engine.core.common.businessentities.VmPool>
     implements VmPoolResource {
+
+    public static final String SEAL = "seal";
 
     private BackendVmPoolsResource parent;
 
@@ -115,8 +120,8 @@ public class BackendVmPoolResource
                                         "Vms: pool=" + current.getId())
                               : null;
                 if (existing != null) {
-                    vm.setVmtGuid(existing.getVmtGuid());
-                    vm.setVmInit(existing.getVmInit());
+                    vm.setStaticData(existing.getStaticData());
+                    vm.setId(Guid.Empty);
                 }
             }
 
@@ -125,13 +130,10 @@ public class BackendVmPoolResource
                                                 QueryType.GetVmTemplate,
                                                 new GetVmTemplateParameters(vm.getVmtGuid()),
                                                 vm.getVmtGuid().toString());
-                vm.getStaticData().setMemSizeMb(template.getMemSizeMb());
-                vm.getStaticData().setMaxMemorySizeMb(template.getMaxMemorySizeMb());
-                vm.getStaticData().setSingleQxlPci(template.getSingleQxlPci());
-                vm.getStaticData().setOsId(template.getOsId());
-                vm.getStaticData().setDefaultDisplayType(template.getDefaultDisplayType());
-                vm.getStaticData().setMigrationSupport(template.getMigrationSupport());
-                vm.getStaticData().setMultiQueuesEnabled(template.isMultiQueuesEnabled());
+                if (incoming.isSetTemplate()) {
+                    VmStatic templateVmStatic = VmMapper.map(template, vm.getStaticData());
+                    vm.setStaticData(templateVmStatic);
+                }
                 if (vm.getVmInit() == null) {
                     vm.setVmInit(template.getVmInit());
                 }
@@ -142,8 +144,14 @@ public class BackendVmPoolResource
 
             final AddVmPoolParameters parameters = new AddVmPoolParameters(entity, vm, size);
             parameters.setStorageDomainId(getStorageDomainId(vm.getVmtGuid()));
+            setupSealing(parameters);
             return parameters;
         }
+    }
+
+    private void setupSealing(AddVmPoolParameters params) {
+        Boolean seal = ParametersHelper.getBooleanParameter(httpHeaders, uriInfo, SEAL, Boolean.TRUE, null);
+        params.setSeal(seal);
     }
 
     private Guid getTempalteId(Template template) {
@@ -166,7 +174,7 @@ public class BackendVmPoolResource
     @Override
     public Response allocateVm(Action action) {
         return doAction(ActionType.AttachUserToVmFromPoolAndRun,
-                        new AttachUserToVmFromPoolAndRunParameters(guid,  getCurrent().getUser().getId()),
+                        new AttachUserToVmFromPoolAndRunParameters(guid, getCurrent().getUser().getId()),
                         action,
                         new VmQueryIdResolver(QueryType.GetVmByVmId,
                                               IdQueryParameters.class));

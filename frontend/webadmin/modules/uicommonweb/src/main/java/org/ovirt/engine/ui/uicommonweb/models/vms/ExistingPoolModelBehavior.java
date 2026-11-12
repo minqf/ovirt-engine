@@ -56,7 +56,7 @@ public class ExistingPoolModelBehavior extends PoolModelBehaviorBase {
     @Override
     protected void changeDefaultHost() {
         super.changeDefaultHost();
-        doChangeDefaultHost(pool.getDedicatedVmForVdsList());
+        updateDefaultHost(pool.getDedicatedVmForVdsList());
     }
 
     @Override
@@ -107,10 +107,12 @@ public class ExistingPoolModelBehavior extends PoolModelBehaviorBase {
             //can be set only from DB since it is not part of the Template's fields
             getModel().getCpuPinning().setEntity(pool.getCpuPinning());
         }
+
+        getInstanceTypeManager().updateInstanceTypeFieldsFromSource();
     }
 
     public void setupWindowFromVmBase(VmBase from) {
-        doChangeDefaultHost(from.getDedicatedVmForVdsList());
+        updateDefaultHost(from.getDedicatedVmForVdsList());
         getModel().getCustomPropertySheet().deserialize(from.getCustomProperties());
         setupWindowModelFrom(from);
     }

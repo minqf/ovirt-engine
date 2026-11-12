@@ -15,6 +15,7 @@ import org.ovirt.engine.core.bll.scheduling.policyunits.CpuAndNumaPinningWeightP
 import org.ovirt.engine.core.bll.scheduling.policyunits.CpuLevelFilterPolicyUnit;
 import org.ovirt.engine.core.bll.scheduling.policyunits.CpuOverloadPolicyUnit;
 import org.ovirt.engine.core.bll.scheduling.policyunits.CpuPinningPolicyUnit;
+import org.ovirt.engine.core.bll.scheduling.policyunits.CpuTopologyPolicyUnit;
 import org.ovirt.engine.core.bll.scheduling.policyunits.EmulatedMachineFilterPolicyUnit;
 import org.ovirt.engine.core.bll.scheduling.policyunits.EvenDistributionBalancePolicyUnit;
 import org.ovirt.engine.core.bll.scheduling.policyunits.EvenDistributionCPUWeightPolicyUnit;
@@ -24,6 +25,7 @@ import org.ovirt.engine.core.bll.scheduling.policyunits.EvenGuestDistributionWei
 import org.ovirt.engine.core.bll.scheduling.policyunits.HaReservationWeightPolicyUnit;
 import org.ovirt.engine.core.bll.scheduling.policyunits.HighPerformanceCpuPolicyUnit;
 import org.ovirt.engine.core.bll.scheduling.policyunits.HostDeviceFilterPolicyUnit;
+import org.ovirt.engine.core.bll.scheduling.policyunits.HostHooksFilterPolicyUnit;
 import org.ovirt.engine.core.bll.scheduling.policyunits.HostedEngineHAClusterFilterPolicyUnit;
 import org.ovirt.engine.core.bll.scheduling.policyunits.HostedEngineHAClusterWeightPolicyUnit;
 import org.ovirt.engine.core.bll.scheduling.policyunits.HostedEngineMemoryReservationFilterPolicyUnit;
@@ -96,9 +98,11 @@ public class InternalPolicyUnits {
         enabledUnits.add(HighPerformanceCpuPolicyUnit.class);
         enabledUnits.add(CpuAndNumaPinningWeightPolicyUnit.class);
         enabledUnits.add(MigrationTscFrequencyPolicyUnit.class);
+        enabledUnits.add(HostHooksFilterPolicyUnit.class);
 
         mandatoryUnits.add(CompatibilityVersionFilterPolicyUnit.class);
         mandatoryUnits.add(CpuLevelFilterPolicyUnit.class);
+        mandatoryUnits.add(CpuTopologyPolicyUnit.class);
         mandatoryUnits.add(CpuPinningPolicyUnit.class);
         mandatoryUnits.add(HostDeviceFilterPolicyUnit.class);
         mandatoryUnits.add(PinToHostPolicyUnit.class);

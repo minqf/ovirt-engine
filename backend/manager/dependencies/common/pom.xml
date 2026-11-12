@@ -8,7 +8,7 @@
   <parent>
     <groupId>org.ovirt.engine.core.manager</groupId>
     <artifactId>dependencies</artifactId>
-    <version>4.4.0-SNAPSHOT</version>
+    <version>4.5.8-SNAPSHOT</version>
   </parent>
 
   <artifactId>common-dependencies</artifactId>
@@ -23,7 +23,6 @@
     <dependency>
       <groupId>org.ovirt.engine.api</groupId>
       <artifactId>ovirt-engine-extensions-api</artifactId>
-      <version>${ovirt-engine-extensions-api.version}</version>
     </dependency>
 
     <dependency>
@@ -32,182 +31,192 @@
     </dependency>
 
     <dependency>
-      <groupId>commons-configuration</groupId>
-      <artifactId>commons-configuration</artifactId>
-      <version>${commons-configuration.version}</version>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-compress</artifactId>
     </dependency>
 
     <dependency>
-      <groupId>commons-jxpath</groupId>
-      <artifactId>commons-jxpath</artifactId>
-      <version>${commons-jxpath.version}</version>
+      <groupId>commons-codec</groupId>
+      <artifactId>commons-codec</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>commons-io</groupId>
+      <artifactId>commons-io</artifactId>
     </dependency>
 
     <dependency>
       <groupId>org.apache.commons</groupId>
-      <artifactId>commons-compress</artifactId>
-      <version>${commons-compress.version}</version>
+      <artifactId>commons-lang3</artifactId>
     </dependency>
 
     <dependency>
       <groupId>org.apache.sshd</groupId>
       <artifactId>sshd-common</artifactId>
-      <version>${sshd-core.version}</version>
     </dependency>
+
     <dependency>
       <groupId>org.apache.sshd</groupId>
       <artifactId>sshd-core</artifactId>
-      <version>${sshd-core.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>net.i2p.crypto</groupId>
+      <artifactId>eddsa</artifactId>
     </dependency>
 
     <dependency>
       <groupId>org.apache.ws.commons.util</groupId>
       <artifactId>ws-commons-util</artifactId>
-      <version>${ws-commons-util.version}</version>
+      <exclusions>
+        <!-- Note: avoid junit 3 as a dependency -->
+        <exclusion>
+          <artifactId>junit</artifactId>
+          <groupId>junit</groupId>
+        </exclusion>
+      </exclusions>
     </dependency>
 
     <dependency>
       <groupId>org.apache.xmlrpc</groupId>
       <artifactId>xmlrpc-client</artifactId>
-      <version>${xmlrpc-client.version}</version>
+      <exclusions>
+        <!-- Note: avoid junit 3 as a dependency -->
+        <exclusion>
+          <artifactId>junit</artifactId>
+          <groupId>junit</groupId>
+        </exclusion>
+      </exclusions>
     </dependency>
 
    <dependency>
       <groupId>org.apache.xmlrpc</groupId>
       <artifactId>xmlrpc-common</artifactId>
-      <version>${xmlrpc-client.version}</version>
     </dependency>
 
     <dependency>
       <groupId>org.ovirt.engine.api</groupId>
       <artifactId>metamodel-server</artifactId>
-      <version>${metamodel.version}</version>
     </dependency>
 
     <dependency>
         <groupId>org.ovirt.vdsm-jsonrpc-java</groupId>
         <artifactId>vdsm-jsonrpc-java-client</artifactId>
-        <version>${vdsm-jsonrpc-java.version}</version>
-    </dependency>
-
-    <dependency>
-      <groupId>org.quartz-scheduler</groupId>
-      <artifactId>quartz</artifactId>
-      <version>${quartz.version}</version>
     </dependency>
 
     <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-aop</artifactId>
-      <version>${spring.version}</version>
     </dependency>
 
     <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-beans</artifactId>
-      <version>${spring.version}</version>
     </dependency>
 
     <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-context</artifactId>
-      <version>${spring.version}</version>
     </dependency>
 
     <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-core</artifactId>
-      <version>${spring.version}</version>
     </dependency>
 
     <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-expression</artifactId>
-      <version>${spring.version}</version>
     </dependency>
 
     <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-instrument</artifactId>
-      <version>${spring.version}</version>
     </dependency>
 
     <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-jdbc</artifactId>
-      <version>${spring.version}</version>
     </dependency>
 
     <dependency>
       <groupId>org.springframework</groupId>
       <artifactId>spring-tx</artifactId>
-      <version>${spring.version}</version>
     </dependency>
 
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
-      <version>${postgres.jdbc.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>com.ongres.stringprep</groupId>
+      <artifactId>saslprep</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.ongres.stringprep</groupId>
+      <artifactId>stringprep</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.ongres.scram</groupId>
+      <artifactId>common</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.ongres.scram</groupId>
+      <artifactId>client</artifactId>
     </dependency>
 
     <dependency>
       <groupId>com.woorea</groupId>
       <artifactId>openstack-client</artifactId>
-      <version>${openstack-client.version}</version>
     </dependency>
 
     <dependency>
       <groupId>com.woorea</groupId>
       <artifactId>keystone-client</artifactId>
-      <version>${openstack-client.version}</version>
     </dependency>
 
     <dependency>
       <groupId>com.woorea</groupId>
       <artifactId>keystone-model</artifactId>
-      <version>${openstack-client.version}</version>
     </dependency>
 
     <dependency>
       <groupId>com.woorea</groupId>
       <artifactId>glance-client</artifactId>
-      <version>${openstack-client.version}</version>
     </dependency>
 
     <dependency>
       <groupId>com.woorea</groupId>
       <artifactId>glance-model</artifactId>
-      <version>${openstack-client.version}</version>
     </dependency>
 
     <dependency>
       <groupId>com.woorea</groupId>
       <artifactId>cinder-client</artifactId>
-      <version>${openstack-client.version}</version>
     </dependency>
 
     <dependency>
       <groupId>com.woorea</groupId>
       <artifactId>cinder-model</artifactId>
-      <version>${openstack-client.version}</version>
     </dependency>
 
     <dependency>
       <groupId>com.woorea</groupId>
       <artifactId>quantum-client</artifactId>
-      <version>${openstack-client.version}</version>
     </dependency>
 
     <dependency>
       <groupId>com.woorea</groupId>
       <artifactId>quantum-model</artifactId>
-      <version>${openstack-client.version}</version>
     </dependency>
 
     <dependency>
       <groupId>com.woorea</groupId>
       <artifactId>resteasy-connector</artifactId>
-      <version>${openstack-client.version}</version>
       <exclusions>
         <exclusion>
           <groupId>commons-httpclient</groupId>
@@ -219,20 +228,17 @@
     <dependency>
       <groupId>aopalliance</groupId>
       <artifactId>aopalliance</artifactId>
-      <version>${aopalliance.version}</version>
     </dependency>
 
     <dependency>
       <groupId>org.snmp4j</groupId>
       <artifactId>snmp4j</artifactId>
-      <version>${snmp4j.version}</version>
     </dependency>
 
     <!-- This is needed to add CORS support to the RESTAPI: -->
     <dependency>
       <groupId>org.ebaysf.web</groupId>
       <artifactId>cors-filter</artifactId>
-      <version>1.0.1</version>
     </dependency>
   </dependencies>
 
@@ -259,21 +265,27 @@
               </module>
 
               <module>
-                <groupId>commons-configuration</groupId>
-                <artifactId>commons-configuration</artifactId>
-                <moduleName>org.apache.commons.configuration</moduleName>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-compress</artifactId>
+                <moduleName>org.apache.commons.compress</moduleName>
               </module>
 
               <module>
-                <groupId>commons-jxpath</groupId>
-                <artifactId>commons-jxpath</artifactId>
-                <moduleName>org.apache.commons.jxpath</moduleName>
+                <groupId>commons-codec</groupId>
+                <artifactId>commons-codec</artifactId>
+                <moduleName>org.apache.commons.codec</moduleName>
+              </module>
+
+              <module>
+                <groupId>commons-io</groupId>
+                <artifactId>commons-io</artifactId>
+                <moduleName>org.apache.commons.io</moduleName>
               </module>
 
               <module>
                 <groupId>org.apache.commons</groupId>
-                <artifactId>commons-compress</artifactId>
-                <moduleName>org.apache.commons.compress</moduleName>
+                <artifactId>commons-lang3</artifactId>
+                <moduleName>org.apache.commons.lang3</moduleName>
               </module>
 
               <module>
@@ -286,6 +298,12 @@
                 <groupId>org.apache.sshd</groupId>
                 <artifactId>sshd-common</artifactId>
                 <moduleName>org.apache.sshd</moduleName>
+              </module>
+
+              <module>
+                <groupId>net.i2p.crypto</groupId>
+                <artifactId>eddsa</artifactId>
+                <moduleName>net.i2p.crypto.eddsa</moduleName>
               </module>
 
               <module>
@@ -316,12 +334,6 @@
                 <groupId>org.ovirt.vdsm-jsonrpc-java</groupId>
                 <artifactId>vdsm-jsonrpc-java-client</artifactId>
                 <moduleName>org.ovirt.vdsm-jsonrpc-java</moduleName>
-              </module>
-
-              <module>
-                <groupId>org.quartz-scheduler</groupId>
-                <artifactId>quartz</artifactId>
-                <moduleName>org.quartz</moduleName>
               </module>
 
               <module>
@@ -376,6 +388,30 @@
                 <groupId>org.postgresql</groupId>
                 <artifactId>postgresql</artifactId>
                 <moduleName>org.postgresql</moduleName>
+              </module>
+
+              <module>
+                <groupId>com.ongres.stringprep</groupId>
+                <artifactId>saslprep</artifactId>
+                <moduleName>com.ongres.stringprep.saslprep</moduleName>
+              </module>
+
+              <module>
+                <groupId>com.ongres.stringprep</groupId>
+                <artifactId>stringprep</artifactId>
+                <moduleName>com.ongres.stringprep.stringprep</moduleName>
+              </module>
+
+              <module>
+                <groupId>com.ongres.scram</groupId>
+                <artifactId>common</artifactId>
+                <moduleName>com.ongres.scram.common</moduleName>
+              </module>
+
+              <module>
+                <groupId>com.ongres.scram</groupId>
+                <artifactId>client</artifactId>
+                <moduleName>com.ongres.scram.client</moduleName>
               </module>
 
               <module>

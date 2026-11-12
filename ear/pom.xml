@@ -4,7 +4,7 @@
   <parent>
     <groupId>org.ovirt.engine</groupId>
     <artifactId>root</artifactId>
-    <version>4.4.0-SNAPSHOT</version>
+    <version>4.5.8-SNAPSHOT</version>
   </parent>
 
   <artifactId>engine-server-ear</artifactId>
@@ -22,12 +22,6 @@
     <!-- ** JARs -->
     <dependency>
       <groupId>org.ovirt.engine.core</groupId>
-      <artifactId>scheduler</artifactId>
-      <version>${engine.version}</version>
-      <type>jar</type>
-    </dependency>
-    <dependency>
-      <groupId>org.ovirt.engine.core</groupId>
       <artifactId>vdsbroker</artifactId>
       <version>${engine.version}</version>
       <type>jar</type>
@@ -40,35 +34,30 @@
       <version>${engine.version}</version>
       <type>war</type>
     </dependency>
-
     <dependency>
       <groupId>org.ovirt.engine.ui</groupId>
       <artifactId>webadmin</artifactId>
       <version>${engine.version}</version>
       <type>war</type>
     </dependency>
-
     <dependency>
       <groupId>org.ovirt.engine.core</groupId>
       <artifactId>services</artifactId>
       <version>${engine.version}</version>
       <type>war</type>
     </dependency>
-
     <dependency>
       <groupId>org.ovirt.engine.core</groupId>
       <artifactId>docs</artifactId>
       <version>${engine.version}</version>
       <type>war</type>
     </dependency>
-
     <dependency>
       <groupId>org.ovirt.engine.core</groupId>
       <artifactId>enginesso</artifactId>
       <version>${engine.version}</version>
       <type>war</type>
     </dependency>
-
     <dependency>
       <groupId>org.ovirt.engine.core</groupId>
       <artifactId>welcome</artifactId>
@@ -79,49 +68,27 @@
     <!-- ** EJB-JARs -->
     <dependency>
       <groupId>org.ovirt.engine.core</groupId>
-      <artifactId>scheduler</artifactId>
-      <version>${engine.version}</version>
-      <type>ejb</type>
-    </dependency>
-
-    <dependency>
-      <groupId>org.ovirt.engine.core</groupId>
       <artifactId>bll</artifactId>
       <version>${engine.version}</version>
       <type>ejb</type>
     </dependency>
 
     <!-- ** JARs -->
-	 <dependency>
-		<groupId>org.springframework</groupId>
-		<artifactId>spring-core</artifactId>
-		<version>${spring.version}</version>
-	</dependency>
-	<dependency>
-		<groupId>org.springframework</groupId>
-		<artifactId>spring-beans</artifactId>
-		<version>${spring.version}</version>
-	</dependency>
-	<dependency>
-		<groupId>org.springframework</groupId>
-		<artifactId>spring-context</artifactId>
-		<version>${spring.version}</version>
-	</dependency>
+    <dependency>
+		  <groupId>org.springframework</groupId>
+		  <artifactId>spring-core</artifactId>
+	  </dependency>
+	  <dependency>
+		  <groupId>org.springframework</groupId>
+		  <artifactId>spring-beans</artifactId>
+	  </dependency>
+	  <dependency>
+		  <groupId>org.springframework</groupId>
+		  <artifactId>spring-context</artifactId>
+	  </dependency>
 
     <!-- Set the scope of depedencies provided by JBoss so that
          they are not included in the resulting archive: -->
-    <dependency>
-      <groupId>org.codehaus.jackson</groupId>
-      <artifactId>jackson-core-asl</artifactId>
-      <scope>provided</scope>
-    </dependency>
-
-    <dependency>
-      <groupId>org.codehaus.jackson</groupId>
-      <artifactId>jackson-mapper-asl</artifactId>
-      <scope>provided</scope>
-    </dependency>
-
     <dependency>
       <groupId>org.infinispan</groupId>
       <artifactId>infinispan-core</artifactId>
@@ -133,43 +100,9 @@
   <build>
     <finalName>engine</finalName>
 
-    <pluginManagement>
-      <plugins>
-
-        <!-- We need to ignore the execution of the maven-ear-plugin when
-             running inside Eclipse, as there is no Eclipse plugin supporting
-             most of the parameters that we use and this generates an error
-             when importing the project: -->
-        <plugin>
-          <groupId>org.eclipse.m2e</groupId>
-          <artifactId>lifecycle-mapping</artifactId>
-          <version>1.0.0</version>
-          <configuration>
-            <lifecycleMappingMetadata>
-              <pluginExecutions>
-                <pluginExecution>
-                  <pluginExecutionFilter>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-ear-plugin</artifactId>
-                    <versionRange>[1.0,)</versionRange>
-                    <goals>
-                      <goal>generate-application-xml</goal>
-                    </goals>
-                  </pluginExecutionFilter>
-                  <action>
-                    <ignore/>
-                  </action>
-                </pluginExecution>
-              </pluginExecutions>
-            </lifecycleMappingMetadata>
-          </configuration>
-        </plugin>
-
-      </plugins>
-    </pluginManagement>
-
     <plugins>
       <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-ear-plugin</artifactId>
         <configuration>
           <!-- params common to ear:ear and ear:generate-application-xml -->
@@ -253,7 +186,6 @@
             *.war/**,
             META-INF/**,
             lib/vdsbroker.jar/**,
-            lib/scheduler.jar/**,
           </packagingIncludes>
 
         </configuration>
@@ -261,4 +193,44 @@
 
     </plugins>
   </build>
+  <profiles>
+    <profile>
+      <id>only-eclipse</id>
+      <build>
+        <pluginManagement>
+          <plugins>
+
+            <!-- We need to ignore the execution of the maven-ear-plugin when
+                 running inside Eclipse, as there is no Eclipse plugin supporting
+                 most of the parameters that we use and this generates an error
+                 when importing the project: -->
+            <plugin>
+              <groupId>org.eclipse.m2e</groupId>
+              <artifactId>lifecycle-mapping</artifactId>
+              <version>1.0.0</version>
+              <configuration>
+                <lifecycleMappingMetadata>
+                  <pluginExecutions>
+                    <pluginExecution>
+                      <pluginExecutionFilter>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-ear-plugin</artifactId>
+                        <versionRange>[1.0,)</versionRange>
+                        <goals>
+                          <goal>generate-application-xml</goal>
+                        </goals>
+                      </pluginExecutionFilter>
+                      <action>
+                        <ignore/>
+                      </action>
+                    </pluginExecution>
+                  </pluginExecutions>
+                </lifecycleMappingMetadata>
+              </configuration>
+            </plugin>
+          </plugins>
+        </pluginManagement>
+      </build>
+    </profile>
+  </profiles>
 </project>

@@ -22,6 +22,7 @@ import org.ovirt.engine.core.common.businessentities.ServerCpu;
 import org.ovirt.engine.core.common.businessentities.Snapshot;
 import org.ovirt.engine.core.common.businessentities.StorageDomain;
 import org.ovirt.engine.core.common.businessentities.StorageDomainStatus;
+import org.ovirt.engine.core.common.businessentities.StorageDomainType;
 import org.ovirt.engine.core.common.businessentities.comparators.LexoNumericComparator;
 import org.ovirt.engine.core.common.businessentities.comparators.LexoNumericNameableComparator;
 import org.ovirt.engine.core.common.businessentities.gluster.StorageDevice;
@@ -68,6 +69,13 @@ public final class Linq {
         return isData && isActive;
     }
 
+    public static boolean isManagedBlockActiveStorageDomain(StorageDomain storageDomain) {
+        boolean isManagedBlock = storageDomain.getStorageDomainType() == StorageDomainType.ManagedBlockStorage;
+        boolean isActive = storageDomain.getStatus() == StorageDomainStatus.Active;
+
+        return isManagedBlock && isActive;
+    }
+
     public static <TSource> TSource firstOrNull(Collection<TSource> source) {
         return firstOrNull(source, x -> true);
     }
@@ -100,7 +108,7 @@ public final class Linq {
     }
 
     public static <I, T extends I> T findByType(Collection<I> models, Class<T> specific) {
-        return models.stream().filter(m -> m.getClass().equals(specific)).findFirst().map(m -> (T)m).orElse(null);
+        return models.stream().filter(m -> m.getClass().equals(specific)).findFirst().map(m -> (T) m).orElse(null);
     }
 
     public static Collection<EntityModel<?>> findSelectedItems(Collection<EntityModel<?>> items) {
@@ -293,7 +301,8 @@ public final class Linq {
         public boolean test(SanTargetModel source) {
             return Objects.equals(source.getName(), target.getName())
                     && Objects.equals(source.getAddress(), target.getAddress())
-                    && Objects.equals(source.getPort(), target.getPort());
+                    && Objects.equals(source.getPort(), target.getPort())
+                    && Objects.equals(source.getPortal(), target.getPortal());
         }
     }
 

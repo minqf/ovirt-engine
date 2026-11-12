@@ -3,12 +3,14 @@ package org.ovirt.engine.api.restapi.resource;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.ovirt.engine.api.restapi.test.util.TestHelper.eqParams;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -22,6 +24,7 @@ import javax.ws.rs.core.UriInfo;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatcher;
 import org.ovirt.engine.api.model.Api;
 import org.ovirt.engine.api.model.Link;
 import org.ovirt.engine.api.model.SpecialObjects;
@@ -29,11 +32,14 @@ import org.ovirt.engine.api.restapi.invocation.Current;
 import org.ovirt.engine.api.restapi.invocation.CurrentManager;
 import org.ovirt.engine.api.restapi.invocation.VersionSource;
 import org.ovirt.engine.api.restapi.logging.MessageBundle;
+import org.ovirt.engine.core.common.businessentities.EngineBackupLog;
+import org.ovirt.engine.core.common.businessentities.EngineBackupScope;
 import org.ovirt.engine.core.common.businessentities.aaa.DbUser;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.interfaces.BackendLocal;
 import org.ovirt.engine.core.common.mode.ApplicationMode;
 import org.ovirt.engine.core.common.queries.GetConfigurationValueParameters;
+import org.ovirt.engine.core.common.queries.GetLastEngineBackupParameters;
 import org.ovirt.engine.core.common.queries.GetSystemStatisticsQueryParameters;
 import org.ovirt.engine.core.common.queries.QueryParametersBase;
 import org.ovirt.engine.core.common.queries.QueryReturnValue;
@@ -60,6 +66,7 @@ public class BackendApiResourceTest {
     protected static final String BASE_PATH = "/ovirt-engine/api";
     protected static final String BUNDLE_PATH = "org/ovirt/engine/api/restapi/logging/Messages";
     protected static final String SESSION_ID = Guid.newGuid().toString();
+    protected static final String INSTANCE_ID = Guid.newGuid().toString();
     private static final String USER_FILTER_HEADER = "filter";
 
     protected static final int MAJOR = 11;
@@ -132,25 +139,26 @@ public class BackendApiResourceTest {
         "affinitylabels",
         "clusterlevels",
         "imagetransfers",
-        "externalvmimports"
+        "externalvmimports",
+        "externaltemplateimports"
     };
 
     private static final String[] relationshipsGlusterOnly = {
-            "clusters",
-            "clusters/search",
-            "events",
-            "events/search",
-            "hosts",
-            "hosts/search",
-            "networks",
-            "networks/search",
-            "roles",
-            "tags",
-            "users",
-            "users/search",
-            "groups",
-            "groups/search",
-            "domains",
+        "clusters",
+        "clusters/search",
+        "events",
+        "events/search",
+        "hosts",
+        "hosts/search",
+        "networks",
+        "networks/search",
+        "roles",
+        "tags",
+        "users",
+        "users/search",
+        "groups",
+        "groups/search",
+        "domains",
     };
 
     private static final String[] hrefs = {
@@ -204,25 +212,26 @@ public class BackendApiResourceTest {
         BASE_PATH + "/affinitylabels",
         BASE_PATH + "/clusterlevels",
         BASE_PATH + "/imagetransfers",
-        BASE_PATH + "/externalvmimports"
+        BASE_PATH + "/externalvmimports",
+        BASE_PATH + "/externaltemplateimports"
     };
 
     private static final String[] hrefsGlusterOnly = {
-            BASE_PATH + "/clusters",
-            BASE_PATH + "/clusters?search={query}",
-            BASE_PATH + "/events",
-            BASE_PATH + "/events;from={event_id}?search={query}",
-            BASE_PATH + "/hosts",
-            BASE_PATH + "/hosts?search={query}",
-            BASE_PATH + "/networks",
-            BASE_PATH + "/networks?search={query}",
-            BASE_PATH + "/roles",
-            BASE_PATH + "/tags",
-            BASE_PATH + "/users",
-            BASE_PATH + "/users?search={query}",
-            BASE_PATH + "/groups",
-            BASE_PATH + "/groups?search={query}",
-            BASE_PATH + "/domains",
+        BASE_PATH + "/clusters",
+        BASE_PATH + "/clusters?search={query}",
+        BASE_PATH + "/events",
+        BASE_PATH + "/events;from={event_id}?search={query}",
+        BASE_PATH + "/hosts",
+        BASE_PATH + "/hosts?search={query}",
+        BASE_PATH + "/networks",
+        BASE_PATH + "/networks?search={query}",
+        BASE_PATH + "/roles",
+        BASE_PATH + "/tags",
+        BASE_PATH + "/users",
+        BASE_PATH + "/users?search={query}",
+        BASE_PATH + "/groups",
+        BASE_PATH + "/groups?search={query}",
+        BASE_PATH + "/domains",
     };
 
     public BackendApiResourceTest() {
@@ -300,8 +309,10 @@ public class BackendApiResourceTest {
         current.setApplicationMode(appMode);
         resource.setUriInfo(setUpUriInfo());
         setUpGetSystemVersionExpectations();
+        setUpGetInstanceIdExpectations();
         setUpGetUserBySessionExpectations();
         setUpGetSystemStatisticsExpectations();
+        setUpGetLastDbBackendExpectations();
     }
 
     protected void doTestGlusterOnlyGet() {
@@ -355,19 +366,19 @@ public class BackendApiResourceTest {
         assertNotNull(api.getProductInfo());
         assertNotNull(api.getProductInfo().getVersion());
         assertNotNull(api.getProductInfo().getVersion().getFullVersion());
-        assertEquals(MAJOR,    api.getProductInfo().getVersion().getMajor().intValue());
-        assertEquals(MINOR,    api.getProductInfo().getVersion().getMinor().intValue());
-        assertEquals(BUILD,    api.getProductInfo().getVersion().getBuild().intValue());
+        assertEquals(MAJOR, api.getProductInfo().getVersion().getMajor().intValue());
+        assertEquals(MINOR, api.getProductInfo().getVersion().getMinor().intValue());
+        assertEquals(BUILD, api.getProductInfo().getVersion().getBuild().intValue());
         assertEquals(REVISION, api.getProductInfo().getVersion().getRevision().intValue());
 
         assertNotNull(api.getSummary());
-        assertEquals(TOTAL_VMS,              api.getSummary().getVms().getTotal().intValue());
-        assertEquals(ACTIVE_VMS,             api.getSummary().getVms().getActive().intValue());
-        assertEquals(TOTAL_HOSTS,            api.getSummary().getHosts().getTotal().intValue());
-        assertEquals(ACTIVE_HOSTS,           api.getSummary().getHosts().getActive().intValue());
-        assertEquals(TOTAL_USERS,            api.getSummary().getUsers().getTotal().intValue());
-        assertEquals(ACTIVE_USERS,           api.getSummary().getUsers().getActive().intValue());
-        assertEquals(TOTAL_STORAGE_DOMAINS,  api.getSummary().getStorageDomains().getTotal().intValue());
+        assertEquals(TOTAL_VMS, api.getSummary().getVms().getTotal().intValue());
+        assertEquals(ACTIVE_VMS, api.getSummary().getVms().getActive().intValue());
+        assertEquals(TOTAL_HOSTS, api.getSummary().getHosts().getTotal().intValue());
+        assertEquals(ACTIVE_HOSTS, api.getSummary().getHosts().getActive().intValue());
+        assertEquals(TOTAL_USERS, api.getSummary().getUsers().getTotal().intValue());
+        assertEquals(ACTIVE_USERS, api.getSummary().getUsers().getActive().intValue());
+        assertEquals(TOTAL_STORAGE_DOMAINS, api.getSummary().getStorageDomains().getTotal().intValue());
         assertEquals(ACTIVE_STORAGE_DOMAINS, api.getSummary().getStorageDomains().getActive().intValue());
     }
 
@@ -435,6 +446,14 @@ public class BackendApiResourceTest {
         when(backend.runQuery(eq(QueryType.GetProductVersion), getProductVersionParams())).thenReturn(productVersionQueryResult);
     }
 
+    protected void setUpGetInstanceIdExpectations() {
+        QueryReturnValue instancIdQueryResult = new QueryReturnValue();
+        instancIdQueryResult.setSucceeded(true);
+        instancIdQueryResult.setReturnValue(INSTANCE_ID);
+        when(backend.runQuery(eq(QueryType.GetConfigurationValue), getInstanceIdParams()))
+                .thenReturn(instancIdQueryResult);
+    }
+
     protected void setUpGetUserBySessionExpectations() {
         QueryReturnValue returnValue = new QueryReturnValue();
         returnValue.setSucceeded(true);
@@ -453,6 +472,22 @@ public class BackendApiResourceTest {
         return eqParams(QueryParametersBase.class, new String[0], new Object[0]);
     }
 
+    protected void setUpGetLastDbBackendExpectations() {
+        QueryReturnValue queryResult = new QueryReturnValue();
+        queryResult.setSucceeded(true);
+        EngineBackupLog emptyReturn = new EngineBackupLog();
+        emptyReturn.setDoneAt(new Date());
+        emptyReturn.setScope(EngineBackupScope.DB.getName());
+        queryResult.setReturnValue(emptyReturn);
+        when(backend.runQuery(eq(QueryType.GetLastEngineBackup), argThat(new ArgumentMatcher<GetLastEngineBackupParameters>() {
+            @Override
+            public boolean matches(GetLastEngineBackupParameters argument) {
+                return argument != null && argument.getEngineBackupScope() != null;  // Match any non-null EngineBackupScope
+            }
+        }
+        ))).thenReturn(queryResult);
+    }
+
     protected void setUpGetSystemStatisticsExpectations() {
         QueryReturnValue queryResult = new QueryReturnValue();
 
@@ -466,6 +501,12 @@ public class BackendApiResourceTest {
         return eqParams(GetConfigurationValueParameters.class,
                 new String[] { "SessionId", "ConfigValue" },
                 new Object[] { SESSION_ID, ConfigValues.ProductRPMVersion });
+    }
+
+    protected QueryParametersBase getInstanceIdParams() {
+        return eqParams(GetConfigurationValueParameters.class,
+                new String[] { "SessionId", "ConfigValue" },
+                new Object[] { SESSION_ID, ConfigValues.InstanceId });
     }
 
     protected QueryParametersBase queryParams() {

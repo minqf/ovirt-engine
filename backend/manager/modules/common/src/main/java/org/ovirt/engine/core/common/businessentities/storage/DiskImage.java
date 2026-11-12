@@ -5,22 +5,27 @@ import java.util.Date;
 import java.util.List;
 import java.util.Objects;
 
-import org.codehaus.jackson.annotate.JsonIgnore;
 import org.ovirt.engine.core.common.businessentities.VmEntityType;
 import org.ovirt.engine.core.common.utils.ObjectUtils;
 import org.ovirt.engine.core.common.utils.SizeConverter;
 import org.ovirt.engine.core.compat.Guid;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 public class DiskImage extends DiskImageBase {
 
     private static final long serialVersionUID = 3185087852755356847L;
 
     private Date lastModifiedDate;
+    private Date snapshotCreationDate;
     private List<String> storagesNames;
     private long actualSizeInBytes;
     private long apparentSizeInBytes;
-    private int readRateFromDiskImageDynamic;
-    private int writeRateFromDiskImageDynamic;
+    private Long initialSizeInBytes;
+    private long readRateFromDiskImageDynamic;
+    private long readOpsFromDiskImageDynamic;
+    private long writeRateFromDiskImageDynamic;
+    private long writeOpsFromDiskImageDynamic;
 
     // Latency fields from DiskImageDynamic which are measured in seconds.
     private Double readLatency;
@@ -49,6 +54,66 @@ public class DiskImage extends DiskImageBase {
         snapshots = new ArrayList<>();
     }
 
+    protected DiskImage(DiskImage diskImage) {
+        // set all private fields (imitate clone - deep copy)
+        setVolumeType(diskImage.getVolumeType());
+        setVolumeFormat(diskImage.getVolumeFormat());
+        setBackup(diskImage.getBackup());
+        setSize(diskImage.getSize());
+        setVmEntityType(diskImage.getVmEntityType());
+        if (diskImage.getQuotaIds() != null) {
+            setQuotaIds(new ArrayList<>(diskImage.getQuotaIds()));
+        }
+        if (diskImage.getQuotaNames() != null) {
+            setQuotaNames(new ArrayList<>(diskImage.getQuotaNames()));
+        }
+        if (diskImage.getDiskProfileIds() != null) {
+            setDiskProfileIds(new ArrayList<>(diskImage.getDiskProfileIds()));
+        }
+        if (diskImage.getDiskProfileNames() != null) {
+            setDiskProfileNames(new ArrayList<>(diskImage.getDiskProfileNames()));
+        }
+        setQuotaEnforcementType(diskImage.getQuotaEnforcementType());
+        setActive(diskImage.getActive());
+        setCreationDate(diskImage.getCreationDate());
+        setSnapshotCreationDate(diskImage.getSnapshotCreationDate());
+        setLastModifiedDate(diskImage.getLastModifiedDate());
+        actualSizeInBytes = diskImage.actualSizeInBytes;
+        initialSizeInBytes = diskImage.initialSizeInBytes;
+        readRateFromDiskImageDynamic = diskImage.readRateFromDiskImageDynamic;
+        readOpsFromDiskImageDynamic = diskImage.readOpsFromDiskImageDynamic;
+        writeRateFromDiskImageDynamic = diskImage.writeRateFromDiskImageDynamic;
+        writeOpsFromDiskImageDynamic = diskImage.writeOpsFromDiskImageDynamic;
+        readLatency = diskImage.readLatency;
+        writeLatency = diskImage.writeLatency;
+        flushLatency = diskImage.flushLatency;
+        // string is immutable, so no need to deep copy it
+        description = diskImage.description;
+        setImageId(diskImage.getImageId());
+        appList = diskImage.appList;
+        setImageTemplateId(diskImage.getImageTemplateId());
+        setParentId(diskImage.getParentId());
+        setLastModified(diskImage.getLastModified() != null ? diskImage.getLastModified() : new Date());
+        storageIds = new ArrayList<>(diskImage.storageIds);
+        setVmSnapshotId(diskImage.getVmSnapshotId());
+        setId(diskImage.getId());
+        setNumberOfVms(diskImage.getNumberOfVms());
+        setWipeAfterDelete(diskImage.isWipeAfterDelete());
+        setPropagateErrors(diskImage.getPropagateErrors());
+        setDiskAlias(diskImage.getDiskAlias());
+        setDiskDescription(diskImage.getDiskDescription());
+        setShareable(diskImage.isShareable());
+        storagePoolId = diskImage.storagePoolId;
+        actualSize = diskImage.actualSize;
+
+        // TODO: is it ok to use shallow copy here?!
+        snapshots = new ArrayList<>(diskImage.snapshots);
+        actualDiskWithSnapthotsSize = diskImage.actualDiskWithSnapthotsSize;
+        setImageStatus(ImageStatus.LOCKED);
+        setDiskProfileId(diskImage.getDiskProfileId());
+        getImage().setSequenceNumber(diskImage.getImage().getSequenceNumber());
+    }
+
     public Guid getImageId() {
         return getImage().getId();
     }
@@ -67,6 +132,10 @@ public class DiskImage extends DiskImageBase {
     @Override
     public void setVmEntityType(VmEntityType vmEntityType) {
         this.vmEntityType = vmEntityType;
+    }
+
+    public boolean isTemplate() {
+        return getVmEntityType() != null && getVmEntityType().isTemplateType();
     }
 
     public Boolean getActive() {
@@ -116,6 +185,14 @@ public class DiskImage extends DiskImageBase {
         this.lastModifiedDate = lastModifiedDate;
     }
 
+    public Date getSnapshotCreationDate() {
+        return snapshotCreationDate;
+    }
+
+    public void setSnapshotCreationDate(Date snapshotCreationDate) {
+        this.snapshotCreationDate = snapshotCreationDate;
+    }
+
     public long getActualSizeInBytes() {
         return actualSizeInBytes;
     }
@@ -123,6 +200,14 @@ public class DiskImage extends DiskImageBase {
     public void setActualSizeInBytes(long size) {
         actualSizeInBytes = size;
         setActualSize(getActualSizeInBytes() * 1.0 / (1024 * 1024 * 1024));
+    }
+
+    public Long getInitialSizeInBytes() {
+        return initialSizeInBytes;
+    }
+
+    public void setInitialSizeInBytes(Long size) {
+        initialSizeInBytes = size;
     }
 
     public boolean hasActualSize() {
@@ -137,20 +222,36 @@ public class DiskImage extends DiskImageBase {
         this.apparentSizeInBytes = apparentSizeInBytes;
     }
 
-    public int getReadRate() {
+    public long getReadRate() {
         return readRateFromDiskImageDynamic;
     }
 
-    public void setReadRate(int readRateFromDiskImageDynamic) {
+    public void setReadRate(long readRateFromDiskImageDynamic) {
         this.readRateFromDiskImageDynamic = readRateFromDiskImageDynamic;
     }
 
-    public int getWriteRate() {
+    public long getReadOps() {
+        return readOpsFromDiskImageDynamic;
+    }
+
+    public void setReadOps(long readOpsFromDiskImageDynamic) {
+        this.readOpsFromDiskImageDynamic = readOpsFromDiskImageDynamic;
+    }
+
+    public long getWriteRate() {
         return writeRateFromDiskImageDynamic;
     }
 
-    public void setWriteRate(int writeRateFromDiskImageDynamic) {
+    public void setWriteRate(long writeRateFromDiskImageDynamic) {
         this.writeRateFromDiskImageDynamic = writeRateFromDiskImageDynamic;
+    }
+
+    public long getWriteOps() {
+        return writeOpsFromDiskImageDynamic;
+    }
+
+    public void setWriteOps(long writeOpsFromDiskImageDynamic) {
+        this.writeOpsFromDiskImageDynamic = writeOpsFromDiskImageDynamic;
     }
 
     public Double getReadLatency() {
@@ -209,6 +310,10 @@ public class DiskImage extends DiskImageBase {
 
     public void setParentId(Guid parentId) {
         getImage().setParentId(parentId);
+    }
+
+    public boolean hasParent() {
+        return !Guid.isNullOrEmpty(getParentId());
     }
 
     public ImageStatus getImageStatus() {
@@ -398,65 +503,7 @@ public class DiskImage extends DiskImageBase {
     }
 
     public static DiskImage copyOf(DiskImage diskImage) {
-        DiskImage di = new DiskImage();
-
-        // set all private fields (imitate clone - deep copy)
-        di.setVolumeType(diskImage.getVolumeType());
-        di.setVolumeFormat(diskImage.getVolumeFormat());
-        di.setSize(diskImage.getSize());
-        if (diskImage.getQuotaIds() != null) {
-            di.setQuotaIds(new ArrayList<>(diskImage.getQuotaIds()));
-        }
-        if (diskImage.getQuotaNames() != null) {
-            di.setQuotaNames(new ArrayList<>(diskImage.getQuotaNames()));
-        }
-        if (diskImage.getDiskProfileIds() != null) {
-            di.setDiskProfileIds(new ArrayList<>(diskImage.getDiskProfileIds()));
-        }
-        if (diskImage.getDiskProfileNames() != null) {
-            di.setDiskProfileNames(new ArrayList<>(diskImage.getDiskProfileNames()));
-        }
-        di.setQuotaEnforcementType(diskImage.getQuotaEnforcementType());
-        di.setActive(diskImage.getActive());
-        di.setCreationDate(new Date(diskImage.getCreationDate().getTime()));
-        di.setLastModifiedDate(new Date(diskImage.getLastModifiedDate().getTime()));
-        di.actualSizeInBytes = diskImage.actualSizeInBytes;
-        di.readRateFromDiskImageDynamic = diskImage.readRateFromDiskImageDynamic;
-        di.writeRateFromDiskImageDynamic = diskImage.writeRateFromDiskImageDynamic;
-        di.readLatency = diskImage.readLatency;
-        di.writeLatency = diskImage.writeLatency;
-        di.flushLatency = diskImage.flushLatency;
-        // string is immutable, so no need to deep copy it
-        di.description = diskImage.description;
-        di.setImageId(diskImage.getImageId());
-        di.appList = diskImage.appList;
-        di.setImageTemplateId(diskImage.getImageTemplateId());
-        di.setParentId(diskImage.getParentId());
-        di.setImageStatus(diskImage.getImageStatus());
-        if (diskImage.getLastModified() != null) {
-            di.setLastModified(new Date(diskImage.getLastModified().getTime()));
-        }
-        di.storageIds = new ArrayList<>(diskImage.storageIds);
-        di.setVmSnapshotId(diskImage.getVmSnapshotId());
-        di.setId(diskImage.getId());
-        di.setNumberOfVms(diskImage.getNumberOfVms());
-        di.setWipeAfterDelete(diskImage.isWipeAfterDelete());
-        di.setPropagateErrors(diskImage.getPropagateErrors());
-        di.setDiskAlias(diskImage.getDiskAlias());
-        di.setDiskDescription(diskImage.getDiskDescription());
-        di.setShareable(diskImage.isShareable());
-        di.storagePoolId = diskImage.storagePoolId;
-        di.actualSize = diskImage.actualSize;
-
-        // TODO: is it ok to use shallow copy here?!
-        di.snapshots = new ArrayList<>(diskImage.snapshots);
-        di.actualDiskWithSnapthotsSize = diskImage.actualDiskWithSnapthotsSize;
-        di.setCreationDate(new Date());
-        di.setLastModified(new Date());
-        di.setImageStatus(ImageStatus.LOCKED);
-        di.setDiskProfileId(diskImage.getDiskProfileId());
-
-        return di;
+        return new DiskImage(diskImage);
     }
 
     @Override
@@ -465,14 +512,18 @@ public class DiskImage extends DiskImageBase {
                 super.hashCode(),
                 getImage(),
                 snapshots,
+                snapshotCreationDate,
                 actualSizeInBytes,
+                initialSizeInBytes,
                 appList,
                 description,
                 readRateFromDiskImageDynamic,
+                readOpsFromDiskImageDynamic,
                 storageIds,
                 storagePoolId,
                 storagesNames,
                 writeRateFromDiskImageDynamic,
+                writeOpsFromDiskImageDynamic,
                 readLatency,
                 writeLatency,
                 flushLatency,
@@ -494,13 +545,17 @@ public class DiskImage extends DiskImageBase {
                 && Objects.equals(getImage(), other.getImage())
                 && Objects.equals(snapshots, other.snapshots)
                 && actualSizeInBytes == other.actualSizeInBytes
+                && Objects.equals(initialSizeInBytes, other.initialSizeInBytes)
                 && Objects.equals(appList, other.appList)
                 && Objects.equals(description, other.description)
+                && Objects.equals(snapshotCreationDate, other.getSnapshotCreationDate())
                 && readRateFromDiskImageDynamic == other.readRateFromDiskImageDynamic
+                && readOpsFromDiskImageDynamic == other.readOpsFromDiskImageDynamic
                 && Objects.equals(storageIds, other.storageIds)
                 && Objects.equals(storagePoolId, other.storagePoolId)
                 && Objects.equals(storagesNames, other.storagesNames)
                 && writeRateFromDiskImageDynamic == other.writeRateFromDiskImageDynamic
+                && writeOpsFromDiskImageDynamic == other.writeOpsFromDiskImageDynamic
                 && Objects.equals(readLatency, other.readLatency)
                 && Objects.equals(writeLatency, other.writeLatency)
                 && Objects.equals(flushLatency, other.flushLatency)

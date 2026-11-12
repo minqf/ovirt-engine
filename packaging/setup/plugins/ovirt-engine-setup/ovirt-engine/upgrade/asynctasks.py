@@ -85,7 +85,7 @@ class Plugin(plugin.PluginBase):
                         mode=mode,
                         error=e,
                     )
-                )
+                ) from e
 
         def __enter__(self):
             self._setEngineMode(
@@ -103,7 +103,7 @@ class Plugin(plugin.PluginBase):
             '-l', self.environment[otopicons.CoreEnv.LOG_FILE_NAME],
             '-q',
         )
-        envPwd = {
+        env_pwd = {
             'DBFUNC_DB_PGPASSFILE': self.environment[
                 oenginecons.EngineDBEnv.PGPASS_FILE
             ]
@@ -114,14 +114,17 @@ class Plugin(plugin.PluginBase):
         rc, tasks, stderr = self.execute(
             args=_args_commands,
             raiseOnError=False,
-            envAppend=envPwd,
+            envAppend=env_pwd,
         )
         if rc:
             raise RuntimeError(
                 _(
                     'Failed to clear zombie commands. '
                     'Please access support in attempt to resolve '
-                    'the problem'
+                    'the problem\n'
+                    'Error: {error}\n'
+                ).format(
+                    error=stderr
                 )
             )
 
@@ -130,14 +133,17 @@ class Plugin(plugin.PluginBase):
         rc, tasks, stderr = self.execute(
             args=_args_tasks,
             raiseOnError=False,
-            envAppend=envPwd,
+            envAppend=env_pwd,
         )
         if rc:
             raise RuntimeError(
                 _(
                     'Failed to clear zombie tasks. '
                     'Please access support in attempt to resolve '
-                    'the problem'
+                    'the problem\n'
+                    'Error: {error}\n'
+                ).format(
+                    error=stderr
                 )
             )
 
@@ -330,7 +336,7 @@ class Plugin(plugin.PluginBase):
             '-i',
             '-f',
         )
-        envPwd = {
+        env_pwd = {
             'DBFUNC_DB_PGPASSFILE': self.environment[
                 oenginecons.EngineDBEnv.PGPASS_FILE
             ]
@@ -338,27 +344,30 @@ class Plugin(plugin.PluginBase):
         rc, tasks, stderr = self.execute(
             args=args,
             raiseOnError=False,
-            envAppend=envPwd,
+            envAppend=env_pwd,
         )
         if rc:
             raise RuntimeError(
                 _(
                     'Failed to unlock entities. '
                     'Please access support in attempt to resolve '
-                    'the problem'
+                    'the problem\n'
+                    'Error: {error}\n'
+                ).format(
+                    error=stderr
                 )
             )
 
     def _waitForTasksToClear(self):
         while True:
             (
-                runningTasks,
-                runningCommands,
+                running_tasks,
+                running_commands,
                 compensations,
             ) = self._checkRunningTasks()
             if (
-                not runningTasks and
-                not runningCommands and
+                not running_tasks and
+                not running_commands and
                 not compensations
             ):
                 break
@@ -375,8 +384,8 @@ class Plugin(plugin.PluginBase):
                         CLEAR_TASKS_WAIT_PERIOD
                     ],
                     number=(
-                        len(runningTasks) +
-                        len(runningCommands) +
+                        len(running_tasks) +
+                        len(running_commands) +
                         len(compensations)
                     ),
                 )
@@ -464,8 +473,8 @@ class Plugin(plugin.PluginBase):
         )
 
         (
-            runningTasks,
-            runningCommands,
+            running_tasks,
+            running_commands,
             compensations,
         ) = self._checkRunningTasks()
 
@@ -477,10 +486,10 @@ class Plugin(plugin.PluginBase):
             dbstatement=dbstatement,
             parent=self,
         ):
-            if runningTasks or runningCommands or compensations:
+            if running_tasks or running_commands or compensations:
                 self._askUserToWaitForTasks(
-                    runningTasks,
-                    runningCommands,
+                    running_tasks,
+                    running_commands,
                     compensations,
                 )
                 try:
@@ -496,7 +505,7 @@ class Plugin(plugin.PluginBase):
                     )
                     raise RuntimeError(
                         _('Upgrade cannot be completed due to running tasks.')
-                    )
+                    ) from KeyboardInterrupt
             self.logger.info(
                 _('Unlocking existing entities')
             )

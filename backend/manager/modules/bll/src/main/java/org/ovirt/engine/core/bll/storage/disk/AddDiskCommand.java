@@ -2,17 +2,16 @@ package org.ovirt.engine.core.bll.storage.disk;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
 import javax.enterprise.inject.Instance;
-import javax.enterprise.inject.Typed;
 import javax.inject.Inject;
 
 import org.apache.commons.lang.StringUtils;
-import org.ovirt.engine.core.bll.ConcurrentChildCommandsExecutionCallback;
 import org.ovirt.engine.core.bll.DisableInPrepareMode;
 import org.ovirt.engine.core.bll.LockMessagesMatchUtil;
 import org.ovirt.engine.core.bll.MultiLevelAdministrationHandler;
@@ -62,6 +61,7 @@ import org.ovirt.engine.core.common.businessentities.storage.DiskImage;
 import org.ovirt.engine.core.common.businessentities.storage.DiskLunMap;
 import org.ovirt.engine.core.common.businessentities.storage.DiskStorageType;
 import org.ovirt.engine.core.common.businessentities.storage.DiskVmElement;
+import org.ovirt.engine.core.common.businessentities.storage.Image;
 import org.ovirt.engine.core.common.businessentities.storage.LUNs;
 import org.ovirt.engine.core.common.businessentities.storage.LunDisk;
 import org.ovirt.engine.core.common.businessentities.storage.ScsiGenericIO;
@@ -77,8 +77,10 @@ import org.ovirt.engine.core.common.vdscommands.VDSCommandType;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
 import org.ovirt.engine.core.dao.BaseDiskDao;
+import org.ovirt.engine.core.dao.DiskDao;
 import org.ovirt.engine.core.dao.DiskLunMapDao;
 import org.ovirt.engine.core.dao.DiskVmElementDao;
+import org.ovirt.engine.core.dao.ImageDao;
 import org.ovirt.engine.core.dao.SnapshotDao;
 import org.ovirt.engine.core.dao.StoragePoolIsoMapDao;
 import org.ovirt.engine.core.dao.VmStaticDao;
@@ -114,8 +116,11 @@ public class AddDiskCommand<T extends AddDiskParameters> extends AbstractDiskVmC
     @Inject
     private VmStaticDao vmStaticDao;
     @Inject
-    @Typed(ConcurrentChildCommandsExecutionCallback.class)
-    private Instance<ConcurrentChildCommandsExecutionCallback> callbackProvider;
+    private Instance<AddDiskCommandCallback> callbackProvider;
+    @Inject
+    private ImageDao imageDao;
+    @Inject
+    private DiskDao diskDao;
 
     @Inject
     private MultiLevelAdministrationHandler multiLevelAdministrationHandler;
@@ -297,7 +302,9 @@ public class AddDiskCommand<T extends AddDiskParameters> extends AbstractDiskVmC
                 checkExceedingMaxBlockDiskSize() &&
                 canAddShareableDisk() &&
                 validate(diskVmElementValidator.isVirtIoScsiValid(vm)) &&
-                validate(diskVmElementValidator.isDiskInterfaceSupported(getVm()));
+                validate(diskVmElementValidator.isDiskInterfaceSupported(getVm())) &&
+                validateDiskImageNotExisting(((DiskImage) getParameters().getDiskInfo()).getImageId()) &&
+                validateDiskNotExisting(getParameters().getDiskInfo().getId());
 
         if (returnValue && vm != null) {
             StoragePool sp = getStoragePool(); // Note this is done according to the VM's spId.
@@ -309,6 +316,26 @@ public class AddDiskCommand<T extends AddDiskParameters> extends AbstractDiskVmC
         }
 
         return returnValue;
+    }
+
+    private boolean validateDiskNotExisting(Guid diskId) {
+        Disk disk = diskDao.get(diskId);
+
+        if (disk != null && !Guid.isNullOrEmpty(disk.getId())) {
+            return failValidation(EngineMessage.ACTION_TYPE_FAILED_DISK_ALREADY_EXISTS,
+                    String.format("$diskAlias %s", disk.getDiskAlias()),
+                    String.format("$diskID %s", diskId));
+        }
+        return true;
+    }
+
+    private boolean validateDiskImageNotExisting(Guid imageId) {
+        Image image = imageDao.get(imageId);
+
+        if (image != null && !Guid.isNullOrEmpty(image.getId())) {
+            return failValidation(EngineMessage.ACTION_TYPE_FAILED_IMAGE_ALREADY_EXISTS);
+        }
+        return true;
     }
 
     private boolean validateShareableDiskOnGlusterDomain() {
@@ -465,11 +492,12 @@ public class AddDiskCommand<T extends AddDiskParameters> extends AbstractDiskVmC
         AddManagedBlockStorageDiskParameters parameters =
                 new AddManagedBlockStorageDiskParameters(
                         getParameters().getDiskInfo(),
-                        getVm() == null ? false: shouldDiskBePlugged());
+                        getVm() != null && shouldDiskBePlugged());
         parameters.setPlugDiskToVm(getParameters().getPlugDiskToVm());
         parameters.setStorageDomainId(getParameters().getStorageDomainId());
         parameters.setParentParameters(getParameters());
         parameters.setParentCommand(getActionType());
+        parameters.setShouldRemainLockedOnSuccesfulExecution(true);
 
         if (getVm() != null) {
             parameters.setVmSnapshotId(snapshotDao.getId(getVmId(), SnapshotType.ACTIVE));
@@ -518,7 +546,7 @@ public class AddDiskCommand<T extends AddDiskParameters> extends AbstractDiskVmC
     }
 
     protected VmDevice addManagedDeviceForDisk(Guid diskId) {
-        return  getVmDeviceUtils().addDiskDevice(
+        return getVmDeviceUtils().addDiskDevice(
                 getVmId(),
                 diskId,
                 shouldDiskBePlugged(),
@@ -535,13 +563,13 @@ public class AddDiskCommand<T extends AddDiskParameters> extends AbstractDiskVmC
     }
 
     protected boolean useCallback() {
-        return (getParameters().getDiskInfo().getDiskStorageType() == DiskStorageType.IMAGE
-                && (parentHasCallback() || !isExecutedAsChildCommand())) ||
+        return getParameters().getDiskInfo().getDiskStorageType() == DiskStorageType.IMAGE
+                && (parentHasCallback() || !isExecutedAsChildCommand()) ||
                 getParameters().getDiskInfo().getDiskStorageType() == DiskStorageType.MANAGED_BLOCK_STORAGE;
     }
 
     private void createDiskBasedOnImage() {
-        if(!getParameters().getDiskInfo().isWipeAfterDeleteSet()) {
+        if (!getParameters().getDiskInfo().isWipeAfterDeleteSet()) {
             getParameters().getDiskInfo().setWipeAfterDelete(getStorageDomain().getWipeAfterDelete());
         }
         // create from blank template, create new vm snapshot id
@@ -583,6 +611,13 @@ public class AddDiskCommand<T extends AddDiskParameters> extends AbstractDiskVmC
             DiskImage diskImage = tmpRetValue.getActionReturnValue();
             addDiskPermissions(diskImage);
             getReturnValue().setActionReturnValue(diskImage.getId());
+
+            // We do not want PVCDisk to trigger callbacks, so updating and persisting
+            // the parameters is not needed
+            if (getParameters().getDiskInfo().getDiskStorageType() == DiskStorageType.IMAGE) {
+                getParameters().setDiskInfo(diskImage);
+                persistCommandIfNeeded();
+            }
         }
         getReturnValue().setFault(tmpRetValue.getFault());
         setSucceeded(tmpRetValue.getSucceeded());
@@ -600,7 +635,7 @@ public class AddDiskCommand<T extends AddDiskParameters> extends AbstractDiskVmC
 
     @Override
     public CommandCallback getCallback() {
-        return useCallback() ? callbackProvider.get() :  null;
+        return useCallback() ? callbackProvider.get() : null;
     }
 
     private void createDiskBasedOnCinder() {
@@ -658,17 +693,17 @@ public class AddDiskCommand<T extends AddDiskParameters> extends AbstractDiskVmC
     @Override
     public AuditLogType getAuditLogTypeValue() {
         switch (getActionState()) {
-        case EXECUTE:
-            if (isDiskStorageTypeRequiresExecuteState()) {
-                return getExecuteAuditLogTypeValue(getSucceeded());
-            } else {
+            case EXECUTE:
+                if (isDiskStorageTypeRequiresExecuteState()) {
+                    return getExecuteAuditLogTypeValue(getSucceeded());
+                } else {
+                    return getEndSuccessAuditLogTypeValue(getSucceeded());
+                }
+            case END_SUCCESS:
                 return getEndSuccessAuditLogTypeValue(getSucceeded());
-            }
-        case END_SUCCESS:
-            return getEndSuccessAuditLogTypeValue(getSucceeded());
 
-        default:
-            return AuditLogType.USER_ADD_DISK_FINISHED_FAILURE;
+            default:
+                return AuditLogType.USER_ADD_DISK_FINISHED_FAILURE;
         }
     }
 
@@ -719,7 +754,17 @@ public class AddDiskCommand<T extends AddDiskParameters> extends AbstractDiskVmC
 
     @Override
     protected ActionType getChildActionType() {
-        return ActionType.AddImageFromScratch;
+        switch (getParameters().getDiskInfo().getDiskStorageType()) {
+            case IMAGE:
+            case KUBERNETES:
+                return ActionType.AddImageFromScratch;
+            case CINDER:
+                return ActionType.AddCinderDisk;
+            case MANAGED_BLOCK_STORAGE:
+                return ActionType.AddManagedBlockStorageDisk;
+            default:
+                return ActionType.Unknown;
+        }
     }
 
     @Override
@@ -734,8 +779,16 @@ public class AddDiskCommand<T extends AddDiskParameters> extends AbstractDiskVmC
     @Override
     protected Map<String, Pair<String, String>> getExclusiveLocks() {
         if (!isFloatingDisk() && getDiskVmElement() != null && getDiskVmElement().isBoot()) {
-            return Collections.singletonMap(getParameters().getVmId().toString(),
-                    LockMessagesMatchUtil.makeLockingPair(LockingGroup.VM_DISK_BOOT, EngineMessage.ACTION_TYPE_FAILED_OBJECT_LOCKED));
+            Map<String, Pair<String, String>> locks = new HashMap<>();
+            locks.put(getParameters().getVmId().toString(),
+                    LockMessagesMatchUtil.makeLockingPair(LockingGroup.VM_DISK_BOOT,
+                            EngineMessage.ACTION_TYPE_FAILED_OBJECT_LOCKED));
+            if (getParameters().getDiskInfo() != null && !Guid.isNullOrEmpty(getParameters().getDiskInfo().getId())) {
+                locks.put(getParameters().getDiskInfo().getId().toString(),
+                        LockMessagesMatchUtil.makeLockingPair(LockingGroup.DISK,
+                                EngineMessage.ACTION_TYPE_FAILED_OBJECT_LOCKED));
+            }
+            return locks;
         }
         return null;
     }
@@ -769,6 +822,16 @@ public class AddDiskCommand<T extends AddDiskParameters> extends AbstractDiskVmC
     protected void endSuccessfully() {
         plugDiskToVmIfNeeded();
         super.endSuccessfully();
+    }
+
+    @Override
+    protected void endVmCommand() {
+        if (isFloatingDisk()) {
+            endActionOnDisks();
+            setSucceeded(true);
+        } else {
+            super.endVmCommand();
+        }
     }
 
     private void plugDiskToVmIfNeeded() {

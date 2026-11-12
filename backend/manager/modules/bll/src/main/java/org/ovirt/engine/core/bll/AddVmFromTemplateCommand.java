@@ -10,15 +10,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import javax.enterprise.inject.Instance;
-import javax.enterprise.inject.Typed;
 import javax.inject.Inject;
 
 import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.bll.context.CommandContext;
 import org.ovirt.engine.core.bll.storage.disk.image.DisksFilter;
 import org.ovirt.engine.core.bll.storage.disk.image.ImagesHandler;
-import org.ovirt.engine.core.bll.tasks.interfaces.CommandCallback;
 import org.ovirt.engine.core.bll.validator.storage.StorageDomainValidator;
 import org.ovirt.engine.core.common.AuditLogType;
 import org.ovirt.engine.core.common.action.ActionType;
@@ -52,9 +49,6 @@ public class AddVmFromTemplateCommand<T extends AddVmParameters> extends AddVmCo
     private VmStaticDao vmStaticDao;
     @Inject
     private DiskImageDao diskImageDao;
-    @Inject
-    @Typed(ConcurrentChildCommandsExecutionCallback.class)
-    private Instance<ConcurrentChildCommandsExecutionCallback> callbackProvider;
 
     public AddVmFromTemplateCommand(T parameters, CommandContext commandContext) {
         super(parameters, commandContext);
@@ -207,7 +201,7 @@ public class AddVmFromTemplateCommand<T extends AddVmParameters> extends AddVmCo
     }
 
     private static Map<Guid, Set<Guid>> findDomainsInApplicableStatusForDisks
-            (List<DiskImage> diskImages, Map<Guid, StorageDomain> storageDomains) {
+    (List<DiskImage> diskImages, Map<Guid, StorageDomain> storageDomains) {
         return diskImages
                 .stream()
                 .collect(Collectors.toMap(
@@ -258,22 +252,17 @@ public class AddVmFromTemplateCommand<T extends AddVmParameters> extends AddVmCo
     }
 
     @Override
-    public CommandCallback getCallback() {
-        return callbackProvider.get();
-    }
-
-    @Override
     public AuditLogType getAuditLogTypeValue() {
         switch (getActionState()) {
-        case EXECUTE:
-            return AuditLogType.USER_ADD_VM_STARTED;
+            case EXECUTE:
+                return AuditLogType.USER_ADD_VM_STARTED;
 
-        case END_SUCCESS:
-            return getSucceeded() ? AuditLogType.USER_ADD_VM_FINISHED_SUCCESS
-                    : AuditLogType.USER_ADD_VM_FINISHED_FAILURE;
+            case END_SUCCESS:
+                return getSucceeded() ? AuditLogType.USER_ADD_VM_FINISHED_SUCCESS
+                        : AuditLogType.USER_ADD_VM_FINISHED_FAILURE;
 
-        default:
-            return AuditLogType.USER_ADD_VM_FINISHED_FAILURE;
+            default:
+                return AuditLogType.USER_ADD_VM_FINISHED_FAILURE;
         }
     }
 }

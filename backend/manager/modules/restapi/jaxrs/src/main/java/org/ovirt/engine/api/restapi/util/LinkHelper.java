@@ -106,7 +106,7 @@ public class LinkHelper {
     private static String getRelativePath(Class<?> service, Class<?> parentService) {
         PathKey key = new PathKey(service, parentService);
         String path = pathCache.get(key);
-        if (path!=null) {
+        if (path != null) {
             return path;
         } else {
             for (Method method : parentService.getMethods()) {
@@ -149,7 +149,7 @@ public class LinkHelper {
                 if (inline instanceof BaseResource) {
                     ret.add((BaseResource) inline);
                 } else if (inline instanceof BaseResources) {
-                    BaseResources entities = (BaseResources)inline;
+                    BaseResources entities = (BaseResources) inline;
                     Method getter = EntityHelper.getCollectionGetter(entities);
                     try {
                         List<BaseResource> entitiesList = (List<BaseResource>) getter.invoke(entities);
@@ -225,18 +225,26 @@ public class LinkHelper {
      * @return           the parent object, or null if not set
      */
     private static <R extends BaseResource> BaseResource getParent(R model, Class<?> parentType) {
+        Object assignedFromParent = null;
+
+        // Try to match a method whose parent matches parentType first, only fallback to a subclass if parentType was
+        // not found in the list.
         for (Method method : getRelevantMethods(model.getClass())) {
             try {
                 Object potentialParent = method.invoke(model);
+                if (potentialParent != null && potentialParent.getClass().equals(parentType)) {
+                    return (BaseResource) potentialParent;
+                }
                 if (potentialParent != null && parentType.isAssignableFrom(potentialParent.getClass())) {
-                    return (BaseResource)potentialParent;
+                    assignedFromParent = potentialParent;
                 }
             } catch (Exception e) {
                 log.error("Error invoking method when adding links to an API entity", e);
                 continue;
             }
         }
-        return null;
+
+        return (BaseResource) assignedFromParent;
     }
 
     /**
@@ -399,7 +407,7 @@ public class LinkHelper {
         for (BaseResource inline : getInlineResources(model)) {
             if (inline.getId() != null) {
                 path = getPath(inline, null);
-                if (path!=null) {
+                if (path != null) {
                     inline.setHref(path);
                 }
             }

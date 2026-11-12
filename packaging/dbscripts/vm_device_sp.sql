@@ -6,7 +6,7 @@
 CREATE OR REPLACE FUNCTION InsertVmDevice (
     v_device_id UUID,
     v_vm_id UUID,
-    v_device VARCHAR(30),
+    v_device VARCHAR(255),
     v_type VARCHAR(30),
     v_address VARCHAR(255),
     v_spec_params TEXT,
@@ -19,7 +19,7 @@ CREATE OR REPLACE FUNCTION InsertVmDevice (
     v_logical_name VARCHAR(255),
     v_host_device VARCHAR(255)
     )
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     INSERT INTO vm_device (
         device_id,
@@ -53,13 +53,13 @@ BEGIN
         v_logical_name,
         v_host_device
         );
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION UpdateVmDevice (
     v_device_id UUID,
     v_vm_id UUID,
-    v_device VARCHAR(30),
+    v_device VARCHAR(255),
     v_type VARCHAR(30),
     v_address VARCHAR(255),
     v_spec_params TEXT,
@@ -72,7 +72,7 @@ CREATE OR REPLACE FUNCTION UpdateVmDevice (
     v_logical_name VARCHAR(255),
     v_host_device VARCHAR(255)
     )
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     UPDATE vm_device
     SET device = v_device,
@@ -90,51 +90,14 @@ BEGIN
         _update_date = current_timestamp
     WHERE device_id = v_device_id
         AND vm_id = v_vm_id;
-END;$PROCEDURE$
-LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION UpdateVmDeviceRuntimeInfo (
-    v_device_id UUID,
-    v_vm_id UUID,
-    v_address VARCHAR(255),
-    v_alias VARCHAR(255)
-    )
-RETURNS VOID AS $PROCEDURE$
-BEGIN
-    UPDATE vm_device
-    SET address = v_address,
-        alias = v_alias,
-        _update_date = current_timestamp
-    WHERE device_id = v_device_id
-        AND vm_id = v_vm_id;
-END;$PROCEDURE$
-LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION UpdateVmDeviceForHotPlugDisk (
-    v_device_id UUID,
-    v_vm_id UUID,
-    v_is_plugged boolean,
-    v_alias VARCHAR(255)
-    )
-RETURNS VOID AS $PROCEDURE$
-BEGIN
-    UPDATE vm_device
-    SET is_plugged = v_is_plugged,
-        alias = (CASE WHEN length(v_alias) != 0
-                    THEN v_alias
-                    ELSE alias
-                END),
-        _update_date = current_timestamp
-    WHERE device_id = v_device_id
-        AND vm_id = v_vm_id;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION DeleteVmDevice (
     v_device_id UUID,
     v_vm_id UUID
     )
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     DELETE
     FROM vm_device
@@ -143,37 +106,37 @@ BEGIN
             v_vm_id IS NULL
             OR vm_id = v_vm_id
             );
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION DeleteVmDevicesByVmIdAndType (
     v_vm_id UUID,
     v_type VARCHAR(30)
     )
-RETURNS VOID AS $PROCEDURE$
+RETURNS VOID AS $FUNCTION$
 BEGIN
     DELETE
     FROM vm_device
     WHERE vm_id = v_vm_id
         AND type = v_type;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetAllFromVmDevice ()
-RETURNS SETOF vm_device_view STABLE AS $PROCEDURE$
+RETURNS SETOF vm_device_view STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
     SELECT *
     FROM vm_device_view;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVmDeviceByDeviceId (
     v_device_id UUID,
     v_vm_id UUID
     )
-RETURNS SETOF vm_device_view STABLE AS $PROCEDURE$
+RETURNS SETOF vm_device_view STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
@@ -184,7 +147,7 @@ BEGIN
             v_vm_id IS NULL
             OR vm_id = v_vm_id
             );
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVmDeviceByVmId (
@@ -192,7 +155,7 @@ CREATE OR REPLACE FUNCTION GetVmDeviceByVmId (
     v_user_id UUID,
     v_is_filtered BOOLEAN
     )
-RETURNS SETOF vm_device_view STABLE AS $PROCEDURE$
+RETURNS SETOF vm_device_view STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
@@ -209,14 +172,14 @@ BEGIN
                 )
             )
     ORDER BY device_id;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVmDeviceByVmIdAndType (
     v_vm_id UUID,
     v_type VARCHAR(30)
     )
-RETURNS SETOF vm_device_view STABLE AS $PROCEDURE$
+RETURNS SETOF vm_device_view STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
@@ -225,17 +188,17 @@ BEGIN
     WHERE vm_id = v_vm_id
         AND type = v_type
     ORDER BY NULLIF(alias, '') NULLS LAST;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVmDeviceByVmIdTypeAndDevice (
     v_vm_id UUID,
     v_type VARCHAR(30),
-    v_device VARCHAR(30),
+    v_device VARCHAR(255),
     v_user_id UUID,
     v_is_filtered BOOLEAN
     )
-RETURNS SETOF vm_device_view STABLE AS $PROCEDURE$
+RETURNS SETOF vm_device_view STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
@@ -259,18 +222,18 @@ BEGIN
             )
         )
     ORDER BY NULLIF(alias, '') NULLS LAST;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 -- Returns for all VMs
 CREATE OR REPLACE FUNCTION GetVmDeviceByTypeAndDevice (
     v_vm_ids UUID[],
     v_type VARCHAR(30),
-    v_device VARCHAR(30),
+    v_device VARCHAR(255),
     v_user_id UUID,
     v_is_filtered BOOLEAN
     )
-RETURNS SETOF vm_device_view STABLE AS $PROCEDURE$
+RETURNS SETOF vm_device_view STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
@@ -289,11 +252,11 @@ BEGIN
                 )
             )
     ORDER BY NULLIF(alias, '') NULLS LAST;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVmUnmanagedDevicesByVmId (v_vm_id UUID)
-RETURNS SETOF vm_device_view STABLE AS $PROCEDURE$
+RETURNS SETOF vm_device_view STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
@@ -301,7 +264,7 @@ BEGIN
     FROM vm_device_view
     WHERE vm_id = v_vm_id
         AND NOT is_managed;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION isMemBalloonEnabled (v_vm_id UUID)
@@ -360,7 +323,7 @@ CREATE OR REPLACE FUNCTION ExistsVmDeviceByVmIdAndType (
     v_vm_id UUID,
     v_type VARCHAR(30)
     )
-RETURNS BOOLEAN STABLE AS $PROCEDURE$
+RETURNS BOOLEAN STABLE AS $FUNCTION$
 BEGIN
     RETURN EXISTS (
             SELECT 1
@@ -368,17 +331,17 @@ BEGIN
             WHERE vm_id = v_vm_id
                 AND type = v_type
             );
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION GetVmDeviceByType (v_type VARCHAR(30))
-RETURNS SETOF vm_device_view STABLE AS $PROCEDURE$
+RETURNS SETOF vm_device_view STABLE AS $FUNCTION$
 BEGIN
     RETURN QUERY
 
     SELECT *
     FROM vm_device_view
     WHERE type = v_type;
-END;$PROCEDURE$
+END;$FUNCTION$
 LANGUAGE plpgsql;
 

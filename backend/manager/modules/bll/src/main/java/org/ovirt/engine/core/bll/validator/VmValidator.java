@@ -12,14 +12,19 @@ import java.util.Map;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-import org.apache.commons.lang.StringUtils;
 import org.ovirt.engine.core.bll.ValidationResult;
 import org.ovirt.engine.core.bll.VmCommand;
 import org.ovirt.engine.core.bll.hostdev.HostDeviceManager;
 import org.ovirt.engine.core.bll.storage.disk.image.DisksFilter;
+import org.ovirt.engine.core.bll.utils.VmDeviceUtils;
 import org.ovirt.engine.core.bll.validator.storage.DiskImagesValidator;
 import org.ovirt.engine.core.common.ActionUtils;
+import org.ovirt.engine.core.common.FeatureSupported;
 import org.ovirt.engine.core.common.action.ActionType;
+import org.ovirt.engine.core.common.businessentities.ArchitectureType;
+import org.ovirt.engine.core.common.businessentities.BiosType;
+import org.ovirt.engine.core.common.businessentities.ChipsetType;
+import org.ovirt.engine.core.common.businessentities.Cluster;
 import org.ovirt.engine.core.common.businessentities.MigrationSupport;
 import org.ovirt.engine.core.common.businessentities.Snapshot.SnapshotType;
 import org.ovirt.engine.core.common.businessentities.VM;
@@ -38,6 +43,7 @@ import org.ovirt.engine.core.common.businessentities.storage.DiskVmElement;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.errors.EngineMessage;
+import org.ovirt.engine.core.common.migration.ParallelMigrationsType;
 import org.ovirt.engine.core.common.osinfo.OsRepository;
 import org.ovirt.engine.core.common.utils.customprop.VmPropertiesUtils;
 import org.ovirt.engine.core.compat.Guid;
@@ -64,7 +70,7 @@ public class VmValidator {
 
     /** @return Validation result that indicates if the VM is during migration or not. */
     public ValidationResult vmNotDuringMigration() {
-        if (vm.getStatus() == VMStatus.MigratingFrom || vm.getStatus() == VMStatus.MigratingTo) {
+        if (vm.getStatus().isMigrating()) {
             return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_MIGRATION_IN_PROGRESS);
         }
 
@@ -242,12 +248,29 @@ public class VmValidator {
         return ValidationResult.VALID;
     }
 
+    public ValidationResult vmNotHavingScsiPassthroughDevices() {
+        if (getHostDeviceManager().checkVmNeedsScsiDevices(vm.getId())) {
+            return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_HAS_ATTACHED_SCSI_HOST_DEVICES);
+        }
+        return ValidationResult.VALID;
+    }
+
+    public ValidationResult vmNotHavingNvdimmDevices() {
+        if (getHostDeviceManager().checkVmNeedsNvdimmDevices(vm.getId())) {
+            return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_HAS_ATTACHED_NVDIMM_DEVICES);
+        }
+        return ValidationResult.VALID;
+    }
+
+    public ValidationResult vmNotHavingTpm() {
+        if (getVmDeviceUtils().hasTpmDevice(vm.getId())) {
+            return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_HAS_TPM);
+        }
+        return ValidationResult.VALID;
+    }
+
     public ValidationResult vmNotUsingMdevTypeHook() {
-        Map<String, String> properties = getVmPropertiesUtils().getVMProperties(
-                vm.getCompatibilityVersion(),
-                vm.getStaticData());
-        String mdevType = properties.get("mdev_type");
-        if (!StringUtils.isEmpty(mdevType)) {
+        if (getVmDeviceUtils().hasMdevDevice(vm.getId())) {
             return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_USES_MDEV_TYPE_HOOK);
         }
 
@@ -258,13 +281,17 @@ public class VmValidator {
         return Injector.get(HostDeviceManager.class);
     }
 
-    public ValidationResult isPinnedVmRunningOnDedicatedHost(VM recentVm, VmStatic paramVm){
+    VmDeviceUtils getVmDeviceUtils() {
+        return Injector.get(VmDeviceUtils.class);
+    }
+
+    public ValidationResult isPinnedVmRunningOnDedicatedHost(VM recentVm, VmStatic paramVm) {
         boolean isPinned = paramVm.getMigrationSupport() == MigrationSupport.PINNED_TO_HOST;
         Guid vdsId = recentVm.getRunOnVds();
         List<Guid> hostList = paramVm.getDedicatedVmForVdsList();
 
         // If hostList is empty -> all hosts are allowed
-        if (isPinned && vdsId != null && !hostList.isEmpty() && !hostList.contains(vdsId)){
+        if (isPinned && vdsId != null && !hostList.isEmpty() && !hostList.contains(vdsId)) {
             // VM is NOT running on a dedicated host
             // fail with error message
             String hostName = String.format("$hostName %1$s", recentVm.getRunOnVdsName());
@@ -292,12 +319,14 @@ public class VmValidator {
             List<DiskVmElement> diskVmElements,
             boolean virtioScsiEnabled,
             boolean hasWatchdog,
-            boolean isBalloonEnabled,
             boolean isSoundDeviceEnabled) {
 
         // this adds: monitors + 2 * (interfaces with type rtl_pv) + (all other
         // interfaces) + (all disks that are not IDE)
-        int pciInUse = monitorsNumber;
+        long pciInUse = monitorsNumber;
+
+        // Balloon controller requires one PCI slot
+        pciInUse += 1;
 
         for (VmNic a : interfaces) {
             if (a.getType() != null && VmInterfaceType.forValue(a.getType()) == VmInterfaceType.rtl8139_pv) {
@@ -316,9 +345,6 @@ public class VmValidator {
 
         // VmWatchdog controller requires one PCI slot
         pciInUse += hasWatchdog ? 1 : 0;
-
-        // Balloon controller requires one PCI slot
-        pciInUse += isBalloonEnabled ? 1 : 0;
 
         // Sound device controller requires one PCI slot
         pciInUse += isSoundDeviceEnabled ? 1 : 0;
@@ -345,20 +371,30 @@ public class VmValidator {
         }
 
         if (!messages.isEmpty()) {
-           return new ValidationResult(messages);
+            return new ValidationResult(messages);
         }
         return ValidationResult.VALID;
     }
 
-    public static ValidationResult validateCpuSockets(VmBase vmBase, Version compatibilityVersion) {
+    /**
+     * @param vmBase - the VM/template to validate
+     * @param compatibilityVersion - the compatibility version of vmBase
+     * @param architecture - the cluster's architecture
+     * @param osRepository - OsRepository instance
+     * @return ValidationResult.VALID if the CPU topology on vmBase is valid, failed ValidationResult otherwise.
+     */
+    public static ValidationResult validateCpuSockets(VmBase vmBase, Version compatibilityVersion,
+            ArchitectureType architecture, OsRepository osRepository) {
         int num_of_sockets = vmBase.getNumOfSockets();
         int cpu_per_socket = vmBase.getCpuPerSocket();
         int threadsPerCpu = vmBase.getThreadsPerCpu();
 
         String version = compatibilityVersion.toString();
 
-        if ((num_of_sockets * cpu_per_socket * threadsPerCpu) >
-                Config.<Integer> getValue(ConfigValues.MaxNumOfVmCpus, version)) {
+        int vcpus = num_of_sockets * cpu_per_socket * threadsPerCpu;
+        Map<String, Integer> archToMaxNumOfVmCpus = Config.getValue(ConfigValues.MaxNumOfVmCpus, version);
+
+        if (vcpus > archToMaxNumOfVmCpus.get(architecture.getFamily().name())) {
             return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_MAX_NUM_CPU);
         }
         if (num_of_sockets > Config.<Integer> getValue(ConfigValues.MaxNumOfVmSockets, version)) {
@@ -379,6 +415,11 @@ public class VmValidator {
         if (threadsPerCpu < 1) {
             return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_MIN_THREADS_PER_CPU);
         }
+        int minCpus = osRepository.getMinimumCpus(vmBase.getOsId());
+        if (vcpus < minCpus) {
+            return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_MIN_NUM_CPU_FOR_OS,
+                    ReplacementUtils.createSetVariableString("cpus", minCpus));
+        }
         return ValidationResult.VALID;
     }
 
@@ -397,23 +438,67 @@ public class VmValidator {
         }
 
         switch (vm.getStatus()) {
-        case MigratingFrom:
-            return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_MIGRATION_IN_PROGRESS);
+            case MigratingFrom:
+                return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_MIGRATION_IN_PROGRESS);
 
-        case NotResponding:
-            return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_STATUS_ILLEGAL, LocalizedVmStatus.from(vm.getStatus()));
+            case NotResponding:
+                return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_STATUS_ILLEGAL, LocalizedVmStatus.from(vm.getStatus()));
 
-        case Paused:
-            if (vm.getVmPauseStatus() == VmPauseStatus.EIO) {
-                return new ValidationResult(EngineMessage.MIGRATE_PAUSED_EIO_VM_IS_NOT_SUPPORTED);
-            }
-            break;
+            case Paused:
+                if (vm.getVmPauseStatus() == VmPauseStatus.EIO) {
+                    return new ValidationResult(EngineMessage.MIGRATE_PAUSED_EIO_VM_IS_NOT_SUPPORTED);
+                }
+                break;
         }
 
         if (!vm.isQualifyToMigrate()) {
             return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_IS_NOT_RUNNING);
         }
 
+        return ValidationResult.VALID;
+    }
+
+    public static ValidationResult isBiosTypeSupported(VmBase vmBase, Cluster cluster, OsRepository osRepository) {
+        if (FeatureSupported.isBiosTypeSupported(cluster.getCompatibilityVersion())
+                && vmBase.getBiosType() != BiosType.I440FX_SEA_BIOS
+                && cluster.getArchitecture() != ArchitectureType.undefined
+                && cluster.getArchitecture().getFamily() != ArchitectureType.x86) {
+            return new ValidationResult(EngineMessage.NON_DEFAULT_BIOS_TYPE_FOR_X86_ONLY);
+        }
+
+        if (vmBase.getBiosType().getChipsetType() == ChipsetType.Q35
+                && !osRepository.isQ35Supported(vmBase.getOsId())) {
+            return new ValidationResult(EngineMessage.Q35_NOT_SUPPORTED_BY_GUEST_OS,
+                    String.format("$guestOS %1$s", osRepository.getOsName(vmBase.getOsId())));
+        }
+
+        if (vmBase.getBiosType() == BiosType.Q35_SECURE_BOOT && !osRepository.isSecureBootSupported(vmBase.getOsId())) {
+            return new ValidationResult(EngineMessage.SECURE_BOOT_NOT_SUPPORTED_BY_GUEST_OS,
+                    String.format("$guestOS %1$s", osRepository.getOsName(vmBase.getOsId())));
+        }
+
+        return ValidationResult.VALID;
+    }
+
+    public ValidationResult isBiosTypeSupported(Cluster cluster, OsRepository osRepository) {
+        return isBiosTypeSupported(vm.getStaticData(), cluster, osRepository);
+    }
+
+    public ValidationResult isVmStatusIn(VMStatus... statuses) {
+        VMStatus vmStatus = vm.getStatus();
+        if (Arrays.stream(statuses).noneMatch(status -> vmStatus == status)) {
+            return new ValidationResult(EngineMessage.ACTION_TYPE_FAILED_VM_STATUS_ILLEGAL, LocalizedVmStatus.from(vmStatus));
+        }
+        return ValidationResult.VALID;
+    }
+
+    public static ValidationResult isParallelMigrationsValid(Integer parallelMigrations) {
+        if (parallelMigrations != null && (parallelMigrations <= 1 || parallelMigrations > 255)
+                && parallelMigrations != ParallelMigrationsType.AUTO.getValue()
+                && parallelMigrations != ParallelMigrationsType.AUTO_PARALLEL.getValue()
+                && parallelMigrations != ParallelMigrationsType.DISABLED.getValue()) {
+            return new ValidationResult(EngineMessage.VALIDATION_PARALLEL_MIGRATIONS_RANGE);
+        }
         return ValidationResult.VALID;
     }
 }

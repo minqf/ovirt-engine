@@ -1,5 +1,6 @@
 package org.ovirt.engine.core.dao;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
@@ -23,6 +24,7 @@ import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.compat.RpmVersion;
 import org.ovirt.engine.core.dao.network.DnsResolverConfigurationDao;
 import org.ovirt.engine.core.utils.JsonHelper;
+import org.ovirt.engine.core.utils.SerializationFactory;
 import org.ovirt.engine.core.utils.serialization.json.JsonObjectDeserializer;
 import org.ovirt.engine.core.utils.serialization.json.JsonObjectSerializer;
 import org.slf4j.Logger;
@@ -91,6 +93,7 @@ public class VdsDynamicDaoImpl extends MassOperationsGenericDao<VdsDynamic, Guid
         entity.setLibrbdVersion(new RpmVersion(rs.getString("librbd1_version")));
         entity.setGlusterfsCliVersion(new RpmVersion(rs.getString("glusterfs_cli_version")));
         entity.setOvsVersion(new RpmVersion(rs.getString("openvswitch_version")));
+        entity.setNmstateVersion(new RpmVersion(rs.getString("nmstate_version")));
         entity.setKernelVersion(rs.getString("kernel_version"));
         entity.setIScsiInitiatorName(rs.getString("iscsi_initiator_name"));
         entity.setTransparentHugePagesState(VdsTransparentHugePagesState
@@ -126,6 +129,8 @@ public class VdsDynamicDaoImpl extends MassOperationsGenericDao<VdsDynamic, Guid
         entity.setConnectorInfo(
                 ObjectUtils.mapNullable(rs.getString("connector_info"), JsonHelper::jsonToMapUnchecked));
         entity.setBackupEnabled(rs.getBoolean("backup_enabled"));
+        entity.setColdBackupEnabled(rs.getBoolean("cold_backup_enabled"));
+        entity.setClearBitmapsEnabled(rs.getBoolean("clear_bitmaps_enabled"));
         entity.setSupportedDomainVersionsAsString(rs.getString("supported_domain_versions"));
         entity.setSupportedBlockSize(ObjectUtils.mapNullable(
                 rs.getString("supported_block_size"), JsonHelper::jsonToMapUnchecked));
@@ -133,6 +138,10 @@ public class VdsDynamicDaoImpl extends MassOperationsGenericDao<VdsDynamic, Guid
         entity.setTscScalingEnabled(rs.getBoolean("tsc_scaling"));
         entity.setFipsEnabled(rs.getBoolean("fips_enabled"));
         entity.setBootUuid(rs.getString("boot_uuid"));
+        entity.setCdChangePdiv(rs.getBoolean("cd_change_pdiv"));
+        entity.setOvnConfigured(rs.getBoolean("ovn_configured"));
+        entity.setCpuTopology(SerializationFactory.getDeserializer().deserialize(rs.getString("cpu_topology"), ArrayList.class));
+        entity.setVdsmCpusAffinity(rs.getString("vdsm_cpus_affinity"));
 
         return entity;
     };
@@ -294,6 +303,7 @@ public class VdsDynamicDaoImpl extends MassOperationsGenericDao<VdsDynamic, Guid
                 .addValue("librbd1_version", vds.getLibrbdVersion().getRpmName())
                 .addValue("glusterfs_cli_version", vds.getGlusterfsCliVersion().getRpmName())
                 .addValue("openvswitch_version", vds.getOvsVersion().getRpmName())
+                .addValue("nmstate_version", vds.getNmstateVersion().getRpmName())
                 .addValue("kernel_version", vds.getKernelVersion())
                 .addValue("iscsi_initiator_name", vds.getIScsiInitiatorName())
                 .addValue("transparent_hugepages_state",
@@ -330,13 +340,19 @@ public class VdsDynamicDaoImpl extends MassOperationsGenericDao<VdsDynamic, Guid
                 .addValue("connector_info",
                     ObjectUtils.mapNullable(vds.getConnectorInfo(), JsonHelper::mapToJsonUnchecked))
                 .addValue("backup_enabled", vds.isBackupEnabled())
+                .addValue("cold_backup_enabled", vds.isColdBackupEnabled())
+                .addValue("clear_bitmaps_enabled", vds.isClearBitmapsEnabled())
                 .addValue("supported_domain_versions", vds.getSupportedDomainVersionsAsString())
                 .addValue("supported_block_size",
                         ObjectUtils.mapNullable(vds.getSupportedBlockSize(), JsonHelper::mapToJsonUnchecked))
                 .addValue("tsc_frequency", vds.getTscFrequency())
                 .addValue("tsc_scaling", vds.isTscScalingEnabled())
                 .addValue("fips_enabled", vds.isFipsEnabled())
-                .addValue("boot_uuid", vds.getBootUuid());
+                .addValue("boot_uuid", vds.getBootUuid())
+                .addValue("cd_change_pdiv", vds.isCdChangePdiv())
+                .addValue("ovn_configured", vds.isOvnConfigured())
+                .addValue("cpu_topology", SerializationFactory.getSerializer().serialize(vds.getCpuTopology()))
+                .addValue("vdsm_cpus_affinity", vds.getVdsmCpusAffinity());
     }
 
     @Override

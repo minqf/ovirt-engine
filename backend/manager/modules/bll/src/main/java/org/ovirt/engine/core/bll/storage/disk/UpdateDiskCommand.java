@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.stream.Collectors;
 
 import javax.enterprise.inject.Instance;
 import javax.enterprise.inject.Typed;
@@ -22,6 +23,8 @@ import org.ovirt.engine.core.bll.SerialChildExecutingCommand;
 import org.ovirt.engine.core.bll.ValidationResult;
 import org.ovirt.engine.core.bll.VmSlaPolicyUtils;
 import org.ovirt.engine.core.bll.context.CommandContext;
+import org.ovirt.engine.core.bll.job.ExecutionContext;
+import org.ovirt.engine.core.bll.job.ExecutionHandler;
 import org.ovirt.engine.core.bll.profiles.DiskProfileHelper;
 import org.ovirt.engine.core.bll.quota.QuotaConsumptionParameter;
 import org.ovirt.engine.core.bll.quota.QuotaStorageConsumptionParameter;
@@ -76,6 +79,8 @@ import org.ovirt.engine.core.common.businessentities.storage.VolumeFormat;
 import org.ovirt.engine.core.common.config.Config;
 import org.ovirt.engine.core.common.config.ConfigValues;
 import org.ovirt.engine.core.common.errors.EngineMessage;
+import org.ovirt.engine.core.common.job.Step;
+import org.ovirt.engine.core.common.job.StepEnum;
 import org.ovirt.engine.core.common.locks.LockingGroup;
 import org.ovirt.engine.core.common.utils.Pair;
 import org.ovirt.engine.core.common.validation.group.UpdateEntity;
@@ -83,6 +88,7 @@ import org.ovirt.engine.core.common.vdscommands.SetVolumeDescriptionVDSCommandPa
 import org.ovirt.engine.core.common.vdscommands.VDSCommandType;
 import org.ovirt.engine.core.compat.Guid;
 import org.ovirt.engine.core.dal.dbbroker.auditloghandling.AuditLogDirector;
+import org.ovirt.engine.core.dal.job.ExecutionMessageDirector;
 import org.ovirt.engine.core.dao.BaseDiskDao;
 import org.ovirt.engine.core.dao.DiskDao;
 import org.ovirt.engine.core.dao.DiskImageDao;
@@ -209,7 +215,11 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
 
     @Override
     protected void executeVmCommand() {
-        lockImageInDb();
+        // Locking an image in DB is required for extending disks size,
+        // which doesn't apply for LUN disks.
+        if (getOldDisk().getDiskStorageType().isInternal()) {
+            lockImageInDb();
+        }
         List<UpdateDiskParameters.Phase> phaseList = new ArrayList<>();
         ImagesHandler.setDiskAlias(getParameters().getDiskInfo(), getVm());
         if (resizeDiskImageRequested()) {
@@ -325,7 +335,7 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
     private boolean isIncrementalBackupChangedOnRawDisk() {
         if (getNewDisk().getDiskStorageType() == DiskStorageType.IMAGE) {
             DiskImage diskImage = (DiskImage) getNewDisk();
-            return diskImage.getBackup() == DiskBackup.Incremental &&  diskImage.getVolumeFormat() == VolumeFormat.RAW;
+            return diskImage.getBackup() == DiskBackup.Incremental && diskImage.getVolumeFormat() == VolumeFormat.RAW;
         }
         return false;
     }
@@ -366,7 +376,7 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
 
         if (isUpdatedToShareable(getOldDisk(), getNewDisk())) {
 
-            StorageDomainStatic sds = storageDomainStaticDao.get(((DiskImage)getNewDisk()).getStorageIds().get(0));
+            StorageDomainStatic sds = storageDomainStaticDao.get(((DiskImage) getNewDisk()).getStorageIds().get(0));
             if (sds.getStorageType() == StorageType.GLUSTERFS) {
                 return failValidation(EngineMessage.ACTION_TYPE_FAILED_SHAREABLE_DISKS_NOT_SUPPORTED_ON_GLUSTER_DOMAIN);
             }
@@ -375,7 +385,7 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
 
             // If disk image list is more than one then we assume that it has a snapshot, since one image is the active
             // disk and all the other images are the snapshots.
-            if ((diskImageList.size() > 1) || !Guid.Empty.equals(((DiskImage) getOldDisk()).getImageTemplateId())) {
+            if (diskImageList.size() > 1 || !Guid.Empty.equals(((DiskImage) getOldDisk()).getImageTemplateId())) {
                 return failValidation(EngineMessage.SHAREABLE_DISK_IS_NOT_SUPPORTED_FOR_DISK);
             }
 
@@ -392,7 +402,7 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
 
     protected boolean validateCanUpdateReadOnly() {
         if (updateReadOnlyRequested()) {
-            if(getVm().getStatus() != VMStatus.Down && vmDeviceForVm.isPlugged()) {
+            if (getVm().getStatus() != VMStatus.Down && vmDeviceForVm.isPlugged()) {
                 return failValidation(EngineMessage.ACTION_TYPE_FAILED_VM_IS_NOT_DOWN);
             }
             DiskVmElementValidator diskVmElementValidator = getDiskVmElementValidator(getNewDisk(), getDiskVmElement());
@@ -532,6 +542,9 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
                     case LUN:
                         // No specific update for LUN disk
                         break;
+                    default:
+                        log.error("Unsupported disk storage type for extend");
+                        break;
                 }
 
                 reloadDisks();
@@ -548,9 +561,9 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
                     vmDeviceDao.update(vmDeviceForVm);
                 }
 
-                if ((getOldDiskVmElement().getDiskInterface() != getDiskVmElement().getDiskInterface()) ||
-                        ((getOldDiskVmElement().isBoot() != getDiskVmElement().isBoot()) && (
-                                getDiskVmElement().getDiskInterface() == DiskInterface.IDE))) {
+                if (getOldDiskVmElement().getDiskInterface() != getDiskVmElement().getDiskInterface() ||
+                        getOldDiskVmElement().isBoot() != getDiskVmElement().isBoot() &&
+                                getDiskVmElement().getDiskInterface() == DiskInterface.IDE) {
                     vmDeviceForVm.setAddress("");
                     vmDeviceDao.clearDeviceAddress(getOldDisk().getId());
                 }
@@ -559,7 +572,7 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
     }
 
     private boolean shouldPerformMetadataUpdate() {
-        return (getNewDisk().getDiskStorageType() == DiskStorageType.IMAGE) &&
+        return getNewDisk().getDiskStorageType() == DiskStorageType.IMAGE &&
                 (!Objects.equals(getOldDisk().getDiskAlias(), getNewDisk().getDiskAlias()) ||
                  !Objects.equals(getOldDisk().getDiskDescription(), getNewDisk().getDiskDescription()));
     }
@@ -621,7 +634,7 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
             DiskImage oldDisk = (DiskImage) getOldDisk();
             DiskImage newDisk = (DiskImage) getNewDisk();
             if (!Objects.equals(oldDisk.getDiskProfileId(), newDisk.getDiskProfileId())) {
-                vmSlaPolicyUtils.refreshRunningVmsWithDiskProfile(newDisk.getDiskProfileId());
+                vmSlaPolicyUtils.refreshRunningVmsWithDiskImage(newDisk);
             }
         }
     }
@@ -662,7 +675,8 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
     }
 
     private void extendDiskImageSize() {
-        runInternalActionWithTasksContext(ActionType.ExtendImageSize, createExtendParameters());
+        runInternalAction(ActionType.ExtendImageSize, createExtendParameters(),
+                createStepsContext(StepEnum.EXTEND_DISK));
     }
 
     private void executeDiskExtend() {
@@ -676,6 +690,9 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
             case MANAGED_BLOCK_STORAGE:
                 extendManagedBlockDiskSize();
                 break;
+            default:
+                log.error("Unsupported disk storage type for extend");
+                break;
         }
     }
 
@@ -684,7 +701,6 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
     }
 
     private void extendCinderDiskSize() {
-        lockImageInDb();
         CinderDisk newCinderDisk = (CinderDisk) getNewDisk();
         Future<ActionReturnValue> future = commandCoordinatorUtil.executeAsyncCommand(
                 ActionType.ExtendCinderDisk,
@@ -703,7 +719,6 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
     }
 
     private void extendManagedBlockDiskSize() {
-        lockImageInDb();
         ManagedBlockStorageDisk newManagedBlockDisk = (ManagedBlockStorageDisk) getNewDisk();
         Future<ActionReturnValue> future = commandCoordinatorUtil.executeAsyncCommand(
                 ActionType.ExtendManagedBlockStorageDiskSize,
@@ -725,7 +740,9 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
                 newManagedBlockDisk);
         parameters.setStorageDomainId(newManagedBlockDisk.getStorageIds().get(0));
         parameters.setParametersCurrentUser(getParameters().getParametersCurrentUser());
-        parameters.setEndProcedure(EndProcedure.COMMAND_MANAGED);
+        parameters.setEndProcedure(EndProcedure.PARENT_MANAGED);
+        parameters.setParentCommand(getActionType());
+        parameters.setParentParameters(getParameters());
         return parameters;
     }
 
@@ -738,13 +755,18 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
 
     @Override
     protected void endSuccessfully() {
-        unlockImageInDb();
-        setSucceeded(true);
+        endOperation();
     }
 
     @Override
     protected void endWithFailure() {
-        unlockImageInDb();
+        endOperation();
+    }
+
+    private void endOperation() {
+        if (getOldDisk().getDiskStorageType().isInternal()) {
+            unlockImageInDb();
+        }
         setSucceeded(true);
     }
 
@@ -771,9 +793,28 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
     public Map<String, String> getJobMessageProperties() {
         if (jobProperties == null) {
             jobProperties = super.getJobMessageProperties();
-            jobProperties.put("diskalias", getDiskAlias());
+            String vmNames = vmsDiskOrSnapshotAttachedTo
+                    .stream()
+                    .map(VM::getName)
+                    .sorted()
+                    .collect(Collectors.joining(", "));
+            jobProperties.put("vm", vmNames.isEmpty() ? "N/A" : vmNames);
         }
         return jobProperties;
+    }
+
+    private CommandContext createStepsContext(StepEnum step) {
+        Map<String, String> stepMessageProperties = new HashMap<>();
+        stepMessageProperties.put("disk", getOldDisk().getDiskAlias());
+        Step addedStep = executionHandler.addSubStep(getExecutionContext(),
+                getExecutionContext().getJob().getStep(StepEnum.EXECUTING),
+                step,
+                ExecutionMessageDirector.resolveStepMessage(step, stepMessageProperties));
+        ExecutionContext ctx = new ExecutionContext();
+        ctx.setStep(addedStep);
+        ctx.setMonitored(true);
+        return ExecutionHandler.createDefaultContextForTasks(getContext(), null)
+                .withExecutionContext(ctx);
     }
 
     @Override
@@ -841,7 +882,7 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
             boolean differentNewQuota = !emptyOldQuota && !oldDiskImage.getQuotaId().equals(newDiskImage.getQuotaId());
             long diskExtendingDiff = newDiskImage.getSizeInGigabytes() - oldDiskImage.getSizeInGigabytes();
 
-            if (emptyOldQuota || differentNewQuota ) {
+            if (emptyOldQuota || differentNewQuota) {
                 list.add(generateQuotaConsumeParameters(newDiskImage, newDiskImage.getSizeInGigabytes()));
             } else if (diskExtendingDiff > 0L) {
                 list.add(generateQuotaConsumeParameters(newDiskImage, diskExtendingDiff));
@@ -853,7 +894,7 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
                         QuotaStorageConsumptionParameter.QuotaAction.RELEASE,
                         //TODO: Shared Disk?
                         oldDiskImage.getStorageIds().get(0),
-                        (double)oldDiskImage.getSizeInGigabytes()));
+                        (double) oldDiskImage.getSizeInGigabytes()));
             }
         }
         return list;
@@ -869,17 +910,20 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
                QuotaStorageConsumptionParameter.QuotaAction.CONSUME,
                //TODO: Shared Disk?
                newDiskImage.getStorageIds().get(0),
-               (double) sizeInGigabytes );
+               (double) sizeInGigabytes);
     }
 
     private boolean resizeDiskImageRequested() {
         boolean sizeChanged = getNewDisk().getSize() != getOldDisk().getSize();
         switch (getNewDisk().getDiskStorageType()) {
-        case IMAGE:
-            return sizeChanged && (getVmDeviceForVm() == null || getVmDeviceForVm().getSnapshotId() == null);
-        case MANAGED_BLOCK_STORAGE:
-        case CINDER:
-            return sizeChanged;
+            case IMAGE:
+                return sizeChanged && (getVmDeviceForVm() == null || getVmDeviceForVm().getSnapshotId() == null);
+            case MANAGED_BLOCK_STORAGE:
+            case CINDER:
+                return sizeChanged;
+            default:
+                log.error("Unsupported disk storage type for extend");
+                break;
         }
         return false;
     }
@@ -1012,7 +1056,7 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
             for (Pair<VM, VmDevice> pair : attachedVmsInfo) {
                 VM vm = pair.getFirst();
                 vmsDiskOrSnapshotAttachedTo.add(vm);
-                if (Boolean.TRUE.equals(pair.getSecond().isPlugged())) {
+                if (pair.getSecond().isPlugged()) {
                     if (pair.getSecond().getSnapshotId() != null) {
                         vmsDiskSnapshotPluggedTo.add(vm);
                     } else {
@@ -1031,24 +1075,19 @@ public class UpdateDiskCommand<T extends UpdateDiskParameters> extends AbstractD
     public void lockImageInDb() {
         final DiskImage diskImage = (DiskImage) getOldDisk();
 
-         TransactionSupport.executeInNewTransaction(() -> {
-             getCompensationContext().snapshotEntityStatus(diskImage.getImage());
-             getCompensationContext().stateChanged();
-             diskImage.setImageStatus(ImageStatus.LOCKED);
-             imagesHandler.updateImageStatus(diskImage.getImageId(), ImageStatus.LOCKED);
-             return null;
-         });
+        TransactionSupport.executeInNewTransaction(() -> {
+            getCompensationContext().snapshotEntityStatus(diskImage.getImage());
+            getCompensationContext().stateChanged();
+            diskImage.setImageStatus(ImageStatus.LOCKED);
+            imagesHandler.updateImageStatus(diskImage.getImageId(), ImageStatus.LOCKED);
+            return null;
+        });
     }
 
     public void unlockImageInDb() {
         final DiskImage diskImage = (DiskImage) getOldDisk();
         diskImage.setImageStatus(ImageStatus.OK);
         imagesHandler.updateImageStatus(diskImage.getImageId(), ImageStatus.OK);
-    }
-
-    private AmendImageGroupVolumesCommandParameters amendImageGroupVolumesCommandParameters() {
-        DiskImage diskImage = (DiskImage) getNewDisk();
-        return new AmendImageGroupVolumesCommandParameters(diskImage.getId(), diskImage.getQcowCompat());
     }
 
     @Override
